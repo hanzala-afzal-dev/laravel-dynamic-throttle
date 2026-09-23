@@ -20,6 +20,7 @@ Decisions live in docs/adr/ (index: docs/adr/README.md). Feature specs live in d
 - One-sentence changes may skip spec and plan. Bug fixes always start with a failing regression test.
 - If a spec conflicts with an ADR, stop and ask. Do not silently pick one.
 - Pace: stop for the maintainer's review at the end of each roadmap phase.
+- A Stop hook (`.claude/hooks/verify.sh`) runs `composer test` and `composer analyse` when code changed, and blocks the turn while they fail.
 
 ## Hard rules
 - No database queries on the request path (src/Engine, src/Http/Middleware). The database is only for admin actions and the compiler.

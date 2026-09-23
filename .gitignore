@@ -15,6 +15,7 @@ composer.lock
 .env.*
 !.env.example
 /.claude/settings.local.json
+/.claude/verify.state
 
 # Editors and OS files
 /.idea/
