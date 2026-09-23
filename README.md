@@ -41,7 +41,7 @@ It does **not** replace edge rate limiting (Cloudflare, Nginx, API gateways). Ke
 |---|---|
 | PHP | 8.3, 8.4, 8.5 |
 | Laravel | 12.61.1+ and 13.12+ (the lowest versions CI tests, [ADR-0019](docs/adr/0019-tested-laravel-floors.md)) |
-| Counter storage | Redis 6.2+ or Valkey 7.2+ (recommended), or any Laravel cache store through the generic driver. The `database` store works but adds database writes to every limited request; `file` and `apc` count per server ([ADR-0005](docs/adr/0005-storage-abstraction.md)). |
+| Counter storage | Redis 6.2+ or Valkey 7.2+ (recommended), or Memcached. The `database` store on MySQL or PostgreSQL works but adds database writes to every limited request. On SQLite it can fail under load with "database is locked". **Do not use `file` or `apc` in production**: they are not atomic, so concurrent requests can exceed the limit ([SPEC-002](docs/specs/002-limiter-store-and-cache-driver.md)). |
 | Runtimes | PHP-FPM, Laravel Octane (Swoole, RoadRunner, FrankenPHP) |
 
 Composer enforces the PHP and Laravel versions when you install. See [ADR-0002](docs/adr/0002-supported-platforms.md) for the support policy.
