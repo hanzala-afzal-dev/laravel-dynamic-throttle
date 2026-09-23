@@ -245,6 +245,16 @@ it('AC-16: rejects an invalid limit or window before counting anything', functio
     'window 0' => [5, 0],
 ]);
 
+it('AC-16: accepts the smallest valid limit and window', function (StoreUnderTest $subject): void {
+    $subject->clock->setSeconds(FakeClock::T0 + 10);
+
+    $first = $subject->store->attempt(contractKey(), 1, 1);
+    $second = $subject->store->attempt(contractKey(), 1, 1);
+
+    expect([$first->allowed, $first->remaining])->toBe([true, 0])
+        ->and([$second->allowed, $second->retryAfter])->toBe([false, 2]);
+})->with('limiter stores');
+
 it('AC-8: puts window edges exactly on the microsecond', function (StoreUnderTest $subject): void {
     $subject->clock->setMicroseconds((FakeClock::T0 + 59) * 1_000_000 + 999_999);
     $lastMicrosecond = $subject->store->attempt(contractKey(), 5, 60);

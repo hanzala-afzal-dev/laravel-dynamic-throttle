@@ -46,6 +46,29 @@ it('AC-17: reads a negative previous-window count as 0', function (): void {
     expect([$attempt->allowed, $attempt->remaining])->toBe([true, 4]);
 });
 
+it('AC-17: reads counts stored as numeric strings, as Redis and Memcached return them', function (): void {
+    $clock = new FakeClock;
+    $clock->setSeconds(FakeClock::T0 + 60);
+    $store = new CacheLimiterStore(Cache::store('array'), new KeyBuilder('dt:'), $clock);
+    $hash = hash('sha256', 'A');
+    Cache::store('array')->put("dt:c:1:60:{$hash}:30000000", '5', 125);
+
+    // The previous window still weighs 5 × 60 / 60 = 5 at the start of this one.
+    expect($store->attempt(new CounterKey('1', $hash), 5, 60)->allowed)->toBeFalse();
+});
+
+it('AC-17: reads a negative current-window count as 0', function (): void {
+    $clock = new FakeClock;
+    $clock->setSeconds(FakeClock::T0 + 10);
+    $store = new CacheLimiterStore(Cache::store('array'), new KeyBuilder('dt:'), $clock);
+    $hash = hash('sha256', 'A');
+    Cache::store('array')->put("dt:c:1:60:{$hash}:30000000", -3, 125);
+
+    $attempt = $store->attempt(new CounterKey('1', $hash), 5, 60);
+
+    expect([$attempt->allowed, $attempt->remaining])->toBe([true, 4]);
+});
+
 it('AC-10: lets window keys expire 2 × window + 5 seconds after creation', function (): void {
     $this->travelTo(Carbon::createFromTimestamp(FakeClock::T0 + 10));
     $store = new CacheLimiterStore(Cache::store('array'), new KeyBuilder('dt:'), new LaravelClock);
@@ -54,10 +77,11 @@ it('AC-10: lets window keys expire 2 × window + 5 seconds after creation', func
 
     $store->attempt(new CounterKey('1', $hash), 5, 60);
 
-    $this->travel(124)->seconds();
+    // Half a second on either side of 125 s, so a TTL of 124 or 126 would fail.
+    $this->travel(124_500)->milliseconds();
     $stillThere = Cache::store('array')->has($windowKey);
 
-    $this->travel(2)->seconds();
+    $this->travel(1_000)->milliseconds();
 
     expect($stillThere)->toBeTrue()
         ->and(Cache::store('array')->has($windowKey))->toBeFalse();

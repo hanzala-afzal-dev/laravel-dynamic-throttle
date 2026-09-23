@@ -113,6 +113,20 @@ it('AC-11: a request rejected by a floating-point hair still waits at least 1 se
         ->and(allowedAfterWaiting(11, 0, 5.4545454545454541, 10, 6, 1))->toBeTrue();
 });
 
+it('retryAfter agrees with the limiter\'s own arithmetic at a floating-point edge', function (): void {
+    // Headroom is 0 here, so the wait is the time to the next window: 5.000000000000007 s.
+    // In exact arithmetic the request is still rejected after 5 s. But the limiter computes
+    // in floats, and in floats it is allowed after 5 s. The limiter's own arithmetic is what
+    // decides the retried request, so 5 is the right answer.
+    $elapsed = 54.999999999999993;
+    $evaluation = (new SlidingWindowCounter)->evaluate(1, 9, $elapsed, 60, 10);
+
+    expect($evaluation->allowed)->toBeFalse()
+        ->and($evaluation->retryAfter)->toBe(5)
+        ->and(allowedAfterWaiting(1, 9, $elapsed, 60, 10, 5))->toBeTrue()
+        ->and(allowedAfterWaiting(1, 9, $elapsed, 60, 10, 4))->toBeFalse();
+});
+
 it('decides exactly as the formula says for every input on the grid', function (): void {
     $counter = new SlidingWindowCounter;
     $violations = [];
