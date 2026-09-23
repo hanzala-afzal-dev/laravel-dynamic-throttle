@@ -190,8 +190,9 @@ jobs:
 
       - name: No npm toolchain in the package (ADR-0018)
         run: |
-          if [ -e package.json ] || [ -e package-lock.json ]; then
-            echo "::error::ADR-0018: the dashboard uses no npm packages, so the repository must not contain package.json."
+          found="$(git ls-files '*package.json' '*package-lock.json' '*yarn.lock' '*pnpm-lock.yaml')"
+          if [ -n "$found" ]; then
+            echo "::error::ADR-0018: the dashboard uses no npm packages, but the repository contains: $found"
             exit 1
           fi
 
@@ -243,3 +244,21 @@ jobs:
 
       - name: Runtime dependency licenses are permissive
         run: composer licenses --no-dev --format=json | php scripts/check-licenses.php
+
+  # The one check to require in branch protection. Job names differ between
+  # pull requests and pushes (the matrix changes), so requiring individual
+  # jobs would block pull requests forever.
+  ci-passed:
+    name: CI passed
+    if: always()
+    needs: [matrix, tests, drivers, static-analysis, code-style, install, security]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any job failed or was cancelled
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          case " $RESULTS " in
+            *" failure "*|*" cancelled "*) exit 1 ;;
+          esac
