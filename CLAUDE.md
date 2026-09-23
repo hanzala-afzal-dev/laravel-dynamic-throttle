@@ -9,7 +9,8 @@ Decisions live in docs/adr/ (index: docs/adr/README.md). Feature specs live in d
 - `composer analyse`: Larastan
 - `composer format`: Pint
 - `composer refactor`: Rector
-- `composer test:mutate`: mutation testing of every class a test names in `covers(...)`, fails below 85% (ADR-0016). Engine tests must declare `covers()`. Never pass `--filter` to `--mutate`: it reports fake kills. Use `--class=...` to narrow the run.
+- `composer test:mutate`: mutation testing of everything in `src/Engine`, fails below 85% (ADR-0016). Never pass `--filter` to `--mutate`: it reports fake kills. Use `--class=...` or `--path=...` to narrow the run.
+- `composer test:drivers`: the driver tests plus the LimiterStore contract suite against every docker compose service
 - No PHP 8.3+ on the host (the maintainer's machine has 8.2): prefix with `docker compose run --rm php`, e.g. `docker compose run --rm php composer test`
 - `docker compose up -d`: Redis, Valkey, Memcached, MySQL, PostgreSQL for driver tests (`composer test:drivers`)
 - `scripts/verify-install.sh 12|13`: installs the package into a fresh Laravel app and boots it
