@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Afzal\DynamicThrottle\Engine\Algorithm\Evaluation;
 use Afzal\DynamicThrottle\Engine\Algorithm\SlidingWindowCounter;
 
 covers(SlidingWindowCounter::class);
@@ -156,7 +157,7 @@ it('retryAfter is the smallest whole second after which a request is allowed', f
 });
 
 it('AC-12: rejects invalid input and names the problem', function (int $previous, int $current, float $elapsed, int $window, int $max, string $problem): void {
-    expect(fn () => (new SlidingWindowCounter)->evaluate($previous, $current, $elapsed, $window, $max))
+    expect(fn (): Evaluation => (new SlidingWindowCounter)->evaluate($previous, $current, $elapsed, $window, $max))
         ->toThrow(InvalidArgumentException::class, $problem);
 })->with([
     'max < 1' => [0, 0, 0.0, 60, 0, 'The limit must be at least 1'],
