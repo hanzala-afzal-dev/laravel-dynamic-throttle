@@ -1,0 +1,15 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    # ADR-0016 asks for at least level 8.
+    level: 9
+    paths:
+        - config
+        - src
+    tmpDir: .phpstan-cache
+    # The package's own config folder, so env() is allowed there and config() keys are known.
+    configDirectories:
+        - config
+    # ADR-0002: the package runs under Laravel Octane, so flag state that leaks between requests.
+    checkOctaneCompatibility: true
