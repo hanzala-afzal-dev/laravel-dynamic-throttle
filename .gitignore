@@ -1,0 +1,25 @@
+# Dependencies (libraries do not commit composer.lock)
+/vendor/
+composer.lock
+
+# Test and tool caches
+/.phpunit.cache/
+/.phpunit.result.cache
+/build/
+/coverage/
+/.phpstan-cache/
+/.pint-cache/
+
+# Local environment
+.env
+.env.*
+!.env.example
+/.claude/settings.local.json
+
+# Editors and OS files
+/.idea/
+/.vscode/
+/.fleet/
+*.swp
+.DS_Store
+Thumbs.db
