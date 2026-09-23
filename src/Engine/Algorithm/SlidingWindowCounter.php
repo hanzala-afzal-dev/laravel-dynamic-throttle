@@ -49,26 +49,30 @@ final readonly class SlidingWindowCounter
 
     /**
      * The smallest whole number of seconds (at least 1) after which a request
-     * would be allowed, assuming no new traffic.
+     * would be allowed, assuming no new traffic. Only called for rejected requests.
      */
     private function retryAfter(int $previous, int $current, float $elapsed, int $window, int $max): int
     {
         $untilNextWindow = $window - $elapsed;
 
-        // Case A: the previous window's weight decays enough before this window ends.
-        if ($current + 1 <= $max && $previous > 0) {
-            $wait = $untilNextWindow - ($max - $current - 1) * $window / $previous;
+        // Room this window has for more requests once the previous window's weight is gone.
+        $headroom = $max - $current - 1;
 
-            if ($wait < $untilNextWindow) {
-                return max(1, (int) ceil($wait));
-            }
+        if ($headroom > 0) {
+            // Case A: wait until the previous window's weight has decayed to the headroom.
+            // A rejected request with headroom has previous > 0, so this never divides by zero.
+            $wait = $untilNextWindow - $headroom * $window / $previous;
+        } elseif ($current === 0) {
+            // Case B with nothing counted in this window (max 1): the next window allows at once.
+            $wait = $untilNextWindow;
+        } else {
+            // Case B: in the next window, this window's count becomes the previous one.
+            // current ≥ max − 1 here, so the time into the next window is never negative.
+            $wait = $untilNextWindow + $window - ($max - 1) * $window / $current;
         }
 
-        // Case B: in the next window, this window's count becomes the previous one.
-        // With nothing counted in this window, the next window allows at once.
-        $intoNextWindow = $current === 0 ? 0.0 : max(0.0, $window - ($max - 1) * $window / $current);
-
-        return max(1, (int) ceil($untilNextWindow + $intoNextWindow));
+        // Rounding can put the exact wait at 0 for a request rejected by a hair.
+        return max(1, (int) ceil($wait));
     }
 
     private function validate(int $previous, int $current, float $elapsed, int $window, int $max): void
