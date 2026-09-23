@@ -76,7 +76,10 @@
             "@php vendor/bin/pest --group=drivers --group=contract"
         ],
         "test:coverage": "@php vendor/bin/pest --exclude-group=drivers --coverage",
-        "test:mutate": "@php vendor/bin/pest --exclude-group=drivers --mutate --everything --path=src/Engine --min=85 --parallel",
+        "test:mutate": [
+            "@putenv DYNAMIC_THROTTLE_DRIVERS=1",
+            "@php vendor/bin/pest --exclude-group=concurrency --mutate --everything --path=src/Engine --min=85 --parallel"
+        ],
         "analyse": "@php vendor/bin/phpstan analyse --memory-limit=1G",
         "format": "@php vendor/bin/pint",
         "format:check": "@php vendor/bin/pint --test",
@@ -87,7 +90,7 @@
         "test": "Run the test suite (without the driver suite, which needs docker compose services).",
         "test:drivers": "Run the driver tests and the LimiterStore contract suite against every service from docker-compose.yml.",
         "test:coverage": "Run the test suite with code coverage.",
-        "test:mutate": "Mutation testing of everything in src/Engine; fails below 85% (ADR-0016).",
+        "test:mutate": "Mutation testing of everything in src/Engine, with the service suites (needs docker compose up -d); fails below 85% (ADR-0016).",
         "analyse": "Run static analysis (Larastan).",
         "format": "Fix code style (Pint).",
         "format:check": "Check code style without changing files.",
