@@ -4,6 +4,7 @@
 - Date: 2026-09-23
 - Roadmap phase: 4
 - Related: ADR-0004, ADR-0011, ADR-0014
+- Amended by: [ADR-0018](0018-minimal-dashboard.md) (Blade dashboard instead of an SPA)
 
 ## Context
 

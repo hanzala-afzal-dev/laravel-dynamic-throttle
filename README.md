@@ -18,7 +18,7 @@ Laravel's built-in rate limiting lives in code: changing a limit means a code ch
 - **Identity-aware.** Limit by IP (IPv6 grouped by /64), authenticated user, API token, a trusted header, globally, or by your own resolver (plan, tenant, organization…).
 - **Dry-run first.** Try a limit on real traffic and see who *would* be blocked before you enforce it.
 - **Safe by default.**
-  - There are no database queries on the request path.
+  - Rules are never read from the database per request. They are compiled into a manifest in your cache. With Laravel's `database` cache store, the counters and the manifest themselves live in the database, so use Redis, Valkey or Memcached for busy apps.
   - If storage fails, requests are allowed by default, and you can make a sensitive rule fail closed instead.
   - Emergency bypass and scaling switch themselves off at the expiry time you set.
   - An environment kill switch works even when the database and cache are down.
@@ -41,7 +41,7 @@ It does **not** replace edge rate limiting (Cloudflare, Nginx, API gateways). Ke
 |---|---|
 | PHP | 8.3, 8.4, 8.5 |
 | Laravel | 12, 13 |
-| Counter storage | Redis 6.2+ or Valkey 7.2+ (recommended), or any Laravel cache store through the generic driver |
+| Counter storage | Redis 6.2+ or Valkey 7.2+ (recommended), or any Laravel cache store through the generic driver. The `database` store works but adds database writes to every limited request; `file` and `apc` count per server ([ADR-0005](docs/adr/0005-storage-abstraction.md)). |
 | Runtimes | PHP-FPM, Laravel Octane (Swoole, RoadRunner, FrankenPHP) |
 
 Composer enforces the PHP and Laravel versions when you install. See [ADR-0002](docs/adr/0002-supported-platforms.md) for the support policy.

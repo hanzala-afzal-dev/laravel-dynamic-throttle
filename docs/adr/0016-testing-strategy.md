@@ -4,7 +4,7 @@
 - Date: 2026-09-23
 - Roadmap phase: 0 to 6
 - Related: ADR-0003, ADR-0005, ADR-0006
-- Amended by: [ADR-0018](0018-minimal-dashboard.md) (the Frontend test layer)
+- Amended by: [ADR-0018](0018-minimal-dashboard.md) (Vitest and Playwright replaced by Pest feature tests)
 
 ## Context
 

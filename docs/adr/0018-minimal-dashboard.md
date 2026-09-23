@@ -4,7 +4,7 @@
 - Date: 2026-09-23
 - Roadmap phase: 4 (API) and 5 (UI)
 - Supersedes: ADR-0014
-- Amends: ADR-0016 (frontend test layer)
+- Amends: ADR-0003, ADR-0015, ADR-0016, ADR-0017 (see "Effect on other ADRs")
 - Related: ADR-0004, ADR-0015, ADR-0017
 
 ## Context
@@ -87,3 +87,15 @@ This replaces ADR-0014's verification and the **Frontend** row of ADR-0016's tes
 - The dashboard stays reachable under a `*` rule (ADR-0015).
 - The repository contains no `package.json`. A CI check enforces this.
 - If the script grows helper functions worth unit-testing, they are tested with Node's built-in test runner (`node --test`), which needs no npm packages.
+
+## Effect on other ADRs
+
+Accepted ADRs are not rewritten, so these lines still mention the SPA. Read them as follows:
+
+| ADR | Text that assumed the SPA | Read as |
+|---|---|---|
+| ADR-0003, levels table | Code lives in `src/, dashboard/` | Code lives in `src/` and `resources/` (Blade views, one CSS file, one JS file) |
+| ADR-0003, "When steps can be skipped" | Vitest for component logic | Pest feature tests for pages; `node --test` only if the script grows helpers |
+| ADR-0015, decision 2 | "the SPA uses Laravel's XSRF cookie" | The dashboard script sends Laravel's XSRF token the same way |
+| ADR-0016, tools and test layers | Vitest and a Playwright/Nightwatch end-to-end test | Pest feature tests and the Pest end-to-end smoke test above |
+| ADR-0017, release process and verification | The release builds `dist/` and fails when it is stale | There is no `dist/`; the release fails when a `package.json` exists instead |

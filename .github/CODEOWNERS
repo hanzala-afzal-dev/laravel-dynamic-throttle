@@ -1,0 +1,8 @@
+# Every change needs the maintainer's review.
+*          @hanzala-afzal-dev
+
+# These run code on maintainers' machines (Claude Code hooks) and in CI.
+# Review changes to them like changes to production code.
+/.claude/  @hanzala-afzal-dev
+/.github/  @hanzala-afzal-dev
+/scripts/  @hanzala-afzal-dev

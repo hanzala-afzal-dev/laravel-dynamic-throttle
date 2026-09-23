@@ -4,6 +4,7 @@
 - Date: 2026-09-23
 - Roadmap phase: 6
 - Related: ADR-0002, ADR-0014
+- Amended by: [ADR-0018](0018-minimal-dashboard.md) (no `dist/` build or freshness check)
 
 ## Context
 

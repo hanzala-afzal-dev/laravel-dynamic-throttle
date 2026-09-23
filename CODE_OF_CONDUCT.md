@@ -6,7 +6,7 @@ In short: be respectful and constructive, assume good intent, and focus on what 
 
 ## Reporting
 
-Report unacceptable behavior to the maintainer, Hanzala Afzal ([@hanzala-afzal-dev](https://github.com/hanzala-afzal-dev)). Reports are handled confidentially. You can also use GitHub's "Report content" feature on any comment, issue or pull request.
+To report unacceptable behavior in an issue, pull request or comment, use GitHub's **Report content** menu on it and choose **Report to repository admins**. Only the maintainer, Hanzala Afzal ([@hanzala-afzal-dev](https://github.com/hanzala-afzal-dev)), sees that report. For behavior that also breaks GitHub's rules, choose **Report abuse**, which goes to GitHub.
 
 ## Enforcement
 
