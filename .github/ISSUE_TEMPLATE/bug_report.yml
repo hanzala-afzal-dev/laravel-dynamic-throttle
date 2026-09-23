@@ -1,0 +1,49 @@
+name: Bug report
+description: Something does not behave as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security problems go through private reporting (see SECURITY.md), not here.
+  - type: input
+    id: package-version
+    attributes:
+      label: Package version
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: laravel-version
+    attributes:
+      label: Laravel version
+      placeholder: 13.x
+    validations:
+      required: true
+  - type: input
+    id: php-version
+    attributes:
+      label: PHP version and runtime
+      placeholder: 8.4, PHP-FPM (or Octane with Swoole, …)
+    validations:
+      required: true
+  - type: input
+    id: store
+    attributes:
+      label: Counter driver and cache store
+      placeholder: redis driver on Redis 7.4 (phpredis) / cache driver on Memcached / …
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The rules involved (the output of `php artisan dynamic-throttle:explain` helps), and the requests you sent.
+    validations:
+      required: true
