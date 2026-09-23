@@ -132,6 +132,15 @@ it('AC-18: keeps a rejection when undoing its increment fails', function (): voi
         ->and($cache->get("dt:c:1:60:{$key->identityHash}:30000000"))->toEqual(6);
 });
 
+it('AC-11: reports a failing database query as unavailable, whatever its SQLSTATE code', function (): void {
+    // "no such table" carries the string SQLSTATE code HY000, not an integer.
+    $cache = Cache::build(['driver' => 'database', 'connection' => 'testing', 'table' => 'missing_cache_table']);
+    $store = new CacheLimiterStore($cache, new KeyBuilder('dt:'), new FakeClock);
+
+    expect(fn (): Attempt => $store->attempt(new CounterKey('1', hash('sha256', 'A')), 5, 60))
+        ->toThrow(StorageUnavailableException::class);
+});
+
 it('AC-11: reports a store whose increment returns false as unavailable', function (): void {
     // This is how Memcached reports that it is down.
     $cache = new Repository(new class extends ArrayStore

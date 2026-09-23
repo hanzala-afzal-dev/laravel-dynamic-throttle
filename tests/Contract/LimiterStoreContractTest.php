@@ -160,12 +160,12 @@ function contractKey(string $rule = '1', string $identity = 'A'): CounterKey
 /**
  * @return list<array{bool, int}>
  */
-function contractAttempts(StoreUnderTest $subject, int $times, int $max = 5, ?CounterKey $key = null): array
+function contractAttempts(StoreUnderTest $subject, int $times, int $max = 5, ?CounterKey $key = null, int $window = 60): array
 {
     $results = [];
 
     foreach (range(1, $times) as $ignored) {
-        $attempt = $subject->store->attempt($key ?? contractKey(), $max, 60);
+        $attempt = $subject->store->attempt($key ?? contractKey(), $max, $window);
         $results[] = [$attempt->allowed, $attempt->remaining];
     }
 
@@ -216,11 +216,13 @@ it('AC-4: counts the previous window in proportion to its overlap', function (St
     $atBoundary = $subject->store->attempt(contractKey(), 10, 60);
 
     $subject->clock->setSeconds(FakeClock::T0 + 90);
-    $halfway = array_column(contractAttempts($subject, 6, max: 10), 0);
+    $halfway = contractAttempts($subject, 5, max: 10);
+    $sixth = $subject->store->attempt(contractKey(), 10, 60);
 
     expect(array_column($first, 0))->toBe(array_fill(0, 10, true))
-        ->and($atBoundary->allowed)->toBeFalse()
-        ->and($halfway)->toBe([true, true, true, true, true, false]);
+        ->and([$atBoundary->allowed, $atBoundary->retryAfter])->toBe([false, 6])
+        ->and($halfway)->toBe([[true, 4], [true, 3], [true, 2], [true, 1], [true, 0]])
+        ->and([$sixth->allowed, $sixth->retryAfter])->toBe([false, 6]);
 })->with('limiter stores');
 
 it('AC-5: forgets everything two windows later', function (StoreUnderTest $subject): void {
@@ -240,7 +242,13 @@ it('AC-6: keeps counters apart by rule, identity and window length', function (S
 
     $otherIdentity = $subject->store->attempt(contractKey('1', 'B'), 5, 60);
     $otherRule = $subject->store->attempt(contractKey('2', 'A'), 5, 60);
-    $otherWindow = $subject->store->attempt(contractKey('1', 'A'), 5, 30);
+
+    // Windows 86,400 and 86,399 share window index 20,833 at T0+10, so only the
+    // window length in the key keeps these two counters apart.
+    foreach (range(1, 5) as $ignored) {
+        $subject->store->attempt(contractKey('1', 'A'), 5, 86_400);
+    }
+    $otherWindow = $subject->store->attempt(contractKey('1', 'A'), 5, 86_399);
 
     expect([$otherIdentity->allowed, $otherIdentity->remaining])->toBe([true, 4])
         ->and([$otherRule->allowed, $otherRule->remaining])->toBe([true, 4])
@@ -265,6 +273,7 @@ it('AC-16: rejects an invalid limit or window before counting anything', functio
 })->with('limiter stores')->with([
     'max 0' => [0, 60],
     'window 0' => [5, 0],
+    'window 86,401' => [5, 86_401],
 ]);
 
 it('AC-16: accepts the smallest valid limit and window', function (StoreUnderTest $subject): void {
@@ -275,6 +284,21 @@ it('AC-16: accepts the smallest valid limit and window', function (StoreUnderTes
 
     expect([$first->allowed, $first->remaining])->toBe([true, 0])
         ->and([$second->allowed, $second->retryAfter])->toBe([false, 2]);
+})->with('limiter stores');
+
+it('AC-8: measures time within a window below the second', function (StoreUnderTest $subject): void {
+    $subject->clock->setSeconds(FakeClock::T0 + 10);
+    $first = array_column(contractAttempts($subject, 4, max: 4, window: 1), 0);
+
+    // At T0+11.1 the previous second still weighs 4 × 0.9 = 3.6; at T0+11.3 it weighs 2.8.
+    $subject->clock->setMicroseconds((FakeClock::T0 + 11) * 1_000_000 + 100_000);
+    $early = $subject->store->attempt(contractKey(), 4, 1);
+    $subject->clock->setMicroseconds((FakeClock::T0 + 11) * 1_000_000 + 300_000);
+    $later = $subject->store->attempt(contractKey(), 4, 1);
+
+    expect($first)->toBe([true, true, true, true])
+        ->and($early->allowed)->toBeFalse()
+        ->and($later->allowed)->toBeTrue();
 })->with('limiter stores');
 
 it('AC-8: puts window edges exactly on the microsecond', function (StoreUnderTest $subject): void {
