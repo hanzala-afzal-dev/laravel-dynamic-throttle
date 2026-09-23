@@ -177,10 +177,11 @@ it('AC-12: rejects invalid input and names the problem', function (int $previous
     'max < 1' => [0, 0, 0.0, 60, 0, 'The limit must be at least 1'],
     // Any window below 1 also fails the elapsed range, so the message tells the checks apart.
     'window < 1' => [0, 0, 0.0, 0, 10, 'The window must be at least 1 second'],
-    'elapsed < 0' => [0, 0, -0.5, 60, 10, 'Elapsed time must be in [0, 60)'],
-    'elapsed = window' => [0, 0, 60.0, 60, 10, 'Elapsed time must be in [0, 60)'],
-    'elapsed > window' => [0, 0, 60.5, 60, 10, 'Elapsed time must be in [0, 60)'],
-    'elapsed is NaN' => [0, 0, NAN, 60, 10, 'Elapsed time must be in [0, 60)'],
+    'elapsed < 0' => [0, 0, -0.5, 60, 10, 'Elapsed time must be in [0, 60), got -0.5.'],
+    'elapsed = window' => [0, 0, 60.0, 60, 10, 'Elapsed time must be in [0, 60), got 60.'],
+    'elapsed > window' => [0, 0, 60.5, 60, 10, 'Elapsed time must be in [0, 60), got 60.5.'],
+    // Named, never converted: PHP 8.5 warns when NaN is converted to a string.
+    'elapsed is NaN' => [0, 0, NAN, 60, 10, 'Elapsed time must be in [0, 60), got NaN.'],
     'previous < 0' => [-1, 0, 0.0, 60, 10, 'Counts cannot be negative'],
     'current < 0' => [0, -1, 0.0, 60, 10, 'Counts cannot be negative'],
 ]);
