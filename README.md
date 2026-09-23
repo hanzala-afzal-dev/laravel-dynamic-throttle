@@ -40,7 +40,7 @@ It does **not** replace edge rate limiting (Cloudflare, Nginx, API gateways). Ke
 | | Supported |
 |---|---|
 | PHP | 8.3, 8.4, 8.5 |
-| Laravel | 12, 13 |
+| Laravel | 12.61.1+ and 13.12+ (the lowest versions CI tests, [ADR-0019](docs/adr/0019-tested-laravel-floors.md)) |
 | Counter storage | Redis 6.2+ or Valkey 7.2+ (recommended), or any Laravel cache store through the generic driver. The `database` store works but adds database writes to every limited request; `file` and `apc` count per server ([ADR-0005](docs/adr/0005-storage-abstraction.md)). |
 | Runtimes | PHP-FPM, Laravel Octane (Swoole, RoadRunner, FrankenPHP) |
 

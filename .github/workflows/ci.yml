@@ -22,12 +22,23 @@ jobs:
     name: Pick the test matrix
     runs-on: ubuntu-latest
     outputs:
+      run: ${{ steps.pick.outputs.run }}
       tests: ${{ steps.pick.outputs.tests }}
     steps:
       - id: pick
         env:
           EVENT: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
         run: |
+          # The nightly run only happens while the repository is public: on a private
+          # repository the full matrix every night would use most of the free Actions minutes.
+          run=true
+          if [ "$EVENT" = "schedule" ] && [ "$(gh api "repos/$REPOSITORY" --jq .private)" = "true" ]; then
+            run=false
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
           # ADR-0016: pull requests test the lowest and the highest supported versions;
           # pushes to main, nightly and manual runs test the full matrix.
           if [ "$EVENT" = "pull_request" ]; then
@@ -40,6 +51,7 @@ jobs:
   tests:
     name: PHP ${{ matrix.php }} · Laravel ${{ matrix.laravel }} · ${{ matrix.stability }}
     needs: matrix
+    if: needs.matrix.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -57,22 +69,30 @@ jobs:
           coverage: none
           tools: composer:v2
 
+      # --with intersects with the constraint in composer.json instead of replacing it,
+      # so the prefer-lowest job installs the floor that users can actually install.
       - name: Install dependencies
         env:
           LARAVEL: ${{ matrix.laravel }}
           STABILITY: ${{ matrix.stability }}
-        run: |
-          composer require "laravel/framework:^${LARAVEL}.0" --no-interaction --no-update
-          composer update "--${STABILITY}" --prefer-dist --no-interaction --no-progress
+        run: composer update "--${STABILITY}" --with "laravel/framework:^${LARAVEL}.0" --prefer-dist --no-interaction --no-progress
 
       - name: Show resolved versions
         run: composer show --no-ansi | grep -E '^(laravel/framework|orchestra/testbench |pestphp/pest |phpunit/phpunit) '
+
+      - name: Lowest Laravel equals the declared floor (ADR-0019)
+        if: matrix.stability == 'prefer-lowest'
+        env:
+          LARAVEL: ${{ matrix.laravel }}
+        run: php scripts/check-laravel-floor.php "$LARAVEL"
 
       - name: Run tests
         run: composer test
 
   drivers:
     name: Drivers · PHP ${{ matrix.php }} · Laravel ${{ matrix.laravel }}
+    needs: matrix
+    if: needs.matrix.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -136,15 +156,15 @@ jobs:
         env:
           LARAVEL: ${{ matrix.laravel }}
           STABILITY: ${{ matrix.stability }}
-        run: |
-          composer require "laravel/framework:^${LARAVEL}.0" --no-interaction --no-update
-          composer update "--${STABILITY}" --prefer-dist --no-interaction --no-progress
+        run: composer update "--${STABILITY}" --with "laravel/framework:^${LARAVEL}.0" --prefer-dist --no-interaction --no-progress
 
       - name: Run driver tests
         run: composer test:drivers
 
   static-analysis:
     name: Larastan
+    needs: matrix
+    if: needs.matrix.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -166,6 +186,8 @@ jobs:
 
   code-style:
     name: Code style and repository rules
+    needs: matrix
+    if: needs.matrix.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -198,6 +220,8 @@ jobs:
 
   install:
     name: Install into fresh Laravel ${{ matrix.laravel }}
+    needs: matrix
+    if: needs.matrix.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -223,6 +247,8 @@ jobs:
 
   security:
     name: Dependency audit and licenses
+    needs: matrix
+    if: needs.matrix.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

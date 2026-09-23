@@ -36,6 +36,7 @@ This folder records the important decisions for `laravel-dynamic-throttle`: what
 | [0016](0016-testing-strategy.md) | Testing strategy | Accepted | 0–6 |
 | [0017](0017-versioning-and-release.md) | Versioning and release | Accepted | 6 |
 | [0018](0018-minimal-dashboard.md) | Minimal dashboard: Blade and vanilla JavaScript | Accepted | 4–5 |
+| [0019](0019-tested-laravel-floors.md) | Declare only the Laravel versions CI tests | Accepted | 0 |
 
 ## Template
 

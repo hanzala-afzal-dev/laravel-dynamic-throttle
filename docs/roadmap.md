@@ -176,4 +176,6 @@ These were the open decisions of the original roadmap.
 - **License:** MIT, copyright Hanzala Afzal. Contributions are accepted under the same license (inbound = outbound, see `CONTRIBUTING.md`).
 - **Docs hosting:** README + `docs/` folder until 1.0.
 - **PHP floor:** PHP 8.2 support was requested and declined. ADR-0002 stands (`^8.3`).
+- **Laravel floor:** `^12.61.1 || ^13.12.0`, the lowest versions CI tests (ADR-0019, amends ADR-0002).
+- **Repository:** private until 0.1.0. Nightly CI is skipped while private, to save Actions minutes. When it goes public, enable private vulnerability reporting and content reports to admins.
 - **Dashboard:** minimal Blade + vanilla JavaScript (ADR-0018).
