@@ -231,6 +231,19 @@ it('AC-7: applies a lower limit at once, because counters are kept', function (S
     expect($subject->store->attempt(contractKey(), 3, 60)->allowed)->toBeFalse();
 })->with('limiter stores');
 
+it('AC-16: rejects an invalid limit or window before counting anything', function (StoreUnderTest $subject, int $max, int $window): void {
+    $subject->clock->setSeconds(FakeClock::T0 + 10);
+
+    expect(fn () => $subject->store->attempt(contractKey(), $max, $window))->toThrow(InvalidArgumentException::class);
+
+    $next = $subject->store->attempt(contractKey(), 5, 60);
+
+    expect([$next->allowed, $next->remaining])->toBe([true, 4]);
+})->with('limiter stores')->with([
+    'max 0' => [0, 60],
+    'window 0' => [5, 0],
+]);
+
 it('AC-8: puts window edges exactly on the microsecond', function (StoreUnderTest $subject): void {
     $subject->clock->setMicroseconds((FakeClock::T0 + 59) * 1_000_000 + 999_999);
     $lastMicrosecond = $subject->store->attempt(contractKey(), 5, 60);

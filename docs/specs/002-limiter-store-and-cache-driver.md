@@ -43,6 +43,8 @@ Window 60 s and max 5 unless stated. Times are offsets from T0 = 1,800,000,000 s
   - the rule id contains characters outside `A-Z a-z 0-9 _ -`
   - the identity hash is not exactly 64 lowercase hex characters (so `"203.0.113.9"` or an email address is rejected)
 - **AC-14 (clock)** `LaravelClock::microseconds()` follows Laravel's time travel: after `travelTo` 2027-01-01 00:00:00.250000 UTC it returns 1,798,761,600,250,000.
+- **AC-16 (contract)** `attempt()` with max < 1 or window < 1 throws `InvalidArgumentException` **before touching the store**. A valid attempt afterwards is still the first: remaining 4. Validating only inside SPEC-001's formula would leave a phantom count from the increment.
+- **AC-17 (cache driver)** A negative count in the previous window key, which only an outside decrement could leave, is read as 0. The attempt is allowed with remaining 4 instead of throwing.
 - **AC-15 (concurrency, Memcached and Redis cache store)** 50 separate processes make 20 attempts each on one key with max 100 and the time frozen at T0+10:
   - at most 100 attempts are allowed and at least 50 (ADR-0016)
   - the stored count equals the number allowed

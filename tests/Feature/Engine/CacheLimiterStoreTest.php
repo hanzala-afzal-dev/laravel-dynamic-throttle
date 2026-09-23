@@ -33,6 +33,18 @@ it('AC-9: keeps only allowed attempts in the current window key', function (): v
     expect(Cache::store('array')->get("dt:c:1:60:{$hash}:30000000"))->toEqual(5);
 });
 
+it('AC-17: reads a negative previous-window count as 0', function (): void {
+    $clock = new FakeClock;
+    $clock->setSeconds(FakeClock::T0 + 70);
+    $store = new CacheLimiterStore(Cache::store('array'), new KeyBuilder('dt:'), $clock);
+    $hash = hash('sha256', 'A');
+    Cache::store('array')->put("dt:c:1:60:{$hash}:30000000", -3, 125);
+
+    $attempt = $store->attempt(new CounterKey('1', $hash), 5, 60);
+
+    expect([$attempt->allowed, $attempt->remaining])->toBe([true, 4]);
+});
+
 it('AC-10: lets window keys expire 2 × window + 5 seconds after creation', function (): void {
     $this->travelTo(Carbon::createFromTimestamp(FakeClock::T0 + 10));
     $store = new CacheLimiterStore(Cache::store('array'), new KeyBuilder('dt:'), new LaravelClock);
