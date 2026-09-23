@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Afzal\DynamicThrottle\Engine\Attempt;
 use Afzal\DynamicThrottle\Engine\CounterKey;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Stores\CacheLimiterStore;
@@ -234,7 +235,7 @@ it('AC-7: applies a lower limit at once, because counters are kept', function (S
 it('AC-16: rejects an invalid limit or window before counting anything', function (StoreUnderTest $subject, int $max, int $window): void {
     $subject->clock->setSeconds(FakeClock::T0 + 10);
 
-    expect(fn () => $subject->store->attempt(contractKey(), $max, $window))->toThrow(InvalidArgumentException::class);
+    expect(fn (): Attempt => $subject->store->attempt(contractKey(), $max, $window))->toThrow(InvalidArgumentException::class);
 
     $next = $subject->store->attempt(contractKey(), 5, 60);
 

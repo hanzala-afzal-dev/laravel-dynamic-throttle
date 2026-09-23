@@ -21,7 +21,7 @@ use Symfony\Component\Process\Process;
 function concurrencyCache(string $backend, string $host, int $port): Repository
 {
     return match ($backend) {
-        'memcached' => new Repository(new MemcachedStore(tap(new Memcached, fn (Memcached $memcached) => $memcached->addServer($host, $port)))),
+        'memcached' => new Repository(new MemcachedStore(tap(new Memcached, fn (Memcached $memcached): bool => $memcached->addServer($host, $port)))),
         'redis' => new Repository(new RedisStore(new RedisManager(new Container, 'phpredis', [
             'default' => ['host' => $host, 'port' => $port, 'database' => 0],
         ]))),

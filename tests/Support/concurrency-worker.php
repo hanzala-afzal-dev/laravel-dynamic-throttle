@@ -25,7 +25,7 @@ require __DIR__.'/../../vendor/autoload.php';
 [, $backend, $host, $port, $prefix, $attempts, $max, $window, $now, $startAt] = $argv;
 
 $cache = match ($backend) {
-    'memcached' => new Repository(new MemcachedStore(tap(new Memcached, fn (Memcached $memcached) => $memcached->addServer($host, (int) $port)))),
+    'memcached' => new Repository(new MemcachedStore(tap(new Memcached, fn (Memcached $memcached): bool => $memcached->addServer($host, (int) $port)))),
     'redis' => new Repository(new RedisStore(new RedisManager(new Container, 'phpredis', [
         'default' => ['host' => $host, 'port' => (int) $port, 'database' => 0],
     ]))),

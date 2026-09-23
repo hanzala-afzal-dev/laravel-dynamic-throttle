@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Afzal\DynamicThrottle\Engine\Attempt;
 use Afzal\DynamicThrottle\Engine\CounterKey;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
@@ -71,14 +72,14 @@ it('AC-11: reports a store that throws as unavailable', function (): void {
             parent::__construct();
         }
 
-        public function increment($key, $value = 1)
+        public function increment($key, $value = 1): void
         {
             throw $this->failure;
         }
     });
     $store = new CacheLimiterStore($cache, new KeyBuilder('dt:'), new FakeClock);
 
-    expect(fn () => $store->attempt(new CounterKey('1', hash('sha256', 'A')), 5, 60))
+    expect(fn (): Attempt => $store->attempt(new CounterKey('1', hash('sha256', 'A')), 5, 60))
         ->toThrow(function (StorageUnavailableException $exception) use ($failure): void {
             expect($exception->getPrevious())->toBe($failure);
         });
@@ -87,7 +88,7 @@ it('AC-11: reports a store that throws as unavailable', function (): void {
 it('AC-18: keeps a rejection when undoing its increment fails', function (): void {
     $cache = new Repository(new class extends ArrayStore
     {
-        public function decrement($key, $value = 1)
+        public function decrement($key, $value = 1): void
         {
             throw new RuntimeException('Connection lost');
         }
@@ -118,6 +119,6 @@ it('AC-11: reports a store whose increment returns false as unavailable', functi
     });
     $store = new CacheLimiterStore($cache, new KeyBuilder('dt:'), new FakeClock);
 
-    expect(fn () => $store->attempt(new CounterKey('1', hash('sha256', 'A')), 5, 60))
+    expect(fn (): Attempt => $store->attempt(new CounterKey('1', hash('sha256', 'A')), 5, 60))
         ->toThrow(StorageUnavailableException::class);
 });
