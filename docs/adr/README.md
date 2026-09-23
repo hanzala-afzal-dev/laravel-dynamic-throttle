@@ -31,10 +31,11 @@ This folder records the important decisions for `laravel-dynamic-throttle`: what
 | [0011](0011-emergency-controls.md) | Emergency controls | Accepted | 3 |
 | [0012](0012-dry-run.md) | Dry-run semantics | Accepted | 2 |
 | [0013](0013-telemetry.md) | Telemetry and metrics | Accepted | 3 |
-| [0014](0014-dashboard-architecture.md) | Dashboard architecture | Accepted | 4–5 |
+| [0014](0014-dashboard-architecture.md) | Dashboard architecture | Superseded by 0018 | 4–5 |
 | [0015](0015-dashboard-security-and-audit.md) | Dashboard security and audit log | Accepted | 4 |
 | [0016](0016-testing-strategy.md) | Testing strategy | Accepted | 0–6 |
 | [0017](0017-versioning-and-release.md) | Versioning and release | Accepted | 6 |
+| [0018](0018-minimal-dashboard.md) | Minimal dashboard: Blade and vanilla JavaScript | Accepted | 4–5 |
 
 ## Template
 

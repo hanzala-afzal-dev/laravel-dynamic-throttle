@@ -1,6 +1,6 @@
 # ADR-0014: Dashboard architecture
 
-- Status: Accepted
+- Status: Superseded by [ADR-0018](0018-minimal-dashboard.md)
 - Date: 2026-09-23
 - Roadmap phase: 4 (API) and 5 (UI)
 - Related: ADR-0015

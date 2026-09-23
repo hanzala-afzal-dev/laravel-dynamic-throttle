@@ -20,15 +20,16 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 **Deliverables**
 - Package skeleton: composer.json, service provider, config, Testbench + Workbench app.
 - Composer scripts: `test`, `analyse` (Larastan), `format` (Pint), `refactor` (Rector).
-- `docker-compose.yml` with Redis, Valkey, Memcached, MySQL, PostgreSQL.
+- `docker-compose.yml` with Redis, Valkey, Memcached, MySQL, PostgreSQL, plus a PHP 8.3 dev container so the suite runs without a local PHP 8.3.
 - GitHub Actions matrix (ADR-0016), with a placeholder smoke test.
 - `CLAUDE.md`, the ADRs, `docs/specs/TEMPLATE.md`.
 - Claude Code Stop hook that runs tests and analysis (ADR-0003).
+- Open-source housekeeping: `LICENSE`, `README.md`, `SECURITY.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, PR template, Dependabot.
 
 **Exit criteria**
 - CI is green across the matrix.
-- The package installs through a path repository into fresh Laravel 12 and 13 apps, and boots.
-- `composer test`, `composer analyse` and `composer format` run locally.
+- The package installs through a path repository into fresh Laravel 12 and 13 apps, and boots (`scripts/verify-install.sh`, also a CI job).
+- `composer test`, `composer analyse` and `composer format` run locally (natively on PHP 8.3+, or through the dev container).
 
 **Fallback:** if the matrix is slow or flaky, run minimum/maximum versions on PRs and the full matrix nightly.
 
@@ -118,10 +119,12 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 
 ---
 
-## Phase 5 — Dashboard UI (L) → release 0.2.0
+## Phase 5 — Dashboard UI (M) → release 0.2.0
+
+Minimal dashboard: server-rendered Blade plus one hand-written JavaScript file, no build step (ADR-0018, which supersedes ADR-0014).
 
 **Specs**
-- SPEC-020: SPA shell, asset route, CSP (ADR-0014)
+- SPEC-020: Blade layout, asset route, security headers and CSP (ADR-0018)
 - SPEC-021: Overview + emergency controls
 - SPEC-022: Rules + dry-run promote
 - SPEC-023: Exemptions
@@ -130,13 +133,13 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 - SPEC-026: Explain tool
 
 **Exit criteria**
-- Vitest suite is green.
-- The end-to-end smoke test passes.
-- CI confirms `dist/` is fresh.
+- Every page has a feature test, including the CSP header and no-inline-code checks (ADR-0018).
+- The end-to-end smoke test passes: create a rule → send requests → see the block in Activity.
+- CI confirms the repository has no `package.json`.
 - Screenshots are in the README.
-- The dashboard works under a strict CSP in the Workbench app.
+- The dashboard works under the strict CSP in the Workbench app.
 
-**Fallback:** if the phase runs more than 50% over its estimate, ship Blade views on the same API, and move the SPA to a later minor release.
+**Fallback:** if the phase runs more than 50% over its estimate, ship 0.2.0 with the API and the finished pages, and move the rest to a later minor release.
 
 ---
 
@@ -164,8 +167,13 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 - Shadow rules: test a new limit next to an enforcing one
 - Scheduled settings ("double limits Friday 18:00–22:00")
 
-## Open decisions (decide in Phase 0)
+## Decisions made in Phase 0 (2026-09-23)
 
-- Vendor name and final package name (Packagist namespace)
-- License (MIT recommended: standard in the Laravel ecosystem)
-- Docs hosting (README + `docs/` folder until 1.0 is enough)
+These were the open decisions of the original roadmap.
+
+- **Package name:** `hanzala-afzal/laravel-dynamic-throttle` on Packagist. PHP namespace `Afzal\DynamicThrottle`.
+- **Repository:** `github.com/hanzala-afzal-dev/laravel-dynamic-throttle`.
+- **License:** MIT, copyright Hanzala Afzal. Contributions are accepted under the same license (inbound = outbound, see `CONTRIBUTING.md`).
+- **Docs hosting:** README + `docs/` folder until 1.0.
+- **PHP floor:** PHP 8.2 support was requested and declined. ADR-0002 stands (`^8.3`).
+- **Dashboard:** minimal Blade + vanilla JavaScript (ADR-0018).
