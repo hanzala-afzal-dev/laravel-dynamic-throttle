@@ -69,7 +69,14 @@ Storage, keys, the time source, the Lua port (SPEC-003), HTTP headers (SPEC-010)
 ## End-to-end verification
 - `composer test -- --filter=SlidingWindowCounter` is green.
 - `composer analyse` is clean.
-- `vendor/bin/pest --mutate --filter=SlidingWindowCounter` gives a mutation score ≥ 85%.
+- `composer test:mutate` gives a mutation score ≥ 85%.
+  - Changed during implementation. The original command, `vendor/bin/pest --mutate --filter=SlidingWindowCounter`, over-reports: every mutant's subprocess receives a second `--filter` and fails, and Pest counts a failing subprocess as a killed mutant. It showed 100% while provably equivalent mutants survived. Never pass `--filter` to `--mutate`; use `--class` to narrow the run.
+  - Result on 2026-09-23: 82 of 84 mutants killed (97.62%). Both survivors change `headroom > 0` to `headroom >= 0`. They are equivalent: at headroom 0, both cases give the same wait.
+
+## Implementation notes
+- Case A applies when `headroom = max − current − 1 > 0`. For a rejected request this implies `previous > 0`, so the division is safe, and it is the spec's case A condition.
+- Case B divides by `current`, which is 0 when `max = 1` and only the previous window has traffic. The next window then allows at once, so the wait is `window − elapsed`.
+- "Minimum of 1" is not just defensive. With float elapsed values from a real clock, a request can be rejected by about 1e-15 while the closed-form wait computes to exactly 0 (previous 11, current 0, elapsed 5.4545454545454541, window 10, max 6). A test covers it.
 
 ## Open questions
 None.
