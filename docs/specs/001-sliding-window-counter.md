@@ -1,6 +1,6 @@
 # SPEC-001: Sliding-window counter formula
 
-- Status: Approved
+- Status: In progress
 - ADRs: ADR-0006
 - Roadmap phase: 1
 
@@ -40,6 +40,7 @@ All with `window = 60`, `max = 10` unless stated.
   - window < 1
   - elapsed < 0
   - elapsed ≥ window
+  - elapsed is NaN (added during implementation: NaN passes both elapsed checks above, because every comparison with NaN is false)
   - previous < 0
   - current < 0
 
