@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle\Engine;
 
 use InvalidArgumentException;
-use LogicException;
 
 /**
  * Builds every cache and Redis key the package uses (CLAUDE.md hard rule).
@@ -26,14 +25,14 @@ final readonly class KeyBuilder
      */
     public function counterBase(CounterKey $key, int $windowSeconds): string
     {
-        throw new LogicException('Not implemented yet (SPEC-003).');
+        return "{$this->prefix}c:{$key->ruleId}:{$windowSeconds}:{$key->identityHash}";
     }
 
     /**
-     * The key for one window of one counter (ADR-0006).
+     * The key for one window of one counter; the cache driver keeps one key per window (ADR-0006).
      */
     public function counter(CounterKey $key, int $windowSeconds, int $windowIndex): string
     {
-        return "{$this->prefix}c:{$key->ruleId}:{$windowSeconds}:{$key->identityHash}:{$windowIndex}";
+        return $this->counterBase($key, $windowSeconds).':'.$windowIndex;
     }
 }
