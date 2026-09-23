@@ -71,7 +71,10 @@
             "@php vendor/bin/testbench serve --ansi"
         ],
         "test": "@php vendor/bin/pest --exclude-group=drivers",
-        "test:drivers": "@php vendor/bin/pest --group=drivers",
+        "test:drivers": [
+            "@putenv DYNAMIC_THROTTLE_DRIVERS=1",
+            "@php vendor/bin/pest --group=drivers,contract"
+        ],
         "test:coverage": "@php vendor/bin/pest --exclude-group=drivers --coverage",
         "test:mutate": "@php vendor/bin/pest --exclude-group=drivers --mutate --min=85 --parallel",
         "analyse": "@php vendor/bin/phpstan analyse --memory-limit=1G",
@@ -82,7 +85,7 @@
     },
     "scripts-descriptions": {
         "test": "Run the test suite (without the driver suite, which needs docker compose services).",
-        "test:drivers": "Run the driver suite against the services from docker-compose.yml.",
+        "test:drivers": "Run the driver tests and the LimiterStore contract suite against every service from docker-compose.yml.",
         "test:coverage": "Run the test suite with code coverage.",
         "test:mutate": "Mutation testing for classes that tests mark with covers(); fails below 85% (ADR-0016).",
         "analyse": "Run static analysis (Larastan).",

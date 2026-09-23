@@ -24,6 +24,9 @@
         <testsuite name="Arch">
             <directory>tests/Arch</directory>
         </testsuite>
+        <testsuite name="Contract">
+            <directory>tests/Contract</directory>
+        </testsuite>
         <testsuite name="Drivers">
             <directory>tests/Drivers</directory>
         </testsuite>
