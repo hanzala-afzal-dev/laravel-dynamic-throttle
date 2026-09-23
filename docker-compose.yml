@@ -1,0 +1,83 @@
+# Local development services (ADR-0016).
+#
+#   docker compose up -d                        start Redis, Valkey, Memcached, MySQL, PostgreSQL
+#   docker compose run --rm php composer test   run the suite with PHP 8.3, no local PHP needed
+#   docker compose run --rm php composer test:drivers
+#   docker compose down -v                      stop everything and delete the data
+#
+# Ports are bound to 127.0.0.1 only, so these unauthenticated test services are
+# never reachable from the network. Credentials below are for local tests only.
+name: dynamic-throttle
+
+services:
+  php:
+    build:
+      context: docker/php
+      args:
+        PHP_VERSION: ${PHP_VERSION:-8.3}
+    image: dynamic-throttle-php:${PHP_VERSION:-8.3}
+    profiles: [tools]
+    working_dir: /app
+    volumes:
+      - .:/app
+      - composer-cache:/tmp/composer-cache
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      VALKEY_HOST: valkey
+      VALKEY_PORT: 6379
+      MEMCACHED_HOST: memcached
+      MEMCACHED_PORT: 11211
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      PGSQL_HOST: postgres
+      PGSQL_PORT: 5432
+
+  redis:
+    image: redis:7.4-alpine
+    ports: ["127.0.0.1:6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    ports: ["127.0.0.1:6380:6379"]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  memcached:
+    image: memcached:1.6-alpine
+    ports: ["127.0.0.1:11211:11211"]
+
+  mysql:
+    image: mysql:8.4
+    command: ["--innodb-buffer-pool-size=64M", "--performance-schema=OFF"]
+    environment:
+      MYSQL_DATABASE: dynamic_throttle
+      MYSQL_USER: throttle
+      MYSQL_PASSWORD: secret
+      MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+    ports: ["127.0.0.1:3307:3306"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uthrottle", "-psecret"]
+      interval: 5s
+      retries: 20
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: dynamic_throttle
+      POSTGRES_USER: throttle
+      POSTGRES_PASSWORD: secret
+    ports: ["127.0.0.1:5433:5432"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "throttle", "-d", "dynamic_throttle"]
+      interval: 5s
+      retries: 20
+
+volumes:
+  composer-cache:
