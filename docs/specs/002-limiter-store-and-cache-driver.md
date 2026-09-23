@@ -45,6 +45,7 @@ Window 60 s and max 5 unless stated. Times are offsets from T0 = 1,800,000,000 s
 - **AC-14 (clock)** `LaravelClock::microseconds()` follows Laravel's time travel: after `travelTo` 2027-01-01 00:00:00.250000 UTC it returns 1,798,761,600,250,000.
 - **AC-16 (contract)** `attempt()` with max < 1 or window < 1 throws `InvalidArgumentException` **before touching the store**. A valid attempt afterwards is still the first: remaining 4. Validating only inside SPEC-001's formula would leave a phantom count from the increment.
 - **AC-17 (cache driver)** A negative count in the previous window key, which only an outside decrement could leave, is read as 0. The attempt is allowed with remaining 4 instead of throwing.
+- **AC-18 (cache driver)** If undoing a rejected attempt's increment fails, `attempt()` still returns the rejection instead of throwing. Throwing would let the fail-open policy allow a request the limiter rejected. The window keeps one extra count: stricter, never looser.
 - **AC-15 (concurrency, Memcached and Redis cache store)** 50 separate processes make 20 attempts each on one key with max 100 and the time frozen at T0+10:
   - at most 100 attempts are allowed and at least 50 (ADR-0016)
   - the stored count equals the number allowed
@@ -82,7 +83,7 @@ Window 60 s and max 5 unless stated. Times are offsets from T0 = 1,800,000,000 s
 - **Missing keys.** Stores differ on `increment` of a missing key: Redis creates it without a TTL, and Memcached and the database store fail. `add` first makes every store behave the same.
 - **Rollback.** Only a key this request just incremented is decremented, so counts never go below 0.
 - **Clock skew between servers.** It only shifts window edges slightly (ADR-0006). The +5 s on the TTL absorbs it.
-- **Store down.** Memcached returns `false` instead of throwing, so an integer check on `increment` catches it. A failure while reading the previous window after a successful increment counts the previous window as 0 (a brief undercount, not an outage).
+- **Store down.** Memcached returns `false` instead of throwing, so an integer check on `increment` catches it. Any failure up to the decision, including reading the previous window after the increment succeeded, raises `StorageUnavailableException`. An increment that already happened then stays in the window: at most one extra count, which is stricter, never looser. A failure while undoing a rejection keeps the rejection (AC-18).
 - **Test isolation on shared services.** Every contract test uses a unique key prefix, so runs never see each other's counters.
 
 ## End-to-end verification

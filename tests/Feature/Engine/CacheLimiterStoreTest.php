@@ -84,6 +84,29 @@ it('AC-11: reports a store that throws as unavailable', function (): void {
         });
 });
 
+it('AC-18: keeps a rejection when undoing its increment fails', function (): void {
+    $cache = new Repository(new class extends ArrayStore
+    {
+        public function decrement($key, $value = 1)
+        {
+            throw new RuntimeException('Connection lost');
+        }
+    });
+    $clock = new FakeClock;
+    $clock->setSeconds(FakeClock::T0 + 10);
+    $store = new CacheLimiterStore($cache, new KeyBuilder('dt:'), $clock);
+    $key = new CounterKey('1', hash('sha256', 'A'));
+
+    foreach (range(1, 5) as $ignored) {
+        $store->attempt($key, 5, 60);
+    }
+    $rejected = $store->attempt($key, 5, 60);
+
+    expect($rejected->allowed)->toBeFalse()
+        ->and($rejected->retryAfter)->toBe(62)
+        ->and($cache->get("dt:c:1:60:{$key->identityHash}:30000000"))->toEqual(6);
+});
+
 it('AC-11: reports a store whose increment returns false as unavailable', function (): void {
     // This is how Memcached reports that it is down.
     $cache = new Repository(new class extends ArrayStore
