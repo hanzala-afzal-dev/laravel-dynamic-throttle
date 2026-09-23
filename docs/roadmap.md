@@ -177,5 +177,8 @@ These were the open decisions of the original roadmap.
 - **Docs hosting:** README + `docs/` folder until 1.0.
 - **PHP floor:** PHP 8.2 support was requested and declined. ADR-0002 stands (`^8.3`).
 - **Laravel floor:** `^12.61.1 || ^13.12.0`, the lowest versions CI tests (ADR-0019, amends ADR-0002).
-- **Repository:** private until 0.1.0. Nightly CI is skipped while private, to save Actions minutes. When it goes public, enable private vulnerability reporting and content reports to admins.
+- **Repository:** private until 0.1.0. Nightly CI is skipped while private, to save Actions minutes. GitHub offers these three settings only on public repositories, or with GitHub Pro. Turn them on when the repository goes public:
+  - private vulnerability reporting (`SECURITY.md` links to it)
+  - branch protection on `main` requiring the `CI passed` check
+  - reported content to repository admins (`CODE_OF_CONDUCT.md` relies on it)
 - **Dashboard:** minimal Blade + vanilla JavaScript (ADR-0018).
