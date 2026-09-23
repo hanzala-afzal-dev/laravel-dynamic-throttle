@@ -18,9 +18,10 @@ final readonly class CounterKey
         public string $ruleId,
         public string $identityHash,
     ) {
-        // \A and \z, because $ would also match before a trailing newline.
-        if (preg_match('/\A[A-Za-z0-9_-]{1,64}\z/', $ruleId) !== 1) {
-            throw new InvalidArgumentException('A rule id must be 1 to 64 characters from A-Z, a-z, 0-9, "_" and "-".');
+        // \A and \z, because $ would also match before a trailing newline. Lowercase only:
+        // MySQL's default collation compares cache keys case-insensitively.
+        if (preg_match('/\A[a-z0-9_-]{1,64}\z/', $ruleId) !== 1) {
+            throw new InvalidArgumentException('A rule id must be 1 to 64 characters from a-z, 0-9, "_" and "-".');
         }
 
         if (preg_match('/\A[0-9a-f]{64}\z/', $identityHash) !== 1) {

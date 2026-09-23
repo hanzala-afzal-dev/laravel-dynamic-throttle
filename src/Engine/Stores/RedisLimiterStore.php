@@ -9,6 +9,7 @@ use Afzal\DynamicThrottle\Engine\Contracts\Clock;
 use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
 use Afzal\DynamicThrottle\Engine\CounterKey;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
+use Afzal\DynamicThrottle\Engine\Internal\AttemptGuard;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Illuminate\Contracts\Redis\Factory as RedisFactory;
 use InvalidArgumentException;
@@ -99,13 +100,7 @@ final readonly class RedisLimiterStore implements LimiterStore
     public function attempt(CounterKey $key, int $maxAttempts, int $windowSeconds): Attempt
     {
         // Same checks as the cache driver, before touching the store (SPEC-002 AC-16).
-        if ($maxAttempts < 1) {
-            throw new InvalidArgumentException("The limit must be at least 1, got {$maxAttempts}.");
-        }
-
-        if ($windowSeconds < 1) {
-            throw new InvalidArgumentException("The window must be at least 1 second, got {$windowSeconds}.");
-        }
+        AttemptGuard::check($maxAttempts, $windowSeconds);
 
         $reply = $this->run($this->keys->counterBase($key, $windowSeconds), [
             (string) $maxAttempts,
@@ -155,11 +150,11 @@ final readonly class RedisLimiterStore implements LimiterStore
                 default => throw new InvalidArgumentException('Unsupported Redis client '.get_debug_type($client).'; use phpredis or predis.'),
             };
         } catch (Throwable $exception) {
-            throw new StorageUnavailableException('The Redis limiter store could not count the request.', (int) $exception->getCode(), $exception);
+            throw StorageUnavailableException::because('The Redis limiter store could not count the request.', $exception);
         }
 
         if (! is_array($reply) || ! array_is_list($reply) || count($reply) !== 4 || count(array_filter($reply, is_int(...))) !== 4) {
-            throw new StorageUnavailableException('The Redis limiter store returned an unexpected reply.');
+            throw StorageUnavailableException::because('The Redis limiter store returned an unexpected reply.');
         }
 
         /** @var array{int, int, int, int} $reply */
@@ -179,7 +174,7 @@ final readonly class RedisLimiterStore implements LimiterStore
         }
 
         if ($reply === false) {
-            throw new StorageUnavailableException('Redis rejected the limiter script: '.$client->getLastError());
+            throw StorageUnavailableException::because('Redis rejected the limiter script: '.$client->getLastError());
         }
 
         return $reply;
@@ -206,7 +201,7 @@ final readonly class RedisLimiterStore implements LimiterStore
         }
 
         if ($reply instanceof PredisError) {
-            throw new StorageUnavailableException('Redis rejected the limiter script: '.$reply->getMessage());
+            throw StorageUnavailableException::because('Redis rejected the limiter script: '.$reply->getMessage());
         }
 
         return $reply;
