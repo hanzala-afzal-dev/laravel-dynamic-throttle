@@ -13,6 +13,7 @@ declare(strict_types=1);
 use Afzal\DynamicThrottle\Engine\CounterKey;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Stores\CacheLimiterStore;
+use Afzal\DynamicThrottle\Engine\Stores\RedisLimiterStore;
 use Afzal\DynamicThrottle\Tests\Support\FakeClock;
 use Illuminate\Cache\MemcachedStore;
 use Illuminate\Cache\RedisStore;
@@ -24,17 +25,22 @@ require __DIR__.'/../../vendor/autoload.php';
 
 [, $backend, $host, $port, $prefix, $attempts, $max, $window, $now, $startAt] = $argv;
 
-$cache = match ($backend) {
-    'memcached' => new Repository(new MemcachedStore(tap(new Memcached, fn (Memcached $memcached): bool => $memcached->addServer($host, (int) $port)))),
-    'redis' => new Repository(new RedisStore(new RedisManager(new Container, 'phpredis', [
-        'default' => ['host' => $host, 'port' => (int) $port, 'database' => 0],
-    ]))),
-    default => throw new InvalidArgumentException("Unknown backend {$backend}."),
-};
-
 $clock = new FakeClock;
 $clock->setSeconds((int) $now);
-$store = new CacheLimiterStore($cache, new KeyBuilder($prefix), $clock);
+$redis = fn (): RedisManager => new RedisManager(new Container, 'phpredis', [
+    'default' => ['host' => $host, 'port' => (int) $port, 'database' => 0],
+]);
+
+$store = match ($backend) {
+    'memcached' => new CacheLimiterStore(
+        new Repository(new MemcachedStore(tap(new Memcached, fn (Memcached $memcached): bool => $memcached->addServer($host, (int) $port)))),
+        new KeyBuilder($prefix),
+        $clock,
+    ),
+    'redis' => new CacheLimiterStore(new Repository(new RedisStore($redis())), new KeyBuilder($prefix), $clock),
+    'redis-driver' => new RedisLimiterStore($redis(), 'default', new KeyBuilder($prefix), $clock),
+    default => throw new InvalidArgumentException("Unknown backend {$backend}."),
+};
 $key = new CounterKey('1', hash('sha256', 'concurrency'));
 
 while (microtime(true) < (float) $startAt) {

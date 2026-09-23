@@ -32,7 +32,7 @@ Window 60 s and max 5 unless stated. Times are offsets from T0 = 1,800,000,000 s
 - **AC-6** After `SCRIPT FLUSH`, an attempt still succeeds, and afterwards `SCRIPT EXISTS` reports the script as loaded. The next attempt runs through `EVALSHA`: INFO commandstats shows `evalsha` calls up by 1 and `eval` calls unchanged.
 - **AC-7** A connection to a closed port makes `attempt()` throw `StorageUnavailableException`.
 - **AC-8 (model-based)** 2,000 seeded random steps over 3 identities:
-  - windows 1, 7 and 60 s; max 1 to 10
+  - windows 3, 7 and 60 s; max 1 to 10. Not 1 s: Redis expires keys in real time after 2 × window + 5 s, and a 7 s lifetime could run out on a slow CI runner while the in-memory reference keeps the counts.
   - the clock advances 0 to 130 s in microseconds between steps
   - each attempt from the Redis driver equals the cache driver's on the array store with the same clock: allowed, remaining, retryAfter and window index
   - no aligned window of any counter allows more than its max

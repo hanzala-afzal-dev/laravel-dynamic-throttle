@@ -14,6 +14,15 @@ it('AC-12: builds the window key from the prefix, rule, window, identity hash an
         ->toBe("dt:c:42:60:{$hash}:30000000");
 });
 
+it('SPEC-003 AC-15: builds the counter base key, and the window key from it', function (): void {
+    $keys = new KeyBuilder('dt:');
+    $hash = hash('sha256', 'A');
+    $key = new CounterKey('42', $hash);
+
+    expect($keys->counterBase($key, 60))->toBe("dt:c:42:60:{$hash}")
+        ->and($keys->counter($key, 60, 30_000_000))->toBe($keys->counterBase($key, 60).':30000000');
+});
+
 it('AC-12: accepts an empty prefix and the default one', function (): void {
     $key = new CounterKey('1', hash('sha256', 'A'));
 

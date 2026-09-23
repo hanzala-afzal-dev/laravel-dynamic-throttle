@@ -25,7 +25,8 @@ use Throwable;
 final readonly class CacheLimiterStore implements LimiterStore
 {
     public function __construct(
-        private Repository $cache,
+        /** The cache store the counters live in; public so driver selection can be checked. */
+        public Repository $cache,
         private KeyBuilder $keys,
         private Clock $clock,
         private SlidingWindowCounter $counter = new SlidingWindowCounter,

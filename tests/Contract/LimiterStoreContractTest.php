@@ -6,6 +6,7 @@ use Afzal\DynamicThrottle\Engine\Attempt;
 use Afzal\DynamicThrottle\Engine\CounterKey;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Stores\CacheLimiterStore;
+use Afzal\DynamicThrottle\Engine\Stores\RedisLimiterStore;
 use Afzal\DynamicThrottle\Tests\Support\FakeClock;
 use Afzal\DynamicThrottle\Tests\Support\StoreUnderTest;
 use Illuminate\Cache\RedisStore;
@@ -17,7 +18,7 @@ use Illuminate\Redis\RedisManager;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 
-covers(CacheLimiterStore::class);
+covers(CacheLimiterStore::class, RedisLimiterStore::class);
 
 /*
 |--------------------------------------------------------------------------
@@ -65,6 +66,21 @@ function contractRedisCache(string $client, string $host, int $port): Repository
     ]);
 
     return new Repository(new RedisStore($redis));
+}
+
+function contractRedisDriver(string $client, string $host, int $port): StoreUnderTest
+{
+    if ($client === 'phpredis' && ! extension_loaded('redis')) {
+        test()->markTestSkipped('ext-redis is not installed.');
+    }
+
+    $clock = new FakeClock;
+    $redis = new RedisManager(new Container, $client, [
+        'default' => ['host' => $host, 'port' => $port, 'database' => 0, 'timeout' => 2.0, 'read_timeout' => 2.0, 'read_write_timeout' => 2.0],
+    ]);
+    $keys = new KeyBuilder('dt-test-'.bin2hex(random_bytes(4)).':');
+
+    return new StoreUnderTest(new RedisLimiterStore($redis, 'default', $keys, $clock), $clock);
 }
 
 function contractDatabaseCache(string $driver, string $host, int $port): CacheRepository
@@ -119,6 +135,12 @@ dataset('limiter stores', function (): iterable {
         )];
         yield "cache driver, Valkey store ({$client})" => [fn (): StoreUnderTest => contractCacheStore(
             contractRedisCache($client, (string) env('VALKEY_HOST', '127.0.0.1'), (int) env('VALKEY_PORT', 6380)),
+        )];
+        yield "Redis driver, Redis ({$client})" => [fn (): StoreUnderTest => contractRedisDriver(
+            $client, (string) env('REDIS_HOST', '127.0.0.1'), (int) env('REDIS_PORT', 6379),
+        )];
+        yield "Redis driver, Valkey ({$client})" => [fn (): StoreUnderTest => contractRedisDriver(
+            $client, (string) env('VALKEY_HOST', '127.0.0.1'), (int) env('VALKEY_PORT', 6380),
         )];
     }
 
