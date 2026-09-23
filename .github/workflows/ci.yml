@@ -1,0 +1,245 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Nightly full matrix (ADR-0016).
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+# Least privilege: every job only reads the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  matrix:
+    name: Pick the test matrix
+    runs-on: ubuntu-latest
+    outputs:
+      tests: ${{ steps.pick.outputs.tests }}
+    steps:
+      - id: pick
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          # ADR-0016: pull requests test the lowest and the highest supported versions;
+          # pushes to main, nightly and manual runs test the full matrix.
+          if [ "$EVENT" = "pull_request" ]; then
+            tests='{"include":[{"php":"8.3","laravel":"12","stability":"prefer-lowest"},{"php":"8.5","laravel":"13","stability":"prefer-stable"}]}'
+          else
+            tests='{"php":["8.3","8.4","8.5"],"laravel":["12","13"],"stability":["prefer-lowest","prefer-stable"]}'
+          fi
+          echo "tests=$tests" >> "$GITHUB_OUTPUT"
+
+  tests:
+    name: PHP ${{ matrix.php }} · Laravel ${{ matrix.laravel }} · ${{ matrix.stability }}
+    needs: matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.matrix.outputs.tests) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: bcmath, intl, pdo_sqlite
+          coverage: none
+          tools: composer:v2
+
+      - name: Install dependencies
+        env:
+          LARAVEL: ${{ matrix.laravel }}
+          STABILITY: ${{ matrix.stability }}
+        run: |
+          composer require "laravel/framework:^${LARAVEL}.0" --no-interaction --no-update
+          composer update "--${STABILITY}" --prefer-dist --no-interaction --no-progress
+
+      - name: Show resolved versions
+        run: composer show --no-ansi | grep -E '^(laravel/framework|orchestra/testbench |pestphp/pest |phpunit/phpunit) '
+
+      - name: Run tests
+        run: composer test
+
+  drivers:
+    name: Drivers · PHP ${{ matrix.php }} · Laravel ${{ matrix.laravel }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { php: '8.3', laravel: '12', stability: prefer-lowest }
+          - { php: '8.5', laravel: '13', stability: prefer-stable }
+    # Same images and ports as docker-compose.yml, so the tests need no extra configuration.
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+      valkey:
+        image: valkey/valkey:8-alpine
+        ports: ['6380:6379']
+        options: >-
+          --health-cmd "valkey-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+      memcached:
+        image: memcached:1.6-alpine
+        ports: ['11211:11211']
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: dynamic_throttle
+          MYSQL_USER: throttle
+          MYSQL_PASSWORD: secret
+          MYSQL_RANDOM_ROOT_PASSWORD: 'yes'
+        ports: ['3307:3306']
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uthrottle -psecret"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: dynamic_throttle
+          POSTGRES_USER: throttle
+          POSTGRES_PASSWORD: secret
+        ports: ['5433:5432']
+        options: >-
+          --health-cmd "pg_isready -U throttle -d dynamic_throttle"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: bcmath, intl, memcached, pcntl, pdo_mysql, pdo_pgsql, redis
+          coverage: none
+          tools: composer:v2
+
+      - name: Fail if a driver extension is missing
+        run: php -r 'foreach (["memcached", "pdo_mysql", "pdo_pgsql", "redis"] as $e) { if (! extension_loaded($e)) { fwrite(STDERR, "Missing ext-$e\n"); exit(1); } }'
+
+      - name: Install dependencies
+        env:
+          LARAVEL: ${{ matrix.laravel }}
+          STABILITY: ${{ matrix.stability }}
+        run: |
+          composer require "laravel/framework:^${LARAVEL}.0" --no-interaction --no-update
+          composer update "--${STABILITY}" --prefer-dist --no-interaction --no-progress
+
+      - name: Run driver tests
+        run: composer test:drivers
+
+  static-analysis:
+    name: Larastan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.3'
+          coverage: none
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Run Larastan
+        run: composer analyse -- --error-format=github
+
+  code-style:
+    name: Code style and repository rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.3'
+          coverage: none
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Pint
+        run: composer format:check
+
+      - name: Rector
+        run: composer refactor:check
+
+      - name: No npm toolchain in the package (ADR-0018)
+        run: |
+          if [ -e package.json ] || [ -e package-lock.json ]; then
+            echo "::error::ADR-0018: the dashboard uses no npm packages, so the repository must not contain package.json."
+            exit 1
+          fi
+
+  install:
+    name: Install into fresh Laravel ${{ matrix.laravel }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        laravel: ['12', '13']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.3'
+          extensions: bcmath, intl, pdo_sqlite
+          coverage: none
+          tools: composer:v2
+
+      - name: Install the package into a fresh Laravel app and boot it
+        env:
+          LARAVEL: ${{ matrix.laravel }}
+        run: bash scripts/verify-install.sh "$LARAVEL" "$RUNNER_TEMP"
+
+  security:
+    name: Dependency audit and licenses
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.5'
+          coverage: none
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Known vulnerabilities in dependencies
+        run: composer audit
+
+      - name: Runtime dependency licenses are permissive
+        run: composer licenses --no-dev --format=json | php scripts/check-licenses.php
