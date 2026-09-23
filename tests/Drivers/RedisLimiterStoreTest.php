@@ -18,21 +18,24 @@ covers(RedisLimiterStore::class);
 | tests/Contract/LimiterStoreContractTest.php. Window 60 s, max 5.
 */
 
-function redisDriverManager(string $client, ?int $port = null): RedisManager
+function redisDriverManager(string $client, ?int $port = null, ?string $username = null): RedisManager
 {
     if ($client === 'phpredis' && ! extension_loaded('redis')) {
         test()->markTestSkipped('ext-redis is not installed.');
     }
 
     return new RedisManager(new Container, $client, [
-        'default' => [
+        'default' => array_filter([
             'host' => (string) env('REDIS_HOST', '127.0.0.1'),
             'port' => $port ?? (int) env('REDIS_PORT', 6379),
             'database' => 0,
             'timeout' => 1.0,
             'read_timeout' => 1.0,
             'read_write_timeout' => 1.0,
-        ],
+            // The ACL test user is created with "nopass", which accepts any password.
+            'username' => $username,
+            'password' => $username !== null ? 'any' : null,
+        ], fn (mixed $value): bool => $value !== null),
     ]);
 }
 
@@ -54,14 +57,6 @@ function redisServer(): Redis
     $redis->connect((string) env('REDIS_HOST', '127.0.0.1'), (int) env('REDIS_PORT', 6379), 1.0);
 
     return $redis;
-}
-
-function redisCommandCalls(string $command): int
-{
-    $stats = redisServer()->info('commandstats');
-    preg_match('/calls=(\d+)/', (string) ($stats["cmdstat_{$command}"] ?? ''), $match);
-
-    return (int) ($match[1] ?? 0);
 }
 
 dataset('redis clients', ['phpredis', 'predis']);
@@ -130,23 +125,35 @@ it('AC-5: takes the time from Redis TIME when there is no test clock', function 
 })->with('redis clients');
 
 it('AC-6: falls back to EVAL after SCRIPT FLUSH, then uses EVALSHA', function (string $client): void {
+    $server = redisServer();
+    // A user that may not run EVAL: its attempts only succeed through EVALSHA.
+    $server->rawCommand('ACL', 'SETUSER', 'dt-evalsha-only', 'reset', 'on', 'nopass', '~*', '&*', '+@all', '-eval');
+
     $clock = new FakeClock;
     $clock->setSeconds(FakeClock::T0 + 10);
-    $store = new RedisLimiterStore(redisDriverManager($client), 'default', new KeyBuilder(redisDriverPrefix()), $clock);
+    $keys = new KeyBuilder(redisDriverPrefix());
+    $store = new RedisLimiterStore(redisDriverManager($client), 'default', $keys, $clock);
+    $evalshaOnly = new RedisLimiterStore(redisDriverManager($client, username: 'dt-evalsha-only'), 'default', $keys, $clock);
     $key = new CounterKey('1', hash('sha256', 'A'));
-    redisServer()->script('flush');
 
-    $afterFlush = $store->attempt($key, 5, 60);
-    $loaded = redisServer()->script('exists', RedisLimiterStore::scriptSha());
+    // This test flushes the script cache. The lock keeps its two dataset rows
+    // apart under --parallel; other tests just fall back to EVAL after a flush.
+    while (! $server->set('dt-test:script-flush-lock', '1', ['nx', 'ex' => 30])) {
+        usleep(10_000);
+    }
 
-    $evalsha = redisCommandCalls('evalsha');
-    $eval = redisCommandCalls('eval');
-    $store->attempt($key, 5, 60);
+    try {
+        $server->script('flush');
+        $afterFlush = $store->attempt($key, 5, 60);
+        $loaded = $server->script('exists', RedisLimiterStore::scriptSha());
+        $throughEvalsha = $evalshaOnly->attempt($key, 5, 60);
+    } finally {
+        $server->del('dt-test:script-flush-lock');
+    }
 
     expect($afterFlush->allowed)->toBeTrue()
         ->and($loaded)->toBe([1])
-        ->and(redisCommandCalls('evalsha') - $evalsha)->toBe(1)
-        ->and(redisCommandCalls('eval') - $eval)->toBe(0);
+        ->and([$throughEvalsha->allowed, $throughEvalsha->remaining])->toBe([true, 3]);
 })->with('redis clients');
 
 it('AC-7: reports a Redis it cannot reach as unavailable', function (string $client): void {

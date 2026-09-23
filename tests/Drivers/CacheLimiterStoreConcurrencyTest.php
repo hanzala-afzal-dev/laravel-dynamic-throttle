@@ -65,4 +65,4 @@ it('AC-15: never allows more than the limit with 50 concurrent processes', funct
     expect($allowed)->toBeLessThanOrEqual(100)
         ->and($allowed)->toBeGreaterThanOrEqual(50)
         ->and((int) concurrencyCache($backend, $host, $port)->get($windowKey))->toBe($allowed);
-})->with('shared cache stores');
+})->with('shared cache stores')->group('concurrency');

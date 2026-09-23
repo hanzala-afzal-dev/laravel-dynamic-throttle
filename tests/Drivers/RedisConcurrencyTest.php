@@ -47,4 +47,4 @@ it('AC-9: allows exactly the limit with 50 concurrent processes', function (): v
 
     expect($allowed)->toBe(100)
         ->and((int) $redis->hGet($hashKey, '30000000'))->toBe(100);
-});
+})->group('concurrency');
