@@ -1,0 +1,95 @@
+# SPEC-002: LimiterStore contract and the generic cache driver
+
+- Status: In progress
+- ADRs: ADR-0005, ADR-0006, ADR-0009, ADR-0010, ADR-0016
+- Roadmap phase: 1
+
+## Problem
+SPEC-001 decides allow or reject from two counts. Nothing stores those counts yet. The package needs one storage contract that every driver implements. It also needs a first driver that works on **any** Laravel cache store, because many apps do not run Redis (ADR-0005).
+
+## Behavior
+- `LimiterStore::attempt(CounterKey $key, int $maxAttempts, int $windowSeconds): Attempt` counts one request for a rule and identity, and returns the decision.
+- The cache driver keeps one cache key per window (ADR-0006): `{prefix}c:{ruleId}:{windowSeconds}:{identityHash}:{windowIndex}`, built only by `KeyBuilder`.
+- **Increment first, then decide.** `add(key, 0, ttl)` creates the current window key with its TTL if it is missing. `increment(key)` counts this request atomically and returns the new count. The count before this request is `new count − 1`, the previous window's count comes from `get`, and SPEC-001 decides.
+  - A rejected request is decremented back, so it is not counted (ADR-0006).
+  - Because the increment is atomic, concurrent requests can never push the allowed total above the limit.
+  - In-flight increments of requests that end up rejected can cause a few early rejections at the limit boundary. ADR-0016 accepts this: `max − workers ≤ allowed ≤ max`.
+- Window keys expire `2 × window + 5` seconds after they are created: long enough to serve as the previous window, plus slack for clock skew.
+- Time comes from the injected `Clock` in integer microseconds, so window index and elapsed time are exact integer arithmetic. In production the clock is Laravel's `Date::now()`, so `travel()` works in tests. Engine code never reads the clock itself (CLAUDE.md, enforced by `tests/Arch`).
+- `CounterKey` only accepts an identity **hash** (64 lowercase hex characters), so a raw IP, token or email can never reach a cache key (ADR-0009). Hashing is SPEC-008's job.
+- Storage failures (an exception from the store, or `increment` returning something other than an integer, which is how Memcached reports that it is down) raise `StorageUnavailableException`. The failure policy (ADR-0010, SPEC-012) decides what to do.
+
+## Acceptance criteria
+Window 60 s and max 5 unless stated. Times are offsets from T0 = 1,800,000,000 s, a multiple of 60, 30 and 3600. **Contract** criteria run against every store: array, file, database on SQLite, MySQL and PostgreSQL, Memcached, and Redis and Valkey as cache stores (phpredis and predis).
+
+- **AC-1 (contract)** A fresh counter at T0+10 allows the first attempt: allowed, remaining 4, retryAfter 0, limit 5, window 60, window index 30,000,000.
+- **AC-2 (contract)** Five attempts at T0+10 are allowed with remaining 4, 3, 2, 1, 0. The sixth is rejected with remaining 0 and retryAfter 62: 50 s to the next window, then 12 s until 5 × (60 − e) / 60 + 1 ≤ 5.
+- **AC-3 (contract)** Rejected attempts are not counted: after the five allowed attempts and three rejected ones at T0+10, an attempt at T0+72 is allowed. Had the three rejections counted, the previous window would hold 8 and still reject.
+- **AC-4 (contract)** The previous window counts in proportion, with max 10. Ten attempts at T0+10 are allowed. At T0+60 the next attempt is rejected (estimate 10). At T0+90 exactly five attempts are allowed and the sixth is rejected (estimate 5).
+- **AC-5 (contract)** Two windows later everything is forgotten: after five attempts at T0+10, an attempt at T0+120 is allowed with remaining 4.
+- **AC-6 (contract)** Counters are isolated. After five attempts on rule "1" and identity A at T0+10, a first attempt is still allowed with remaining 4 for:
+  - rule "1", identity B
+  - rule "2", identity A
+  - rule "1", identity A, window 30
+- **AC-7 (contract)** A lower limit applies at once, because counters are kept when max changes: after three attempts with max 5 at T0+10, an attempt with max 3 is rejected.
+- **AC-8 (contract)** Window edges are exact. An attempt at T0+59.999999 has window index 30,000,000, and one at T0+60.000000 has 30,000,001. Five attempts at T0+59.999999 make an attempt at T0+60 rejected, because the previous window still weighs 5 × 60 / 60.
+- **AC-9 (cache driver)** On the array store, the current window key is `{prefix}c:1:60:{hash}:30000000`. After five allowed attempts and one rejected attempt at T0+10 it holds 5.
+- **AC-10 (cache driver)** Window keys expire 2 × 60 + 5 = 125 s after creation: using Laravel's clock and `travelTo`, the key still exists 124 s after the first attempt and is gone after 126 s.
+- **AC-11 (cache driver)** A store that throws on `increment` makes `attempt()` throw `StorageUnavailableException`, with the store's exception as `previous`. A store whose `increment` returns `false` also makes `attempt()` throw `StorageUnavailableException`.
+- **AC-12 (KeyBuilder)** Prefix `dt:`, rule "42", window 60, window index 30,000,000 and hash `h` (64 hex characters) give exactly `dt:c:42:60:h:30000000`. The prefix may be empty, and is at most 32 characters from `A-Z a-z 0-9 : _ . -`; anything else throws `InvalidArgumentException`. Memcached keys cannot contain spaces or control characters.
+- **AC-13 (CounterKey)** `CounterKey` throws `InvalidArgumentException` when:
+  - the rule id is empty
+  - the rule id is longer than 64 characters
+  - the rule id contains characters outside `A-Z a-z 0-9 _ -`
+  - the identity hash is not exactly 64 lowercase hex characters (so `"203.0.113.9"` or an email address is rejected)
+- **AC-14 (clock)** `LaravelClock::microseconds()` follows Laravel's time travel: after `travelTo` 2027-01-01 00:00:00.250000 UTC it returns 1,798,761,600,250,000.
+- **AC-15 (concurrency, Memcached and Redis cache store)** 50 separate processes make 20 attempts each on one key with max 100 and the time frozen at T0+10:
+  - at most 100 attempts are allowed and at least 50 (ADR-0016)
+  - the stored count equals the number allowed
+
+## Interfaces and files
+- `src/Engine/Contracts/LimiterStore.php`: `attempt(CounterKey $key, int $maxAttempts, int $windowSeconds): Attempt`. `release()` is added by SPEC-004.
+- `src/Engine/Contracts/Clock.php`: `microseconds(): int` (Unix time).
+- `src/Engine/CounterKey.php`: `final readonly`, `string $ruleId`, `string $identityHash`.
+- `src/Engine/Attempt.php`: `final readonly`:
+  - `CounterKey $key`
+  - `int $limit`
+  - `int $windowSeconds`
+  - `int $windowIndex`
+  - `bool $allowed`
+  - `int $remaining`
+  - `int $retryAfter`
+- `src/Engine/KeyBuilder.php`: `final readonly`, `__construct(string $prefix = 'dt:')`, `counter(CounterKey $key, int $windowSeconds, int $windowIndex): string`.
+- `src/Engine/Exceptions/StorageUnavailableException.php`
+- `src/Engine/Stores/CacheLimiterStore.php`: `__construct(Repository $cache, KeyBuilder $keys, Clock $clock, SlidingWindowCounter $counter = new SlidingWindowCounter)`.
+- `src/Support/LaravelClock.php`: outside `Engine`, so the Engine arch rules still forbid clock reads there.
+- Tests:
+  - `tests/Feature/Engine/LimiterStoreContractTest.php`: group `contract`. Local stores always; service stores when `DYNAMIC_THROTTLE_DRIVERS=1`, which `composer test:drivers` sets.
+  - `tests/Feature/Engine/CacheLimiterStoreTest.php`, `tests/Unit/Engine/KeyBuilderTest.php`, `tests/Unit/Engine/CounterKeyTest.php`, `tests/Feature/Support/LaravelClockTest.php`
+  - `tests/Drivers/CacheLimiterStoreConcurrencyTest.php`
+  - `tests/Support/FakeClock.php` and a worker script for the concurrency test
+
+## Out of scope
+- The Redis Lua driver, driver selection and config wiring: SPEC-003.
+- `release()` and compensation: SPEC-004.
+- Identity hashing and scopes: SPEC-008.
+- Telemetry: SPEC-015.
+- Health warnings about file, APCu and database stores: SPEC-016.
+
+## Edge cases and failure modes
+- **Missing keys.** Stores differ on `increment` of a missing key: Redis creates it without a TTL, and Memcached and the database store fail. `add` first makes every store behave the same.
+- **Rollback.** Only a key this request just incremented is decremented, so counts never go below 0.
+- **Clock skew between servers.** It only shifts window edges slightly (ADR-0006). The +5 s on the TTL absorbs it.
+- **Store down.** Memcached returns `false` instead of throwing, so an integer check on `increment` catches it. A failure while reading the previous window after a successful increment counts the previous window as 0 (a brief undercount, not an outage).
+- **Test isolation on shared services.** Every contract test uses a unique key prefix, so runs never see each other's counters.
+
+## End-to-end verification
+- `composer test` (contract suite on the array, file and SQLite stores), `composer analyse`
+- `docker compose up -d && composer test:drivers` (contract suite on every service store, plus the concurrency test)
+- `composer test:mutate` ≥ 85% for `CacheLimiterStore`, `KeyBuilder`, `CounterKey`
+
+## Open questions
+None. Choices made while drafting from the ADRs, open to change at review:
+- **Integer microsecond clock.** Exact window arithmetic; matches Redis `TIME`.
+- **`CounterKey` takes a hash, not the raw identity.** Raw identities can't reach keys, and the choice of hash stays with SPEC-008.
+- **`StorageUnavailableException`** is the one exception type drivers throw for storage failures.
