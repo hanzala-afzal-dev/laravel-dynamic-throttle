@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Afzal\DynamicThrottle\Engine\Attempt;
 use Afzal\DynamicThrottle\Engine\CounterKey;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
@@ -151,6 +152,6 @@ it('AC-6: falls back to EVAL after SCRIPT FLUSH, then uses EVALSHA', function (s
 it('AC-7: reports a Redis it cannot reach as unavailable', function (string $client): void {
     $store = new RedisLimiterStore(redisDriverManager($client, port: 1), 'default', new KeyBuilder('dt:'), new FakeClock);
 
-    expect(fn () => $store->attempt(new CounterKey('1', hash('sha256', 'A')), 5, 60))
+    expect(fn (): Attempt => $store->attempt(new CounterKey('1', hash('sha256', 'A')), 5, 60))
         ->toThrow(StorageUnavailableException::class);
 })->with('redis clients');
