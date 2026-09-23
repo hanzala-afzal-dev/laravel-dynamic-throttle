@@ -34,7 +34,7 @@ Window 60 s and max 5 unless stated. Times are offsets from T0 = 1,800,000,000 s
 - **AC-7 (contract)** A lower limit applies at once, because counters are kept when max changes: after three attempts with max 5 at T0+10, an attempt with max 3 is rejected.
 - **AC-8 (contract)** Window edges are exact. An attempt at T0+59.999999 has window index 30,000,000, and one at T0+60.000000 has 30,000,001. Five attempts at T0+59.999999 make an attempt at T0+60 rejected, because the previous window still weighs 5 × 60 / 60.
 - **AC-9 (cache driver)** On the array store, the current window key is `{prefix}c:1:60:{hash}:30000000`. After five allowed attempts and one rejected attempt at T0+10 it holds 5.
-- **AC-10 (cache driver)** Window keys expire 2 × 60 + 5 = 125 s after creation: using Laravel's clock and `travelTo`, the key still exists 124 s after the first attempt and is gone after 126 s.
+- **AC-10 (cache driver)** Window keys expire 2 × 60 + 5 = 125 s after creation: using Laravel's clock and `travelTo`, the key still exists 124.5 s after the first attempt and is gone after 125.5 s. The checks sit half a second on either side, so a TTL of 124 or 126 s fails.
 - **AC-11 (cache driver)** A store that throws on `increment` makes `attempt()` throw `StorageUnavailableException`, with the store's exception as `previous`. A store whose `increment` returns `false` also makes `attempt()` throw `StorageUnavailableException`.
 - **AC-12 (KeyBuilder)** Prefix `dt:`, rule "42", window 60, window index 30,000,000 and hash `h` (64 hex characters) give exactly `dt:c:42:60:h:30000000`. The prefix may be empty, and is at most 32 characters from `A-Z a-z 0-9 : _ . -`; anything else throws `InvalidArgumentException`. Memcached keys cannot contain spaces or control characters.
 - **AC-13 (CounterKey)** `CounterKey` throws `InvalidArgumentException` when:
@@ -43,8 +43,10 @@ Window 60 s and max 5 unless stated. Times are offsets from T0 = 1,800,000,000 s
   - the rule id contains characters outside `A-Z a-z 0-9 _ -`
   - the identity hash is not exactly 64 lowercase hex characters (so `"203.0.113.9"` or an email address is rejected)
 - **AC-14 (clock)** `LaravelClock::microseconds()` follows Laravel's time travel: after `travelTo` 2027-01-01 00:00:00.250000 UTC it returns 1,798,761,600,250,000.
-- **AC-16 (contract)** `attempt()` with max < 1 or window < 1 throws `InvalidArgumentException` **before touching the store**. A valid attempt afterwards is still the first: remaining 4. Validating only inside SPEC-001's formula would leave a phantom count from the increment.
-- **AC-17 (cache driver)** A negative count in the previous window key, which only an outside decrement could leave, is read as 0. The attempt is allowed with remaining 4 instead of throwing.
+- **AC-16 (contract)** `attempt()` with max < 1 or window < 1 throws `InvalidArgumentException` **before touching the store**. A valid attempt afterwards is still the first: remaining 4. Validating only inside SPEC-001's formula would leave a phantom count from the increment. The smallest valid values work: with max 1 and window 1, the first attempt is allowed with remaining 0, and the second is rejected with retryAfter 2 (the previous window still weighs 1 at the next window's start).
+- **AC-17 (cache driver)** Stored counts are read defensively:
+  - A negative count in either window key, which only an outside decrement could leave, is read as 0. The attempt is allowed with remaining 4 instead of throwing.
+  - A count stored as a numeric string, which is how Redis and Memcached return values, is read as a number.
 - **AC-18 (cache driver)** If undoing a rejected attempt's increment fails, `attempt()` still returns the rejection instead of throwing. Throwing would let the fail-open policy allow a request the limiter rejected. The window keeps one extra count: stricter, never looser.
 - **AC-15 (concurrency, Memcached and Redis cache store)** 50 separate processes make 20 attempts each on one key with max 100 and the time frozen at T0+10:
   - at most 100 attempts are allowed and at least 50 (ADR-0016)
