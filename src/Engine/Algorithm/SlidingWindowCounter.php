@@ -85,9 +85,12 @@ final readonly class SlidingWindowCounter
             throw new InvalidArgumentException("The window must be at least 1 second, got {$window}.");
         }
 
-        // NaN fails every comparison, so it needs its own check.
+        // NaN fails every comparison, so it needs its own check. It is named rather than
+        // converted, because PHP 8.5 warns when NaN is converted to a string.
         if (is_nan($elapsed) || $elapsed < 0 || $elapsed >= $window) {
-            throw new InvalidArgumentException("Elapsed time must be in [0, {$window}), got {$elapsed}.");
+            $shown = is_nan($elapsed) ? 'NaN' : (string) $elapsed;
+
+            throw new InvalidArgumentException("Elapsed time must be in [0, {$window}), got {$shown}.");
         }
 
         if ($previous < 0 || $current < 0) {
