@@ -4,16 +4,19 @@
 # suite and static analysis, and block the turn from ending while they fail.
 #
 # Contract:
-#   exit 0 + no output        checks passed, or nothing relevant changed since the last green run
+#   exit 0 + no output         checks passed, or nothing relevant changed since the last green run
 #   exit 0 + {"systemMessage"} a warning for the user; the turn still ends
 #   exit 2 + stderr            checks failed; the turn continues and Claude sees stderr
 #
-# Loop guard: when Claude is already continuing because of this hook
-# (stop_hook_active is true) and the checks still fail, the hook warns instead
-# of blocking again, so a problem Claude cannot fix never loops forever.
+# It does not block when:
+#   - only tests/ changed since the last green run: that is ADR-0003's Red
+#     step, where failing tests are the goal (it warns instead)
+#   - Claude is already continuing because of this hook (stop_hook_active),
+#     so a problem Claude cannot fix never loops forever (it warns instead)
+#   - neither PHP 8.3+ nor Docker is available (it warns instead)
 #
 # Runner: PHP 8.3+ on the host when available, otherwise the Docker dev
-# container (docker compose run --rm php). If neither works, it only warns.
+# container (docker compose run --rm php).
 set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../.." || exit 0
@@ -31,18 +34,24 @@ warn() {
     exit 0
 }
 
-# Skip when no code, test or tool config changed since the last green run.
+# State of the last green run: line 1 is a fingerprint of everything the checks
+# depend on, line 2 is the commit it was taken at.
 state_file=".claude/verify.state"
-relevant=(src config database routes resources tests workbench composer.json phpunit.xml.dist phpstan.neon.dist)
+implementation=(src config database routes resources workbench composer.json phpunit.xml.dist phpstan.neon.dist)
+relevant=("${implementation[@]}" tests)
+
 fingerprint="$(
     {
         git rev-parse HEAD 2>/dev/null
         git diff HEAD -- "${relevant[@]}" 2>/dev/null
         git ls-files --others --exclude-standard -- "${relevant[@]}" 2>/dev/null \
             | while IFS= read -r file; do printf '%s\n' "$file"; cat -- "$file"; done
-    } | sha1sum | cut -d' ' -f1
+    } | git hash-object --stdin 2>/dev/null
 )"
-if [[ -f "$state_file" && "$(cat "$state_file")" == "$fingerprint" ]]; then
+green_fingerprint="$(sed -n 1p "$state_file" 2>/dev/null)"
+green_head="$(sed -n 2p "$state_file" 2>/dev/null)"
+
+if [[ -n "$fingerprint" && "$fingerprint" == "$green_fingerprint" ]]; then
     exit 0
 fi
 
@@ -62,8 +71,15 @@ else
 fi
 
 if [[ $status -eq 0 ]]; then
-    printf '%s\n' "$fingerprint" > "$state_file"
+    printf '%s\n%s\n' "$fingerprint" "$(git rev-parse HEAD 2>/dev/null)" > "$state_file"
     exit 0
+fi
+
+# Red step: the implementation is unchanged since the last green run, so only tests changed.
+if [[ -n "$green_head" ]] && git cat-file -e "${green_head}^{commit}" 2>/dev/null \
+    && git diff --quiet "$green_head" -- "${implementation[@]}" 2>/dev/null \
+    && [[ -z "$(git ls-files --others --exclude-standard -- "${implementation[@]}" 2>/dev/null)" ]]; then
+    warn "Stop hook: tests fail, but only tests changed since the last green run. This looks like the ADR-0003 Red step: make sure they fail for the right reason, commit them (test: ...), then implement."
 fi
 
 if [[ "$already_blocked" == true ]]; then
