@@ -102,6 +102,16 @@ it('AC-11: retryAfter is at least 1 when rejected and 0 when allowed', function 
     expect($violations)->toHaveCount(0, implode("\n", array_slice($violations, 0, 5)));
 });
 
+it('AC-11: a request rejected by a floating-point hair still waits at least 1 second', function (): void {
+    // With a real clock, elapsed is any float. Here the estimate is 5.0000000000000009,
+    // so the request is rejected, but the closed-form wait computes to exactly 0.
+    $evaluation = (new SlidingWindowCounter)->evaluate(11, 0, 5.4545454545454541, 10, 6);
+
+    expect($evaluation->allowed)->toBeFalse()
+        ->and($evaluation->retryAfter)->toBe(1)
+        ->and(allowedAfterWaiting(11, 0, 5.4545454545454541, 10, 6, 1))->toBeTrue();
+});
+
 it('decides exactly as the formula says for every input on the grid', function (): void {
     $counter = new SlidingWindowCounter;
     $violations = [];
