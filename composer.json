@@ -73,7 +73,7 @@
         "test": "@php vendor/bin/pest --exclude-group=drivers",
         "test:drivers": [
             "@putenv DYNAMIC_THROTTLE_DRIVERS=1",
-            "@php vendor/bin/pest --group=drivers,contract"
+            "@php vendor/bin/pest --group=drivers --group=contract"
         ],
         "test:coverage": "@php vendor/bin/pest --exclude-group=drivers --coverage",
         "test:mutate": "@php vendor/bin/pest --exclude-group=drivers --mutate --min=85 --parallel",

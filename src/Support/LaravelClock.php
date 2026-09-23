@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle\Support;
 
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
-use LogicException;
+use Illuminate\Support\Facades\Date;
 
 /**
  * The application clock, so Laravel's travel() helpers work (ADR-0006).
@@ -14,6 +14,7 @@ final readonly class LaravelClock implements Clock
 {
     public function microseconds(): int
     {
-        throw new LogicException('Not implemented yet (SPEC-002).');
+        // "U" is Unix seconds and "u" six digits of microseconds: exact, no float rounding.
+        return (int) Date::now()->format('Uu');
     }
 }
