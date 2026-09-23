@@ -28,7 +28,10 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
         ], 'dynamic-throttle-config');
 
         AboutCommand::add('Dynamic Throttle', fn (): array => [
-            'Version' => InstalledVersions::getPrettyVersion(self::PACKAGE) ?? 'unknown',
+            // getPrettyVersion() throws when Composer does not know the package.
+            'Version' => InstalledVersions::isInstalled(self::PACKAGE)
+                ? InstalledVersions::getPrettyVersion(self::PACKAGE) ?? 'unknown'
+                : 'unknown',
             'Enabled' => AboutCommand::format(
                 config('dynamic-throttle.enabled'),
                 console: fn (mixed $enabled): string => $enabled === true

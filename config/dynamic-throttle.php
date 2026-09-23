@@ -14,8 +14,10 @@ return [
     | config reload to take effect. For fast, reversible changes during an
     | incident, use the runtime emergency controls instead (docs/adr/0011).
     |
+    | "false", "0", "off" and "no" all disable the package.
+    |
     */
 
-    'enabled' => (bool) env('DYNAMIC_THROTTLE_ENABLED', true),
+    'enabled' => filter_var(env('DYNAMIC_THROTTLE_ENABLED', true), FILTER_VALIDATE_BOOL),
 
 ];
