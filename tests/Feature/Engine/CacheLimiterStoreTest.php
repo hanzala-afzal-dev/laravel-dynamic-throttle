@@ -225,6 +225,57 @@ it('SPEC-004 AC-10: never creates a window key', function (): void {
     expect(Cache::store('array')->has("dt:c:1:60:{$hash}:30000000"))->toBeFalse();
 });
 
+it('SPEC-004 AC-10: only reads a window key that holds 0', function (): void {
+    $arrayStore = new class extends ArrayStore
+    {
+        /** @var list<string> */
+        public array $calls = [];
+
+        public function get($key): mixed
+        {
+            $this->calls[] = 'get';
+
+            return parent::get($key);
+        }
+
+        public function put($key, $value, $seconds): mixed
+        {
+            $this->calls[] = 'put';
+
+            return parent::put($key, $value, $seconds);
+        }
+
+        public function increment($key, $value = 1): mixed
+        {
+            $this->calls[] = 'increment';
+
+            return parent::increment($key, $value);
+        }
+
+        public function decrement($key, $value = 1): mixed
+        {
+            $this->calls[] = 'decrement';
+
+            return parent::decrement($key, $value);
+        }
+
+        public function forget($key): mixed
+        {
+            $this->calls[] = 'forget';
+
+            return parent::forget($key);
+        }
+    };
+    $hash = hash('sha256', 'A');
+    $arrayStore->put("dt:c:1:60:{$hash}:30000000", 0, 125);
+    $arrayStore->calls = [];
+    $store = new CacheLimiterStore(new Repository($arrayStore), new KeyBuilder('dt:'), new FakeClock);
+
+    $store->release(new Attempt(new CounterKey('1', $hash), 5, 60, 30_000_000, true, 4, 0));
+
+    expect($arrayStore->calls)->toBe(['get']);
+});
+
 it('SPEC-004 AC-12: reports a store that throws while releasing as unavailable', function (string $failing): void {
     $failure = new RuntimeException('Connection refused');
     $arrayStore = new class($failure, $failing) extends ArrayStore
