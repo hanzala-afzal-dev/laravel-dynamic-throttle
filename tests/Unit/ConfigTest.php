@@ -107,3 +107,29 @@ it('AC-7: falls back to 5 rules for a cap below 1 or not a whole number', functi
         unset($_SERVER['DYNAMIC_THROTTLE_MAX_RULES']);
     }
 })->with(['0', '-1', 'many', '1.5', 'true', '(true)']);
+
+/*
+| SPEC-008 AC-17: the scopes section.
+*/
+
+it('AC-17: groups IPv6 by /64 unless DYNAMIC_THROTTLE_IPV6_PREFIX says otherwise, and uses the authenticated guard', function (): void {
+    expect(loadPackageConfig()['scopes'])->toBe(['ip' => ['ipv6_prefix' => 64], 'user' => ['guards' => null]]);
+
+    $_SERVER['DYNAMIC_THROTTLE_IPV6_PREFIX'] = '48';
+
+    try {
+        expect(loadPackageConfig()['scopes']['ip']['ipv6_prefix'])->toBe(48);
+    } finally {
+        unset($_SERVER['DYNAMIC_THROTTLE_IPV6_PREFIX']);
+    }
+});
+
+it('AC-17: falls back to /64 for a prefix outside 1 to 128 or not a whole number', function (string $value): void {
+    $_SERVER['DYNAMIC_THROTTLE_IPV6_PREFIX'] = $value;
+
+    try {
+        expect(loadPackageConfig()['scopes']['ip']['ipv6_prefix'])->toBe(64);
+    } finally {
+        unset($_SERVER['DYNAMIC_THROTTLE_IPV6_PREFIX']);
+    }
+})->with(['0', '129', 'wide', '1.5', 'true']);

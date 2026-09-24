@@ -100,7 +100,7 @@ Unless stated otherwise, resolver criteria use `RequestIdentityResolver` on a `R
 - **AC-11 Registration:**
   - A `ScopeResolver` class name is resolved from the container.
   - Registering a name again replaces the resolver.
-  - `Plan`, `''` and a 65-character name are rejected at registration with an `InvalidArgumentException`.
+  - `Plan`, `''` and a 65-character name are rejected at registration with an `InvalidArgumentException`, and so is a class that is not a `ScopeResolver`.
 
 ### Errors, memoization and hashing
 - **AC-12 Resolution errors.** Take a rule `a` that counts, then a rule `b` whose scope fails in each of these ways:
@@ -109,7 +109,7 @@ Unless stated otherwise, resolver criteria use `RequestIdentityResolver` on a `R
   - its resolver returns `['x']`, `new stdClass` or `true`
   - `scopes.user.guards` lists an undefined guard
 
-  In every case, `evaluate()` returns `Failed` for rule `b` with an `IdentityUnavailableException` that names the scope and keeps the cause as its previous exception. Rule `a` keeps its count, and `evaluate()` does not throw.
+  In every case, `evaluate()` returns `Failed` for rule `b` with an `IdentityUnavailableException` that names the scope, and keeps the cause as its previous exception when there is one. Rule `a` keeps its count, and `evaluate()` does not throw.
 - **AC-13 Once per request:**
   - Three matched rules with the custom scope `plan` call the resolver once.
   - Two requests call it once each, with their own values.
@@ -120,6 +120,7 @@ Unless stated otherwise, resolver criteria use `RequestIdentityResolver` on a `R
 - **AC-15 Keyed hashing** (ADR-0024):
   - The same identity under two app keys hashes differently, and neither hash is the plain SHA-256 of the identity.
   - Without an app key, the hash is the plain SHA-256.
+  - A known identity under a known key always hashes to the same value, because a changed hash would reset every counter.
 
 ### Tenants, config and arch
 - **AC-16 Per-tenant limits** (ADR-0020 point 8). One rule has the custom scope `tenant`, max 2, window 60, on the cache driver with the fake clock:
@@ -142,15 +143,17 @@ Unless stated otherwise, resolver criteria use `RequestIdentityResolver` on a `R
 - `src/Engine/Identity/ScopeIdentity.php`: the identity for a rule, from the scope's value and the grouped IP, or `null` to skip.
 - `src/Engine/Identity/IdentityHasher.php`: hashes an identity.
 - `src/Engine/Exceptions/IdentityUnavailableException.php`. `RuleEvaluator` catches it, and `RuleFailure` accepts it as well as a `StorageUnavailableException`.
-- `src/Http/RequestIdentityResolver.php`: implements `Engine\Contracts\IdentityResolver` for one request. `forRequest(Request)` is what SPEC-010's middleware calls.
+- `src/Http/RequestIdentityResolver.php`: implements `Engine\Contracts\IdentityResolver` for one request. The container builds it for a request, `make(RequestIdentityResolver::class, ['request' => $request])`, as SPEC-010's middleware will.
+- `src/Http/IdentitySettings.php`: the `scopes` section, checked, as the provider binds it.
 - `config/dynamic-throttle.php`: the `scopes` section, with `ip.ipv6_prefix` and `user.guards`.
 - Tests:
   - `tests/Feature/Http/RequestIdentityResolverTest.php`: AC-1 to AC-13
-  - `tests/Unit/Engine/Identity/`: the pure parts
+  - `tests/Unit/Engine/Identity/ClientIpTest.php` and `ScopeIdentityTest.php`: the pure parts of AC-1 to AC-10
+  - `tests/Unit/Engine/Stacking/RuleEvaluatorTest.php`: AC-12 in the evaluator
   - `tests/Feature/Http/IdentityKeysTest.php`: AC-14
-  - `tests/Unit/Engine/Identity/IdentityHasherTest.php`: AC-15
+  - `tests/Unit/Engine/Identity/IdentityHasherTest.php`: AC-14 and AC-15
   - `tests/Feature/Http/TenantScopeTest.php`: AC-16
-  - `tests/Unit/ConfigTest.php`: AC-17
+  - `tests/Unit/ConfigTest.php` and `tests/Feature/ServiceProviderTest.php`: AC-17, and the one registry behind the facade
   - `tests/Arch/ArchTest.php`: AC-18
 
 ## Out of scope
