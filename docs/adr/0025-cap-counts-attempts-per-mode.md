@@ -56,3 +56,7 @@
   - Seven dry-run rules and one enforcing rule after them: five dry-run rules count, two are ignored, and the enforcing rule counts.
 - An ignored rule's identity is never resolved.
 - The container's evaluator takes its cap from `matching.max_rules_per_request`, and the matcher returns every match.
+
+## Decision record
+
+Accepted on 2026-09-24. The maintainer accepted the recommendation behind it: SPEC-008's open question 5, and PR #4's question 2. In PR #6, the maintainer also confirmed that dry-run rules share `matching.max_rules_per_request` with enforcing rules, and that a separate key waits for the benchmark (see the fallback).
