@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-23
 - Roadmap phase: 2
+- Amended by: [ADR-0021](0021-compensation-dry-run-and-failed-release.md) (dry-run rules are released like enforcing rules)
 - Related: ADR-0008, ADR-0013
 
 ## Context

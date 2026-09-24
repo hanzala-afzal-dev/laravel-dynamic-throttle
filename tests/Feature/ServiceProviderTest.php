@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Afzal\DynamicThrottle\DynamicThrottleServiceProvider;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\File;
+use Illuminate\Support\ServiceProvider;
 
 /*
 | Phase 0 smoke tests: the package boots inside a Laravel application.
@@ -19,17 +19,14 @@ it('merges the package config under the dynamic-throttle key', function (): void
 });
 
 it('publishes the config file with the dynamic-throttle-config tag', function (): void {
-    $target = config_path('dynamic-throttle.php');
-    File::delete($target);
+    // Checks the mapping instead of copying the file: a copy in Testbench's shared
+    // config folder breaks other workers under --parallel. scripts/verify-install.sh
+    // publishes for real into a fresh Laravel app.
+    $paths = ServiceProvider::pathsToPublish(DynamicThrottleServiceProvider::class, 'dynamic-throttle-config');
 
-    try {
-        $this->artisan('vendor:publish', ['--tag' => 'dynamic-throttle-config'])->assertSuccessful();
-
-        expect($target)->toBeFile()
-            ->and(File::get($target))->toBe(File::get(__DIR__.'/../../config/dynamic-throttle.php'));
-    } finally {
-        File::delete($target);
-    }
+    expect($paths)->toHaveCount(1)
+        ->and(realpath((string) array_key_first($paths)))->toBe(realpath(__DIR__.'/../../config/dynamic-throttle.php'))
+        ->and(array_values($paths))->toBe([config_path('dynamic-throttle.php')]);
 });
 
 it('reports its version and kill switch in php artisan about', function (): void {

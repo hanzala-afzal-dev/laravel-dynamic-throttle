@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-23
 - Roadmap phase: 2
+- Amended by: [ADR-0020](0020-laravel-ecosystem-coexistence.md) (`dynamic_throttle_*` table names, a configurable connection, published migrations)
 - Related: ADR-0005, ADR-0010, ADR-0011
 
 ## Context

@@ -36,6 +36,7 @@
         "orchestra/testbench": "^10.6 || ^11.0",
         "pestphp/pest": "^4.1 || ^5.0",
         "pestphp/pest-plugin-laravel": "^4.0 || ^5.0",
+        "phpbench/phpbench": "^1.7",
         "predis/predis": "^2.3 || ^3.0",
         "rector/rector": "^2.1"
     },
@@ -51,6 +52,7 @@
     },
     "autoload-dev": {
         "psr-4": {
+            "Afzal\\DynamicThrottle\\Benchmarks\\": "benchmarks/",
             "Afzal\\DynamicThrottle\\Tests\\": "tests/",
             "Workbench\\App\\": "workbench/app/",
             "Workbench\\Database\\Factories\\": "workbench/database/factories/",
@@ -71,8 +73,16 @@
             "@php vendor/bin/testbench serve --ansi"
         ],
         "test": "@php vendor/bin/pest --exclude-group=drivers",
-        "test:drivers": "@php vendor/bin/pest --group=drivers",
+        "test:drivers": [
+            "@putenv DYNAMIC_THROTTLE_DRIVERS=1",
+            "@php vendor/bin/pest --group=drivers --group=contract"
+        ],
         "test:coverage": "@php vendor/bin/pest --exclude-group=drivers --coverage",
+        "test:mutate": [
+            "@putenv DYNAMIC_THROTTLE_DRIVERS=1",
+            "@php vendor/bin/pest --exclude-group=concurrency --mutate --everything --path=src/Engine --min=85 --parallel"
+        ],
+        "bench": "@php vendor/bin/phpbench run --report=engine",
         "analyse": "@php vendor/bin/phpstan analyse --memory-limit=1G",
         "format": "@php vendor/bin/pint",
         "format:check": "@php vendor/bin/pint --test",
@@ -81,8 +91,10 @@
     },
     "scripts-descriptions": {
         "test": "Run the test suite (without the driver suite, which needs docker compose services).",
-        "test:drivers": "Run the driver suite against the services from docker-compose.yml.",
+        "test:drivers": "Run the driver tests and the LimiterStore contract suite against every service from docker-compose.yml.",
         "test:coverage": "Run the test suite with code coverage.",
+        "test:mutate": "Mutation testing of everything in src/Engine, with the service suites (needs docker compose up -d); fails below 85% (ADR-0016).",
+        "bench": "Run the PHPBench suite (needs docker compose up -d); publish numbers only with the hardware stated (ADR-0016).",
         "analyse": "Run static analysis (Larastan).",
         "format": "Fix code style (Pint).",
         "format:check": "Check code style without changing files.",

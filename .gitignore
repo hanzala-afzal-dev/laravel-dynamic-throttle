@@ -9,6 +9,7 @@ composer.lock
 /coverage/
 /.phpstan-cache/
 /.pint-cache/
+/.phpbench/
 
 # Local environment
 .env

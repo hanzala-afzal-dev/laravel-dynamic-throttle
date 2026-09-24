@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-23
 - Roadmap phase: 2
+- Amended by: [ADR-0020](0020-laravel-ecosystem-coexistence.md) (the `except` list, `middleware.after`, the two-limiter check, nothing attached by default)
 - Related: ADR-0009
 
 ## Context

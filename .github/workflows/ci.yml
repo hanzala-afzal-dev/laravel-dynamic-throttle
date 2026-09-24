@@ -161,6 +161,69 @@ jobs:
       - name: Run driver tests
         run: composer test:drivers
 
+  mutation:
+    name: Mutation testing
+    needs: matrix
+    # ADR-0016: on pull requests and nightly. Skipped on pushes to main, where the
+    # merged pull request already passed it.
+    if: needs.matrix.outputs.run == 'true' && github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The Redis driver is only exercised against a real Redis, so mutation testing
+    # needs the same services as the driver job.
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+      valkey:
+        image: valkey/valkey:8-alpine
+        ports: ['6380:6379']
+        options: >-
+          --health-cmd "valkey-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+      memcached:
+        image: memcached:1.6-alpine
+        ports: ['11211:11211']
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: dynamic_throttle
+          MYSQL_USER: throttle
+          MYSQL_PASSWORD: secret
+          MYSQL_RANDOM_ROOT_PASSWORD: 'yes'
+        ports: ['3307:3306']
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uthrottle -psecret"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: dynamic_throttle
+          POSTGRES_USER: throttle
+          POSTGRES_PASSWORD: secret
+        ports: ['5433:5432']
+        options: >-
+          --health-cmd "pg_isready -U throttle -d dynamic_throttle"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.3'
+          extensions: bcmath, intl, memcached, pcntl, pdo_mysql, pdo_pgsql, pdo_sqlite, redis
+          coverage: pcov
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Mutation score of at least 85% for src/Engine
+        run: composer test:mutate
+
   static-analysis:
     name: Larastan
     needs: matrix
@@ -209,6 +272,18 @@ jobs:
 
       - name: Rector
         run: composer refactor:check
+
+      # What `composer require` downloads is `git archive` of the tag, filtered by the
+      # export-ignore rules in .gitattributes. Users get the package, nothing else.
+      - name: The Composer download contains only package files
+        run: |
+          allowed='^(src|config|database|resources|routes|lang)/|^(composer\.json|LICENSE|README\.md|CHANGELOG\.md|SECURITY\.md)$'
+          unexpected="$(git archive HEAD | tar -t | grep -v '/$' | grep -v -E "$allowed" || true)"
+          if [ -n "$unexpected" ]; then
+            echo "::error::These files would ship to users. Add them to export-ignore in .gitattributes, or to this allowlist if users need them:"
+            echo "$unexpected"
+            exit 1
+          fi
 
       - name: No npm toolchain in the package (ADR-0018)
         run: |
@@ -265,8 +340,14 @@ jobs:
       - name: Install dependencies
         run: composer update --prefer-dist --no-interaction --no-progress
 
+      # Abandoned packages fail the build only among the runtime dependencies users
+      # install. Dev tools are listed without failing: PHPBench (ADR-0016) still
+      # needs the abandoned doctrine/annotations.
       - name: Known vulnerabilities in dependencies
-        run: composer audit
+        run: composer audit --abandoned=report
+
+      - name: No abandoned runtime dependencies
+        run: composer audit --no-dev --abandoned=fail
 
       - name: Runtime dependency licenses are permissive
         run: composer licenses --no-dev --format=json | php scripts/check-licenses.php
@@ -277,7 +358,7 @@ jobs:
   ci-passed:
     name: CI passed
     if: always()
-    needs: [matrix, tests, drivers, static-analysis, code-style, install, security]
+    needs: [matrix, tests, drivers, mutation, static-analysis, code-style, install, security]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any job failed or was cancelled

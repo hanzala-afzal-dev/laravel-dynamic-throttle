@@ -1,6 +1,6 @@
 # SPEC-001: Sliding-window counter formula
 
-- Status: Approved
+- Status: In progress
 - ADRs: ADR-0006
 - Roadmap phase: 1
 
@@ -40,6 +40,7 @@ All with `window = 60`, `max = 10` unless stated.
   - window < 1
   - elapsed < 0
   - elapsed ≥ window
+  - elapsed is NaN (added during implementation: NaN passes both elapsed checks above, because every comparison with NaN is false)
   - previous < 0
   - current < 0
 
@@ -68,7 +69,15 @@ Storage, keys, the time source, the Lua port (SPEC-003), HTTP headers (SPEC-010)
 ## End-to-end verification
 - `composer test -- --filter=SlidingWindowCounter` is green.
 - `composer analyse` is clean.
-- `vendor/bin/pest --mutate --filter=SlidingWindowCounter` gives a mutation score ≥ 85%.
+- `composer test:mutate` gives a mutation score ≥ 85%. It mutates everything in `src/Engine` (ADR-0016), not only classes a test names in `covers()`.
+  - Changed during implementation. The original command, `vendor/bin/pest --mutate --filter=SlidingWindowCounter`, over-reports. Pest keeps the user's `--filter` and adds its own for each mutant. PHPUnit 12 then warns "Option --filter cannot be used more than once", `failOnPhpunitWarning` makes that exit 1, and Pest counts any failing subprocess as a killed mutant. It showed 100% while mutants survived. This is how PHPUnit behaves, not a Pest bug a later version will fix. Never pass `--filter` to `--mutate`; use `--class` or `--path` to narrow the run.
+  - Result on 2026-09-23: every mutant in `src/Engine` killed (145 of 145, with SPEC-002 included). An earlier run looked as if two mutants of `headroom > 0` could never be killed. In floats they can: see the test "retryAfter agrees with the limiter's own arithmetic at a floating-point edge".
+
+## Implementation notes
+- Case A applies when `headroom = max − current − 1 > 0`. For a rejected request this implies `previous > 0`, so the division is safe, and it is the spec's case A condition.
+- Case B divides by `current`, which is 0 when `max = 1` and only the previous window has traffic. The next window then allows at once, so the wait is `window − elapsed`.
+- `retryAfter` is exact **with respect to the limiter's own floating-point arithmetic**, and that is what decides the retried request. In exact real arithmetic it can differ by one second when the exact wait lies within a few units of float precision (about 1e-15 s) of a whole second. Example: previous 1, current 9, elapsed 54.999999999999993 gives 5, where exact arithmetic says 6. The request retried after 5 s is allowed. A review measured 0 such cases in 40,000 random inputs; they are harmless.
+- "Minimum of 1" is not just defensive. With float elapsed values from a real clock, a request can be rejected by about 1e-15 while the closed-form wait computes to exactly 0 (previous 11, current 0, elapsed 5.4545454545454541, window 10, max 6). A test covers it.
 
 ## Open questions
 None.
