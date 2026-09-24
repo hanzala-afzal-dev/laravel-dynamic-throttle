@@ -38,13 +38,23 @@ afterEach(function (): void {
 
 /**
  * A request whose IP Symfony cannot read: the app trusts the proxy for both
- * Forwarded and X-Forwarded-For, and the two disagree.
+ * Forwarded and X-Forwarded-For, and the two disagree. Symfony throws only on
+ * the first read, and answers 0.0.0.0 after that.
  */
-function conflictingForwardedRequest(): Request
+function conflictingForwardedRequest(string $forwarded = '198.51.100.1', string $forwardedFor = '198.51.100.2'): Request
 {
     Request::setTrustedProxies(['203.0.113.7'], Request::HEADER_FORWARDED | Request::HEADER_X_FORWARDED_FOR);
 
-    return Identities::request('203.0.113.7', ['Forwarded' => 'for=198.51.100.1', 'X-Forwarded-For' => '198.51.100.2']);
+    return Identities::request('203.0.113.7', ['Forwarded' => "for={$forwarded}", 'X-Forwarded-For' => $forwardedFor]);
+}
+
+/**
+ * @param  list<RuleFailure>|list<RuleAttempt>  $items
+ * @return list<string>
+ */
+function identityRuleIds(array $items): array
+{
+    return array_map(fn (RuleFailure|RuleAttempt $item): string => $item->rule->id, $items);
 }
 
 it('AC-1: gives requests from one IPv4 address one identity, and another address another', function (): void {
@@ -435,6 +445,43 @@ it('AC-12: reads the client IP only for a rule that needs it', function (): void
         ->toThrow(IdentityUnavailableException::class, 'The identity for ip could not be resolved');
 });
 
+it('AC-12: fails every rule that needs an unreadable client IP, not only the first, with the same cause', function (): void {
+    // b is an ip rule, and c a user rule that falls back to the IP for a guest.
+    $rules = [Identities::rule('global', id: 'a'), Identities::rule('ip', id: 'b'), Identities::rule('user', id: 'c'), Identities::rule('global', id: 'd')];
+
+    $evaluation = (new RuleEvaluator(Identities::store()))->evaluate($rules, Identities::resolver(conflictingForwardedRequest()));
+    $ip = $evaluation->failures[0] ?? null;
+    $guest = $evaluation->failures[1] ?? null;
+
+    expect(identityRuleIds($evaluation->failures))->toBe(['b', 'c'])
+        ->and(identityRuleIds($evaluation->attempts))->toBe(['a', 'd'])
+        ->and($ip?->exception->getMessage())->toStartWith('The identity for ip could not be resolved: the client IP could not be read')
+        ->and($guest?->exception->getMessage())->toStartWith('The identity for user could not be resolved: the client IP could not be read')
+        ->and($ip?->exception->getPrevious())->toBeInstanceOf(ConflictingHeadersException::class)
+        ->and($guest?->exception->getPrevious())->toBe($ip?->exception->getPrevious());
+});
+
+it('AC-12: never counts two clients whose IP cannot be read under one identity', function (): void {
+    $evaluator = new RuleEvaluator(Identities::store());
+    $rules = [Identities::rule('ip', id: 'a'), Identities::rule('ip', id: 'b', max: 1)];
+
+    $first = $evaluator->evaluate($rules, Identities::resolver(conflictingForwardedRequest('198.51.100.1', '198.51.100.2')));
+    $second = $evaluator->evaluate($rules, Identities::resolver(conflictingForwardedRequest('192.0.2.1', '192.0.2.2')));
+
+    expect([$first->outcome, $second->outcome])->toBe([EvaluationOutcome::Failed, EvaluationOutcome::Failed])
+        ->and(identityRuleIds($second->failures))->toBe(['a', 'b'])
+        ->and($second->attempts)->toBe([]);
+});
+
+it('AC-12: reads the client IP from a copy of the request, so the request\'s own ip() still throws', function (): void {
+    $request = conflictingForwardedRequest();
+
+    $evaluation = (new RuleEvaluator(Identities::store()))->evaluate([Identities::rule('ip')], Identities::resolver($request));
+
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Failed)
+        ->and(fn (): ?string => $request->ip())->toThrow(ConflictingHeadersException::class);
+});
+
 it('AC-13: resolves each scope once per request, however many rules use it', function (): void {
     $calls = 0;
     DynamicThrottle::scope('plan', function (Request $request) use (&$calls): ?string {
@@ -474,9 +521,11 @@ it('AC-13: asks a scope that fails once per request, and fails every rule that u
         config()->set('auth.guards.failing', ['driver' => 'failing']);
         config()->set('dynamic-throttle.scopes.user.guards', ['failing']);
     }
+    // A parameter left on a user rule, which takes none, must not make the guard asked again.
     $rules = array_map(
-        fn (string $id): CompiledRule => Identities::rule($scope, parameter: $scope === 'custom' ? 'plan' : null, id: $id),
+        fn (string $id, ?string $parameter): CompiledRule => Identities::rule($scope, parameter: $parameter, id: $id),
         ['p1', 'p2', 'p3'],
+        $scope === 'custom' ? ['plan', 'plan', 'plan'] : [null, 'x', 'web'],
     );
 
     $evaluation = (new RuleEvaluator(Identities::store()))->evaluate($rules, Identities::resolver(Identities::request()));
