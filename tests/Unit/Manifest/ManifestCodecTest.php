@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Afzal\DynamicThrottle\Manifest\Manifest;
 use Afzal\DynamicThrottle\Enums\FailurePolicy;
 use Afzal\DynamicThrottle\Enums\MissingIdentity;
 use Afzal\DynamicThrottle\Enums\RequestMethod;
@@ -45,7 +46,7 @@ it('AC-2: writes exactly the rule fields requests need', function (): void {
 });
 
 it('AC-16: rejects anything but a manifest of the current format', function (string $json): void {
-    expect(fn () => ManifestCodec::decode($json))->toThrow(InvalidManifest::class);
+    expect(fn (): Manifest => ManifestCodec::decode($json))->toThrow(InvalidManifest::class);
 })->with(function (): iterable {
     $manifest = fn (array $data): string => json_encode($data, JSON_THROW_ON_ERROR);
     $withRule = fn (array $rule): string => $manifest(['format' => 1, 'version' => 1, 'rules' => [$rule]]);

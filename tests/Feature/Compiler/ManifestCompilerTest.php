@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Afzal\DynamicThrottle\Compiler\CompileResult;
 use Afzal\DynamicThrottle\Compiler\InvalidRuleSkipped;
 use Afzal\DynamicThrottle\Compiler\ManifestCompileFailed;
 use Afzal\DynamicThrottle\Compiler\ManifestCompiler;
@@ -203,7 +204,7 @@ it('AC-6: leaves the stored manifest untouched when writing it fails', function 
     $before = $failing->cache->get('dt:m');
     $failing->store->failing = true;
 
-    expect(fn () => $compiler->compile())
+    expect(fn (): CompileResult => $compiler->compile())
         ->toThrow(function (ManifestCompileFailed $exception): void {
             expect($exception->getPrevious()?->getMessage())->toBe('The store is down.');
         })
@@ -217,7 +218,7 @@ it('AC-7: waits for the compile lock, then fails without writing', function (): 
     $held->get();
 
     try {
-        expect(fn () => (new ManifestCompiler(Cache::store(), new KeyBuilder('dt:'), lockWaitSeconds: 0))->compile())
+        expect(fn (): CompileResult => (new ManifestCompiler(Cache::store(), new KeyBuilder('dt:'), lockWaitSeconds: 0))->compile())
             ->toThrow(ManifestCompileFailed::class)
             ->and(Cache::get('dt:m'))->toBeNull();
     } finally {

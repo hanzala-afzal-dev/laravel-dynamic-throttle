@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Afzal\DynamicThrottle\Manifest\Manifest;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Manifest\Contracts\ManifestRebuilder;
 use Afzal\DynamicThrottle\Manifest\InvalidManifest;
@@ -149,7 +150,7 @@ it('AC-15: serves no rules, and rebuilds once, after the response', function ():
     app()->terminate();
     $rebuilt = $repository->current();
 
-    expect(array_map(fn ($manifest): array => [$manifest->state, $manifest->rules], $manifests))
+    expect(array_map(fn (Manifest $manifest): array => [$manifest->state, $manifest->rules], $manifests))
         ->toBe(array_fill(0, 3, [ManifestState::Missing, []]))
         ->and([$beforeTerminate, $rebuilder->calls])->toBe([0, 1])
         ->and([$rebuilt->version, $rebuilt->state])->toBe([9, ManifestState::Fresh]);
