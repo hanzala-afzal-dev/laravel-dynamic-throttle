@@ -64,6 +64,11 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
             __DIR__.'/../config/dynamic-throttle.php' => $this->app->configPath('dynamic-throttle.php'),
         ], 'dynamic-throttle-config');
 
+        // Published, never loaded: the app owns its schema (ADR-0020 point 7).
+        $this->publishesMigrations([
+            __DIR__.'/../database/migrations' => $this->app->databasePath('migrations'),
+        ], 'dynamic-throttle-migrations');
+
         AboutCommand::add('Dynamic Throttle', fn (): array => [
             // getPrettyVersion() throws when Composer does not know the package.
             'Version' => InstalledVersions::isInstalled(self::PACKAGE)

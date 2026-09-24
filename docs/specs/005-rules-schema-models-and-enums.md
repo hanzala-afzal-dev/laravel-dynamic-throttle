@@ -63,7 +63,7 @@ Rules are data (ADR-0001), stored in the database (ADR-0007). Before anything ca
   | `mode` | string(16) | `enforce` | `RuleMode` (ADR-0012) |
   | `on_failure` | string(16) | `open` | `FailurePolicy` (ADR-0010) |
   | `on_missing_identity` | string(16) | `ip` | `MissingIdentity` (ADR-0009, ADR-0022) |
-  | `response_override` | json, nullable | `null` | ≤ 4 KB (validated in SPEC-018) |
+  | `response_override` | text, nullable | `null` | A JSON body, ≤ 4 KB (validated in SPEC-018). Text, not `json`: MySQL's JSON type reorders object keys, so the body would not come back as written (AC-14). |
   | `enabled` | boolean | `true` | Disabled rules are not compiled. |
   | `created_at`, `updated_at` | timestamps | | |
 - **AC-10** The migration uses `database.connection`. With `secondary` configured (a second SQLite connection), the table exists on `secondary` and not on the default connection.
