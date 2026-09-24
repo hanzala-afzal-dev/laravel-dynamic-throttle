@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Env;
+
 return [
 
     /*
@@ -107,7 +109,8 @@ return [
     */
 
     'manifest' => [
-        'refresh_seconds' => filter_var(env('DYNAMIC_THROTTLE_MANIFEST_REFRESH', 2), FILTER_VALIDATE_INT, [
+        // Read as written: env() would turn "true" into a boolean, which counts as 1.
+        'refresh_seconds' => filter_var(Env::getRepository()->get('DYNAMIC_THROTTLE_MANIFEST_REFRESH') ?? 2, FILTER_VALIDATE_INT, [
             'options' => ['min_range' => 0, 'default' => 2],
         ]),
         'schedule' => true,
@@ -126,7 +129,8 @@ return [
     */
 
     'matching' => [
-        'max_rules_per_request' => filter_var(env('DYNAMIC_THROTTLE_MAX_RULES', 5), FILTER_VALIDATE_INT, [
+        // Read as written, like refresh_seconds above.
+        'max_rules_per_request' => filter_var(Env::getRepository()->get('DYNAMIC_THROTTLE_MAX_RULES') ?? 5, FILTER_VALIDATE_INT, [
             'options' => ['min_range' => 1, 'default' => 5],
         ]),
     ],
