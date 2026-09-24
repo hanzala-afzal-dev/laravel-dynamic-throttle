@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 use Afzal\DynamicThrottle\DynamicThrottle;
 use Afzal\DynamicThrottle\DynamicThrottleServiceProvider;
-use Afzal\DynamicThrottle\Engine\Matching\RuleMatcher;
+use Afzal\DynamicThrottle\Engine\Contracts\IdentityResolver;
+use Afzal\DynamicThrottle\Engine\Stacking\Evaluation;
+use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
 use Afzal\DynamicThrottle\Facades\DynamicThrottle as DynamicThrottleFacade;
 use Afzal\DynamicThrottle\Http\IdentitySettings;
 use Afzal\DynamicThrottle\Manifest\CompiledRule;
-use Afzal\DynamicThrottle\Manifest\Manifest;
 use Afzal\DynamicThrottle\Tests\Support\ManifestFixtures;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\ServiceProvider;
@@ -87,26 +88,42 @@ it('AC-8: publishes the migrations and never loads them', function (): void {
 });
 
 /*
-| SPEC-007 AC-7: the container's matcher takes its cap from the config, and a
-| published config can hold anything.
+| SPEC-007 AC-7 and ADR-0025: the container's evaluator takes its cap from the
+| config, and a published config can hold anything.
 */
 
-it('AC-7: caps the matched rules at matching.max_rules_per_request', function (): void {
+/**
+ * Evaluates enforcing rules 1 to $count for one client with the container's
+ * evaluator, on the array store.
+ */
+function evaluateWithContainer(int $count): Evaluation
+{
+    config()->set('dynamic-throttle.store', 'array');
+    $rules = array_map(fn (int $id): CompiledRule => CompiledRule::fromArray(ManifestFixtures::rule(['id' => (string) $id])), range(1, $count));
+
+    return app(RuleEvaluator::class)->evaluate($rules, new class implements IdentityResolver
+    {
+        public function resolve(CompiledRule $rule): string
+        {
+            return hash('sha256', 'client');
+        }
+    });
+}
+
+it('AC-7: caps the evaluator at matching.max_rules_per_request (ADR-0025)', function (): void {
     config()->set('dynamic-throttle.matching.max_rules_per_request', 2);
-    $manifest = new Manifest(1, array_map(fn (int $id): CompiledRule => CompiledRule::fromArray(ManifestFixtures::rule(['id' => (string) $id])), range(1, 3)));
 
-    $result = app(RuleMatcher::class)->match($manifest, 'GET', 'api/users');
+    $evaluation = evaluateWithContainer(3);
 
-    expect([count($result->rules), $result->ignored])->toBe([2, 1]);
+    expect([count($evaluation->attempts), count($evaluation->ignored)])->toBe([2, 1]);
 });
 
 it('AC-7: falls back to 5 rules for a published cap below 1 or not an integer', function (mixed $cap): void {
     config()->set('dynamic-throttle.matching.max_rules_per_request', $cap);
-    $manifest = new Manifest(1, array_map(fn (int $id): CompiledRule => CompiledRule::fromArray(ManifestFixtures::rule(['id' => (string) $id])), range(1, 7)));
 
-    $result = app(RuleMatcher::class)->match($manifest, 'GET', 'api/users');
+    $evaluation = evaluateWithContainer(7);
 
-    expect([count($result->rules), $result->ignored])->toBe([5, 2]);
+    expect([count($evaluation->attempts), count($evaluation->ignored)])->toBe([5, 2]);
 })->with([
     'zero' => [0],
     'negative' => [-1],

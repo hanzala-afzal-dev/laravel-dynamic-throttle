@@ -29,9 +29,9 @@ function matchingRule(string $id, string $method, string $pattern, int $priority
 /**
  * @return list<string>
  */
-function matchedIds(Manifest $manifest, string $method, string $path, int $cap = 5): array
+function matchedIds(Manifest $manifest, string $method, string $path): array
 {
-    return array_map(fn (CompiledRule $rule): string => $rule->id, (new RuleMatcher($cap))->match($manifest, $method, $path)->rules);
+    return array_map(fn (CompiledRule $rule): string => $rule->id, (new RuleMatcher)->match($manifest, $method, $path)->rules);
 }
 
 it('AC-2: matches methods, and GET rules also match HEAD', function (string $ruleMethod, string $requestMethod, bool $matches): void {
@@ -127,23 +127,16 @@ it('AC-5: offers HEAD requests the GET candidates too, and a path whose first se
         ->and($ids('GET', '*/x'))->toBe(['3']);
 });
 
-it('AC-7: applies only the first max_rules_per_request matches, by priority, and counts the rest', function (): void {
+it('AC-7: returns every match in manifest order, and leaves the cap to the evaluator (ADR-0025)', function (): void {
     $rules = array_map(fn (int $priority): CompiledRule => matchingRule((string) $priority, '*', '*', $priority), range(1, 7));
-    $manifest = new Manifest(1, $rules);
 
-    $default = (new RuleMatcher)->match($manifest, 'GET', 'api');
-    $capped = (new RuleMatcher(3))->match($manifest, 'GET', 'api');
-
-    expect(array_map(fn (CompiledRule $rule): string => $rule->id, $default->rules))->toBe(['1', '2', '3', '4', '5'])
-        ->and($default->ignored)->toBe(2)
-        ->and(array_map(fn (CompiledRule $rule): string => $rule->id, $capped->rules))->toBe(['1', '2', '3'])
-        ->and($capped->ignored)->toBe(4);
+    expect(matchedIds(new Manifest(1, $rules), 'GET', 'api'))->toBe(['1', '2', '3', '4', '5', '6', '7']);
 });
 
 it('AC-8: matches nothing in an empty or missing manifest', function (Manifest $manifest): void {
     $result = (new RuleMatcher)->match($manifest, 'GET', 'api/users');
 
-    expect([$result->rules, $result->ignored])->toBe([[], 0]);
+    expect($result->rules)->toBe([]);
 })->with([
     'empty' => fn (): Manifest => new Manifest(1, []),
     'missing' => fn (): Manifest => Manifest::missing(),

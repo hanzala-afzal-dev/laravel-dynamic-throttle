@@ -21,6 +21,11 @@ final readonly class RuleEvaluator
 {
     public function __construct(
         private LimiterStore $store,
+        /**
+         * matching.max_rules_per_request: store attempts per request for enforcing
+         * rules, and as many again for dry-run rules (ADR-0025).
+         */
+        private int $maxRulesPerRequest = 5,
     ) {}
 
     /**
@@ -35,12 +40,22 @@ final readonly class RuleEvaluator
         $attempts = [];
         $wouldBlock = [];
         $skipped = [];
+        $ignored = [];
+        // Attempts left for each mode: a rule that does not apply takes none, and a
+        // dry-run rule never takes an enforcing rule's (ADR-0025).
+        $slots = [RuleMode::Enforce->value => $this->maxRulesPerRequest, RuleMode::DryRun->value => $this->maxRulesPerRequest];
 
         foreach ($rules as $rule) {
+            if ($slots[$rule->mode->value] === 0) {
+                $ignored[] = $rule;
+
+                continue;
+            }
+
             try {
                 $identity = $identities->resolve($rule);
             } catch (IdentityUnavailableException $exception) {
-                return Evaluation::failed(new RuleFailure($rule, $exception), $attempts, $wouldBlock, $skipped);
+                return Evaluation::failed(new RuleFailure($rule, $exception), $attempts, $wouldBlock, $skipped, $ignored);
             }
 
             if ($identity === null) {
@@ -52,8 +67,10 @@ final readonly class RuleEvaluator
             try {
                 $attempt = $this->store->attempt(new CounterKey($rule->id, $identity), $rule->maxAttempts, $rule->windowSeconds);
             } catch (StorageUnavailableException $exception) {
-                return Evaluation::failed(new RuleFailure($rule, $exception), $attempts, $wouldBlock, $skipped);
+                return Evaluation::failed(new RuleFailure($rule, $exception), $attempts, $wouldBlock, $skipped, $ignored);
             }
+
+            $slots[$rule->mode->value]--;
 
             if ($attempt->allowed) {
                 $attempts[] = new RuleAttempt($rule, $attempt);
@@ -61,11 +78,11 @@ final readonly class RuleEvaluator
                 // Not counted, and not enforced (ADR-0012).
                 $wouldBlock[] = new RuleAttempt($rule, $attempt);
             } else {
-                return $this->reject(new RuleAttempt($rule, $attempt), $attempts, $wouldBlock, $skipped);
+                return $this->reject(new RuleAttempt($rule, $attempt), $attempts, $wouldBlock, $skipped, $ignored);
             }
         }
 
-        return Evaluation::allowed($attempts, $wouldBlock, $skipped);
+        return Evaluation::allowed($attempts, $wouldBlock, $skipped, $ignored);
     }
 
     /**
@@ -76,8 +93,9 @@ final readonly class RuleEvaluator
      * @param  list<RuleAttempt>  $attempts
      * @param  list<RuleAttempt>  $wouldBlock
      * @param  list<CompiledRule>  $skipped
+     * @param  list<CompiledRule>  $ignored
      */
-    private function reject(RuleAttempt $rejection, array $attempts, array $wouldBlock, array $skipped): Evaluation
+    private function reject(RuleAttempt $rejection, array $attempts, array $wouldBlock, array $skipped, array $ignored): Evaluation
     {
         $settled = [];
         $failures = [];
@@ -92,6 +110,6 @@ final readonly class RuleEvaluator
             }
         }
 
-        return Evaluation::rejected($rejection, $settled, $wouldBlock, $skipped, $failures);
+        return Evaluation::rejected($rejection, $settled, $wouldBlock, $skipped, $failures, $ignored);
     }
 }

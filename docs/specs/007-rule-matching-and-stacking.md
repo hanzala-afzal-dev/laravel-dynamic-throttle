@@ -2,6 +2,7 @@
 
 - Status: Done
 - ADRs: ADR-0006, ADR-0008, ADR-0010, ADR-0012, ADR-0020, ADR-0021, ADR-0023
+- Amended by: ADR-0025 (the cap counts attempts, per mode), SPEC-008 (resolution errors)
 - Roadmap phase: 2
 
 ## Problem
@@ -20,7 +21,7 @@ The manifest (SPEC-006) holds every active rule. A request needs the rules that 
   - The first segment is the text before the first `/`. A first segment that contains `*` goes into a wildcard group, which is tested for every path.
   - A request tests only the rules in its method's groups and `*`'s, for its first segment plus the wildcard group. That is always enough: a pattern whose first segment is literal can only match paths with the same first segment.
   - The index is built when the manifest is loaded, never stored (ADR-0023).
-- **Order and cap.** Matches come back in the manifest's order: priority, then id (SPEC-006). Only the first `matching.max_rules_per_request` (default 5) apply. The rest are ignored and counted, and the health check reports them (SPEC-016).
+- **Order and cap.** Matches come back in the manifest's order: priority, then id (SPEC-006). The evaluator caps them (ADR-0025, which replaces the matcher's cap): at most `matching.max_rules_per_request` (default 5) enforcing rules, and as many dry-run rules, count a request. Rules that do not apply take no slot. The rest are ignored, listed in the evaluation, and the health check reports them (SPEC-016).
 - **Stacking.** `RuleEvaluator::evaluate()` takes the matched rules and an `IdentityResolver`, and goes through the rules in order:
   1. It asks the resolver for the rule's identity hash. `null` means the rule does not apply to this request, for example because of a missing identity with `skip` (ADR-0022, SPEC-008) or an exemption (SPEC-009). The rule is then skipped: no attempt.
   2. It counts the request with `LimiterStore::attempt()`.
@@ -81,8 +82,9 @@ Stacking criteria use the cache driver on the array store and a fake clock at T0
   - `match()` returns exactly what testing every rule with `Str::is()` returns.
   - Patterns mix literal segments, `*` in several places, a leading slash and the root.
   - Methods include `HEAD`.
-- **AC-7** The cap:
-  - Seven rules match. With `max_rules_per_request` 5, the first five by priority apply, and 2 are ignored.
+- **AC-7** The cap (ADR-0025, which replaces this spec's first version, where the matcher capped matches):
+  - The matcher returns every match. Seven enforcing rules that count a request: with `max_rules_per_request` 5, the first five by priority count it, and 2 are ignored.
+  - Rules that do not apply take no slot, and dry-run rules have slots of their own (ADR-0025's verification).
   - The config value defaults to 5.
   - A value below 1, or one that is not an integer, falls back to 5.
 - **AC-8** A manifest with no rules, including a missing one, matches nothing.
@@ -122,12 +124,12 @@ Stacking criteria use the cache driver on the array store and a fake clock at T0
 - `src/Http/RequestTarget.php`: `fromRequest(Request): self`, with `method` and `path`.
 - `src/Engine/Matching/RuleIndex.php`: built from a list of `CompiledRule`. `candidates(string $method, string $path): list<int>` returns positions in manifest order.
 - `src/Engine/Matching/RuleMatcher.php`: `match(Manifest, string $method, string $path): MatchResult`.
-- `src/Engine/Matching/MatchResult.php`: `rules` (`list<CompiledRule>`) and `ignored` (int).
-- `src/Engine/Stacking/RuleEvaluator.php`: `evaluate(list<CompiledRule>, IdentityResolver): Evaluation`.
+- `src/Engine/Matching/MatchResult.php`: `rules` (`list<CompiledRule>`), every match. Its `ignored` count moved to the evaluation (ADR-0025).
+- `src/Engine/Stacking/RuleEvaluator.php`: `evaluate(list<CompiledRule>, IdentityResolver): Evaluation`. It takes the cap, and `Evaluation::$ignored` lists the rules over it (ADR-0025).
 - `src/Engine/Stacking/Evaluation.php`, `EvaluationOutcome.php` (an enum), `RuleAttempt.php` (a rule's attempt, marked once released) and `RuleFailure.php` (a rule and its `StorageUnavailableException`).
 - `src/Engine/Contracts/IdentityResolver.php`: `resolve(CompiledRule): ?string`, the SHA-256 identity hash or `null`. SPEC-008 implements it.
 - `src/Manifest/Manifest.php`: gains `index`, built in the constructor (ADR-0023).
-- `config/dynamic-throttle.php`: the `matching` section. The provider binds `RuleMatcher` with its cap.
+- `config/dynamic-throttle.php`: the `matching` section. The provider binds `RuleEvaluator` with its cap (ADR-0025).
 - `benchmarks/Engine/RuleMatcherBench.php`
 - Tests:
   - `tests/Feature/Http/RequestTargetTest.php`: AC-1
@@ -135,7 +137,7 @@ Stacking criteria use the cache driver on the array store and a fake clock at T0
   - `tests/Unit/Engine/Matching/RuleIndexModelTest.php`: AC-6
   - `tests/Unit/Engine/Stacking/RuleEvaluatorTest.php`: AC-9 to AC-16
   - `tests/Unit/ConfigTest.php`: AC-7 and AC-17 (the env value)
-  - `tests/Feature/ServiceProviderTest.php`: AC-7 (the container's matcher, with a published value)
+  - `tests/Feature/ServiceProviderTest.php`: AC-7 (the container's evaluator, with a published value)
   - `tests/Arch/ArchTest.php`: AC-18
 
 ## Out of scope
@@ -153,7 +155,7 @@ Stacking criteria use the cache driver on the array store and a fake clock at T0
 - **Trailing slashes** are trimmed by `decodedPath()`, the same as in routing.
 - **A trailing slash in a pattern** (`api/users/`) never matches, because target paths have none. Trimming it, or rejecting it when a rule is saved, is left to the maintainer (raised in PR #4).
 - **CORS preflights** (`OPTIONS`) are answered by Laravel's global `HandleCors` middleware before routing, so route middleware never sees them. Without it, a `*` rule would count them.
-- **The cap hides rules.** Rules beyond the fifth match never count. The health check (SPEC-016) and `explain` (SPEC-014) show which were ignored.
+- **The cap hides rules.** Enforcing rules beyond the fifth that count a request never count it, and neither do dry-run rules beyond the fifth. The health check (SPEC-016) and `explain` (SPEC-014) show which were ignored.
 - **Many wildcard-first patterns** (such as `*/admin`) are tested on every request. The index cannot narrow them, and the benchmark shows the cost.
 
 ## End-to-end verification

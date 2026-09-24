@@ -7,16 +7,14 @@ namespace Afzal\DynamicThrottle\Engine\Matching;
 use Afzal\DynamicThrottle\Manifest\CompiledRule;
 
 /**
- * The rules that apply to one request, in manifest order (SPEC-007).
+ * The rules that match one request, in manifest order (SPEC-007).
  */
 final readonly class MatchResult
 {
     /**
-     * @param  list<CompiledRule>  $rules  at most matching.max_rules_per_request
-     * @param  int  $ignored  further matches beyond the cap
+     * @param  list<CompiledRule>  $rules  every match; the evaluator caps them (ADR-0025)
      */
     public function __construct(
         public array $rules,
-        public int $ignored,
     ) {}
 }

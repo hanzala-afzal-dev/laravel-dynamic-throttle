@@ -77,8 +77,7 @@ it('AC-6: returns exactly what testing every rule returns, on 10,000 seeded requ
     }
 
     $manifest = new Manifest(1, $rules);
-    // A cap above the rule count, so every match is compared.
-    $matcher = new RuleMatcher(1_000);
+    $matcher = new RuleMatcher;
     $mismatches = [];
     $matched = 0;
 
