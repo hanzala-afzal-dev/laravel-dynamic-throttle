@@ -156,6 +156,37 @@ it('AC-11: reports a store whose increment returns false as unavailable', functi
         ->toThrow(StorageUnavailableException::class);
 });
 
+it('AC-21: never leaves a count below 0 when the window key vanishes before the undo', function (): void {
+    $arrayStore = new class extends ArrayStore
+    {
+        /** The key to evict right before its next decrement, as an expiry or eviction would. */
+        public ?string $evictBeforeDecrement = null;
+
+        public function decrement($key, $value = 1): mixed
+        {
+            if ($key === $this->evictBeforeDecrement) {
+                $this->evictBeforeDecrement = null;
+                $this->forget($key);
+            }
+
+            return parent::decrement($key, $value);
+        }
+    };
+    $clock = new FakeClock;
+    $clock->setSeconds(FakeClock::T0 + 10);
+    $store = new CacheLimiterStore(new Repository($arrayStore), new KeyBuilder('dt:'), $clock);
+    $hash = hash('sha256', 'A');
+    $key = new CounterKey('1', $hash);
+    $first = $store->attempt($key, 1, 60);
+
+    $arrayStore->evictBeforeDecrement = "dt:c:1:60:{$hash}:30000000";
+    $rejected = $store->attempt($key, 1, 60);
+    $decisions = array_map(fn (): bool => $store->attempt($key, 1, 60)->allowed, range(1, 2));
+
+    expect([$first->allowed, $rejected->allowed, ...$decisions])->toBe([true, false, true, false])
+        ->and($arrayStore->get("dt:c:1:60:{$hash}:30000000"))->toBe(1);
+});
+
 /*
 | SPEC-004: release() with the cache driver.
 */
