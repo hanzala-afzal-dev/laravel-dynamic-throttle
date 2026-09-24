@@ -64,6 +64,12 @@ Window 60 s and max 5 unless stated. Times are offsets from T0 = 1,800,000,000 s
 - **AC-15 (concurrency, Memcached and Redis cache store)** 50 separate processes make 20 attempts each on one key with max 100 and the time frozen at T0+10:
   - at most 100 attempts are allowed and at least 50 (ADR-0016)
   - the stored count equals the number allowed
+- **AC-21 (cache driver)** Undoing a rejected attempt never leaves a count below 0, even when the window key vanishes between the increment and the undo:
+  - On the array store at T0+10, with max 1, the first attempt is allowed.
+  - The second attempt is rejected, and its window key is evicted just before the undo's decrement.
+  - Afterwards, one attempt is allowed and the next is rejected, and the window holds 1.
+
+  A key recreated at -1 would allow two. Found in SPEC-004's review, and fixed the same way as `release()` (SPEC-004 AC-15).
 
 ## Interfaces and files
 - `src/Engine/Contracts/LimiterStore.php`: `attempt(CounterKey $key, int $maxAttempts, int $windowSeconds): Attempt`. `release()` is added by SPEC-004.
@@ -96,7 +102,7 @@ Window 60 s and max 5 unless stated. Times are offsets from T0 = 1,800,000,000 s
 
 ## Edge cases and failure modes
 - **Missing keys.** Stores differ on `increment` of a missing key: Redis creates it without a TTL, and Memcached and the database store fail. `add` first makes every store behave the same.
-- **Rollback.** Only a key this request just incremented is decremented. A key evicted or flushed in the microseconds between the increment and the undo is the exception: Redis, file and array stores then create it with -1 and no TTL. Reads treat negative counts as 0 (AC-17), but the next increment only brings the key back to 0, so that window allows one extra request, and the key never expires. SPEC-004's `release()` avoids the extra request by adding the count back when a decrement goes below 0 (SPEC-004 AC-15), and the undo could do the same.
+- **Rollback.** Only a key this request just incremented is decremented. A key evicted or flushed in the microseconds between the increment and the undo is the exception: Redis, file and array stores then create it with -1 and no TTL. Reads treat negative counts as 0 (AC-17), but the next increment would only bring the key back to 0, and that window would allow one extra request. So when the undo's decrement goes below 0, the count is added back (AC-21). The key then holds 0 with no expiry: one stray key per race. If adding back fails, the failure is swallowed like any failed undo (AC-18).
 - **Clock skew between servers.** It only shifts window edges slightly (ADR-0006). The +5 s on the TTL absorbs it.
 - **Store down.** Any failure up to the decision raises `StorageUnavailableException`:
   - Memcached returns `false` from `increment` instead of throwing, so an integer check catches it.
