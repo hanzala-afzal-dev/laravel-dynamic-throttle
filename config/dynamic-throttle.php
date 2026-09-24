@@ -74,4 +74,19 @@ return [
 
     'prefix' => env('DYNAMIC_THROTTLE_PREFIX', 'dt:'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Database
+    |--------------------------------------------------------------------------
+    |
+    | The connection for the package's tables, such as the rules. null means
+    | your default connection. Requests never query it: rules reach them
+    | through a compiled manifest in the cache (docs/adr/0007).
+    |
+    */
+
+    'database' => [
+        'connection' => env('DYNAMIC_THROTTLE_DB_CONNECTION'),
+    ],
+
 ];
