@@ -31,6 +31,10 @@ it('AC-2: groups an IPv6 address by the prefix', function (string $ip, int $pref
     'a /1' => ['ffff::1', 1, '8000::/1'],
     'an address written out in full' => ['2001:0db8:0001:0002:0000:0000:0000:0001', 64, '2001:db8:1:2::/64'],
     'upper case' => ['2001:DB8:1:2::1', 64, '2001:db8:1:2::/64'],
+    // Ten zero bytes, like an IPv4-mapped address, but without the ffff after them.
+    'the loopback' => ['::1', 64, '::/64'],
+    'the loopback in full' => ['::1', 128, '::1/128'],
+    'an IPv4-compatible address' => ['::203.0.113.7', 64, '::/64'],
 ]);
 
 it('AC-2: counts an IPv4-mapped IPv6 address as its IPv4 address', function (): void {
