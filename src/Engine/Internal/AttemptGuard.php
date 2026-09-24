@@ -13,8 +13,13 @@ use InvalidArgumentException;
  */
 final class AttemptGuard
 {
-    /** ADR-0015: rules have windows from 1 second to 1 day. */
-    public const int MAX_WINDOW_SECONDS = 86_400;
+    /**
+     * ADR-0015: rules have windows from 1 second to 1 day.
+     *
+     * A constant declaration never runs, so coverage cannot credit this line to
+     * AttemptGuardTest, which fails when the value is 86,399 or 86,401.
+     */
+    public const int MAX_WINDOW_SECONDS = 86_400; // @pest-mutate-ignore: IncrementInteger,DecrementInteger
 
     public static function check(int $maxAttempts, int $windowSeconds): void
     {
