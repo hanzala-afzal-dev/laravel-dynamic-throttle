@@ -48,7 +48,7 @@ final class RequestIdentityResolver implements IdentityResolver
             Scope::Ip, Scope::Global => null,
             default => $this->value($rule->scope, (string) $rule->scopeParameter),
         };
-        $identity = ScopeIdentity::for($rule, $value, $this->ip());
+        $identity = ScopeIdentity::for($rule, $value, fn (): string => $this->ip($rule));
 
         return $identity === null ? null : $this->hasher->hash($identity);
     }
@@ -63,7 +63,8 @@ final class RequestIdentityResolver implements IdentityResolver
         if (! array_key_exists($key, $this->values)) {
             $this->values[$key] = match ($scope) {
                 Scope::User => $this->user(),
-                Scope::ApiToken => $this->request->bearerToken(),
+                // Passport and jwt-auth accept "Bearer  abc" as the token abc, so one token must be one client.
+                Scope::ApiToken => trim((string) $this->request->bearerToken(), " \t"),
                 Scope::Header => $this->request->headers->get($parameter),
                 Scope::Custom => $this->custom($parameter),
                 Scope::Ip, Scope::Global => null,
@@ -73,9 +74,29 @@ final class RequestIdentityResolver implements IdentityResolver
         return $this->values[$key];
     }
 
-    private function ip(): string
+    /**
+     * Read only when a rule needs it: Symfony throws when trusted proxies send
+     * conflicting Forwarded and X-Forwarded-For headers.
+     *
+     * @throws IdentityUnavailableException
+     */
+    private function ip(CompiledRule $rule): string
     {
-        return $this->ip ??= ClientIp::group($this->request->ip(), $this->settings->ipv6Prefix);
+        try {
+            return $this->ip ??= ClientIp::group($this->request->ip(), $this->settings->ipv6Prefix);
+        } catch (Throwable $exception) {
+            throw IdentityUnavailableException::because("The identity for {$this->scopeName($rule)} could not be resolved: the client IP could not be read: {$exception->getMessage()}", $exception);
+        }
+    }
+
+    /**
+     * How errors name a rule's scope: "user", or "custom:plan".
+     */
+    private function scopeName(CompiledRule $rule): string
+    {
+        return in_array($rule->scope, [Scope::Header, Scope::Custom], true)
+            ? "{$rule->scope->value}:{$rule->scopeParameter}"
+            : $rule->scope->value;
     }
 
     /**
@@ -87,16 +108,16 @@ final class RequestIdentityResolver implements IdentityResolver
     {
         try {
             $user = $this->settings->guards === null ? $this->authenticatedUser() : $this->firstUser($this->settings->guards);
+
+            if (! $user instanceof Authenticatable) {
+                return null;
+            }
+
+            $id = $user->getAuthIdentifier();
+            $id = $id instanceof Stringable ? (string) $id : $id;
         } catch (Throwable $exception) {
             throw IdentityUnavailableException::because('The identity for user could not be resolved: '.$exception->getMessage(), $exception);
         }
-
-        if (! $user instanceof Authenticatable) {
-            return null;
-        }
-
-        $id = $user->getAuthIdentifier();
-        $id = $id instanceof Stringable ? (string) $id : $id;
 
         return match (true) {
             $id === null, $id === '' => null,
@@ -151,11 +172,10 @@ final class RequestIdentityResolver implements IdentityResolver
                 $resolver instanceof ScopeResolver => $resolver->resolve($this->request),
                 default => $this->containerResolver($resolver)->resolve($this->request),
             };
+            $value = $value instanceof Stringable ? (string) $value : $value;
         } catch (Throwable $exception) {
             throw IdentityUnavailableException::because("The identity for custom:{$name} could not be resolved: ".$exception->getMessage(), $exception);
         }
-
-        $value = $value instanceof Stringable ? (string) $value : $value;
 
         return match (true) {
             $value === null, $value === '' => null,
