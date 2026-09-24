@@ -149,11 +149,21 @@ final readonly class CacheLimiterStore implements LimiterStore
     /**
      * Rejected requests are not counted (ADR-0006). If undoing fails, the rejection
      * stands and the window keeps one extra count: stricter, never looser (AC-18).
+     * A key that vanished since the increment comes back at -1 on Redis, file and
+     * array stores, which would let the window allow one extra request, so the
+     * count is added back (AC-21).
      */
     private function undo(string $windowKey): void
     {
         try {
-            $this->withoutSerialization(fn (): int|bool => $this->cache->decrement($windowKey));
+            $this->withoutSerialization(function () use ($windowKey): void {
+                // Memcached returns false for a missing key, and never goes below 0.
+                $count = $this->cache->decrement($windowKey);
+
+                if (is_int($count) && $count < 0) {
+                    $this->cache->increment($windowKey);
+                }
+            });
         } catch (Throwable) {
             // Deliberately ignored, see above.
         }
