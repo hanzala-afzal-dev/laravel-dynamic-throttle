@@ -31,7 +31,7 @@ Window 60 s and max 5 unless stated. Times are offsets from T0 = 1,800,000,000 s
 - **AC-4 (contract)** Release never takes a count below 0. With max 2 at T0+10, one attempt is allowed, and releasing it twice leaves the counter empty. Then exactly two attempts are allowed and the third is rejected. A count of -1 would allow three.
 - **AC-5 (contract)** Releasing an attempt for a counter that holds nothing changes nothing. Release `new Attempt($key, 2, 60, 30_000_000, true, 1, 0)` on a counter never used. Then, at T0+10 with max 2, exactly two attempts are allowed and the third is rejected.
 - **AC-6 (contract)** Release only changes its own counter. After five attempts each on rule "1" and rule "2" (same identity) at T0+10, release one attempt of rule "1". Rule "1" then allows one more attempt, and rule "2" still rejects.
-- **AC-7 (no store access)** Releasing a rejected attempt makes no call to the store: `release()` returns normally on a cache store that throws on every call, and on a Redis connection to a closed port.
+- **AC-7 (no store access)** Releasing a rejected attempt makes no call to the store: a cache store records no call, and the Redis driver resolves no connection. (Asserting that `release()` does not throw would prove nothing: Pest's `->not->toThrow(Throwable::class)` passes for any `Error`, because it reads an interface name as a message.)
 - **AC-8 (Redis driver)** Release changes the attempt's field by exactly -1 and writes nothing else:
   - After three attempts at T0+10, releasing one leaves field `30000000` at 2, no other field, and a TTL of 124 or 125 s.
   - Releasing an attempt whose field holds 0 leaves the field at 0.
@@ -61,7 +61,8 @@ Window 60 s and max 5 unless stated. Times are offsets from T0 = 1,800,000,000 s
 - Tests:
   - `tests/Contract/LimiterStoreContractTest.php`: AC-1 to AC-6
   - `tests/Feature/Engine/CacheLimiterStoreTest.php`: AC-7 (cache store), AC-10, AC-12 (throwing store)
-  - `tests/Drivers/RedisLimiterStoreTest.php`: AC-7 (closed port), AC-8, AC-9, AC-12 (closed port)
+  - `tests/Unit/Engine/Stores/RedisLimiterStoreRepliesTest.php`: AC-7 (Redis driver), and stubbed clients for AC-9 (the NOSCRIPT fallback without races) and AC-12 (a reply that is not an integer)
+  - `tests/Drivers/RedisLimiterStoreTest.php`: AC-8, AC-9, AC-12 (closed port)
   - `tests/Drivers/CacheLimiterStoreServicesTest.php`: AC-11, AC-12 (Memcached)
   - `tests/Drivers/RedisConcurrencyTest.php` and `tests/Drivers/CacheLimiterStoreConcurrencyTest.php`: AC-13, with a release mode in `tests/Support/concurrency-worker.php`
   - `tests/Drivers/RedisModelTest.php`: AC-14

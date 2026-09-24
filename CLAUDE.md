@@ -11,6 +11,7 @@ Decisions live in docs/adr/ (index: docs/adr/README.md). Feature specs live in d
 - `composer refactor`: Rector
 - `composer test:mutate`: mutation testing of everything in `src/Engine` with the service suites (needs `docker compose up -d`), fails below 85% (ADR-0016). Never pass `--filter` to `--mutate`: it reports fake kills. Use `--class=...` or `--path=...` to narrow the run.
 - `covers()` also decides what mutation testing counts as covered: a test only covers the classes it lists, not the code they call. Give every class in `src/Engine` a test that lists it, or its mutants show as uncovered.
+- Never write `->not->toThrow(Throwable::class)` (or any interface): Pest reads an interface name as a message, so it passes for any `Error`. Assert what the code did instead.
 - Tests must be safe under `--parallel`, which mutation testing uses. Never write into Testbench's shared skeleton, and never rely on server-wide Redis stats. Tag slow multi-process tests `->group('concurrency')`.
 - `composer test:drivers`: the driver tests plus the LimiterStore contract suite against every docker compose service
 - Cloud sessions (claude.ai/code, where this project now runs): PHP 8.4 and Composer are native (CI covers the 8.3 floor), so run `composer …` directly. A SessionStart hook (`scripts/cloud-session-start.sh`) builds missing PHP extensions, installs the dependencies and starts the services with Docker. `scripts/cloud-setup.sh` is the environment's setup script.
