@@ -15,9 +15,20 @@ cd "${CLAUDE_PROJECT_DIR:-$(dirname "$0")/..}" || exit 0
 
 status=()
 
+wait_for_docker() {
+    for _ in $(seq 1 20); do docker info >/dev/null 2>&1 && return 0; sleep 1; done
+    return 1
+}
+
 if ! docker info >/dev/null 2>&1; then
     (service docker start || (dockerd >/tmp/dockerd.log 2>&1 &)) >/dev/null 2>&1
-    for _ in $(seq 1 20); do docker info >/dev/null 2>&1 && break; sleep 1; done
+    # On a fresh container, dockerd sometimes gives up waiting for containerd.
+    # A second start, without the stale processes, comes up in seconds.
+    if ! wait_for_docker; then
+        pkill dockerd; pkill containerd; sleep 1
+        (dockerd >>/tmp/dockerd.log 2>&1 &) >/dev/null 2>&1
+        wait_for_docker
+    fi
 fi
 
 if docker info >/dev/null 2>&1; then
