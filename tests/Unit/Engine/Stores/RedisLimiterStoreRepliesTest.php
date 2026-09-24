@@ -79,24 +79,24 @@ function scriptedPhpRedis(mixed $evalsha, ?string $lastError = null, mixed $eval
 {
     return new class($evalsha, $lastError, $eval) extends Redis
     {
-        /** @var list<string> */
+        /** @var list<array{string, array<mixed>, int}> */
         public array $received = [];
 
-        public function __construct(private readonly mixed $evalshaReply, private ?string $lastError, private readonly mixed $evalReply)
+        public function __construct(private readonly mixed $evalshaReply, private readonly ?string $lastError, private readonly mixed $evalReply)
         {
             // Never connects, so the parent constructor is not needed.
         }
 
         public function evalsha(string $sha1, array $args = [], int $num_keys = 0): mixed
         {
-            $this->received[] = 'evalsha';
+            $this->received[] = ['evalsha', $args, $num_keys];
 
             return $this->evalshaReply;
         }
 
         public function eval(string $script, array $args = [], int $num_keys = 0): mixed
         {
-            $this->received[] = str_contains($script, "redis.call('TIME')") && $num_keys === 1 ? 'eval' : 'eval of something else';
+            $this->received[] = [str_contains($script, "redis.call('TIME')") ? 'eval' : 'eval of something else', $args, $num_keys];
 
             return $this->evalReply;
         }
@@ -105,14 +105,17 @@ function scriptedPhpRedis(mixed $evalsha, ?string $lastError = null, mixed $eval
         {
             return $this->lastError;
         }
-
-        public function clearLastError(): bool
-        {
-            $this->lastError = null;
-
-            return true;
-        }
     };
+}
+
+/**
+ * What the script receives for stubbedAttempt(): KEYS[1], then max, window and the test time.
+ *
+ * @return list<string>
+ */
+function stubbedScriptArguments(): array
+{
+    return ['dt:c:1:60:'.hash('sha256', 'A'), '5', '60', (string) ((FakeClock::T0 + 10) * 1_000_000)];
 }
 
 /** A reply the script could send for an allowed attempt at T0+10 with window 60. */
@@ -124,7 +127,7 @@ it('AC-6: falls back to EVAL once when phpredis reports NOSCRIPT', function (): 
     $attempt = stubbedAttempt(stubbedRedisStore(new PhpRedisConnection($client)));
 
     expect([$attempt->allowed, $attempt->windowIndex])->toBe([true, 30_000_000])
-        ->and($client->received)->toBe(['evalsha', 'eval']);
+        ->and($client->received)->toBe([['evalsha', stubbedScriptArguments(), 1], ['eval', stubbedScriptArguments(), 1]]);
 });
 
 it('AC-6: falls back to EVAL once when predis reports NOSCRIPT', function (Throwable|PredisError $noscript): void {
@@ -153,12 +156,12 @@ it('AC-6: never falls back to EVAL for another phpredis error, and names it', fu
 
     expect(fn (): Attempt => stubbedAttempt(stubbedRedisStore(new PhpRedisConnection($client))))
         ->toThrow(function (StorageUnavailableException $exception): void {
-            expect(exceptionChain($exception))->toContain('ERR Error running script');
+            expect(exceptionChain($exception))->toContain('Redis rejected the limiter script: ERR Error running script');
         })
-        ->and($client->received)->toBe(['evalsha']);
+        ->and(array_column($client->received, 0))->toBe(['evalsha']);
 });
 
-it('AC-6: never falls back to EVAL for another predis error, and names it', function (Throwable|PredisError $error): void {
+it('AC-6: never falls back to EVAL for another predis error, and names it', function (Throwable|PredisError $error, string $named): void {
     $client = Mockery::mock(PredisClient::class);
     $client->shouldReceive('evalsha')->once()->andReturnUsing(function () use ($error): PredisError {
         if ($error instanceof Throwable) {
@@ -170,12 +173,13 @@ it('AC-6: never falls back to EVAL for another predis error, and names it', func
     $client->shouldReceive('eval')->never();
 
     expect(fn (): Attempt => stubbedAttempt(stubbedRedisStore(new PredisConnection($client))))
-        ->toThrow(function (StorageUnavailableException $exception): void {
-            expect(exceptionChain($exception))->toContain('ERR Error running script');
+        ->toThrow(function (StorageUnavailableException $exception) use ($named): void {
+            expect(exceptionChain($exception))->toContain($named);
         });
 })->with([
-    'with exceptions (a ServerException)' => [new PredisServerException('ERR Error running script, NOSCRIPT is not the cause')],
-    'with exceptions off (an error reply)' => [new PredisError('ERR Error running script, NOSCRIPT is not the cause')],
+    // The ServerException itself is the previous exception.
+    'with exceptions (a ServerException)' => [new PredisServerException('ERR Error running script, NOSCRIPT is not the cause'), 'ERR Error running script'],
+    'with exceptions off (an error reply)' => [new PredisError('ERR Error running script, NOSCRIPT is not the cause'), 'Redis rejected the limiter script: ERR Error running script'],
 ]);
 
 it('AC-18: reports a reply that is not four integers as unavailable', function (mixed $reply): void {
@@ -205,6 +209,23 @@ it('AC-18: reports a connection that is neither phpredis nor predis as unavailab
     expect(fn (): Attempt => stubbedAttempt(stubbedRedisStore($connection)))
         ->toThrow(function (StorageUnavailableException $exception): void {
             expect($exception->getPrevious())->toBeInstanceOf(InvalidArgumentException::class)
-                ->and($exception->getPrevious()?->getMessage())->toContain('Unsupported Redis');
+                ->and($exception->getPrevious()?->getMessage())->toBe('Unsupported Redis connection '.Connection::class.'@anonymous; use phpredis or predis.');
+        });
+});
+
+it('AC-18: reports a phpredis connection around another client as unavailable', function (): void {
+    // Answers EVALSHA like phpredis does on an error, but is no phpredis client.
+    $client = new class
+    {
+        public function evalsha(string $sha1, array $args = [], int $num_keys = 0): bool
+        {
+            return false;
+        }
+    };
+
+    expect(fn (): Attempt => stubbedAttempt(stubbedRedisStore(new PhpRedisConnection($client))))
+        ->toThrow(function (StorageUnavailableException $exception): void {
+            expect($exception->getPrevious())->toBeInstanceOf(InvalidArgumentException::class)
+                ->and($exception->getPrevious()?->getMessage())->toBe('Unsupported phpredis client class@anonymous.');
         });
 });

@@ -76,6 +76,9 @@ it('AC-20: reports a failed read of the previous window as unavailable, not as 0
     $clock->setSeconds(FakeClock::T0 + 10);
     $store = new CacheLimiterStore($cache, new KeyBuilder('dt-memcached-'.bin2hex(random_bytes(4)).':'), $clock);
 
+    // The message names Memcached's own error, such as "SERVER IS MARKED DEAD".
     expect(fn (): Attempt => $store->attempt(new CounterKey('1', hash('sha256', 'A')), 5, 60))
-        ->toThrow(StorageUnavailableException::class);
+        ->toThrow(function (StorageUnavailableException $exception): void {
+            expect($exception->getMessage())->toMatch('/\AMemcached could not read the previous window: \S/');
+        });
 });
