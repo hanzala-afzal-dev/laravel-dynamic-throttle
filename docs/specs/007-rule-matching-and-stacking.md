@@ -1,7 +1,7 @@
 # SPEC-007: Rule matching, pre-index and stacking
 
-- Status: Draft
-- ADRs: ADR-0006, ADR-0008, ADR-0010, ADR-0012, ADR-0020, ADR-0021
+- Status: In progress
+- ADRs: ADR-0006, ADR-0008, ADR-0010, ADR-0012, ADR-0020, ADR-0021, ADR-0023
 - Roadmap phase: 2
 
 ## Problem
@@ -11,15 +11,15 @@ The manifest (SPEC-006) holds every active rule. A request needs the rules that 
 - **The request's target.** `RequestTarget::fromRequest()` takes the request as Laravel's router sees it:
   - The method comes from `getMethod()`, so a form's `_method` override counts, as it does in routing.
   - The path comes from `decodedPath()`: URL-decoded, without leading or trailing slashes, and `/` for the root. The router matches on the decoded path, so matching the raw one would let `/api/%75sers` reach the `api/users` route while missing the `api/users` rule.
-- **Methods.** A `*` rule matches every method. A `GET` rule also matches `HEAD`, because `Route::get()` registers both, so HEAD requests would otherwise avoid GET limits (open question 2). Every other method matches only itself.
+- **Methods.** A `*` rule matches every method. A `GET` rule also matches `HEAD`, because `Route::get()` registers both, so HEAD requests would otherwise avoid GET limits. Every other method matches only itself.
 - **Patterns** use Laravel's `Str::is()` on the decoded path (ADR-0008):
   - `*` matches any characters, slashes included.
   - Matching is case-sensitive and covers the whole path.
-  - A leading slash in a pattern is ignored, so `/api/*` works like `api/*`, and the root pattern `/` stays the root (open question 3).
+  - A leading slash in a pattern is ignored, so `/api/*` works like `api/*`, and the root pattern `/` stays the root.
 - **Pre-index.** Rules are grouped by method and by the first path segment of their pattern:
   - The first segment is the text before the first `/`. A first segment that contains `*` goes into a wildcard group, which is tested for every path.
   - A request tests only the rules in its method's groups and `*`'s, for its first segment plus the wildcard group. That is always enough: a pattern whose first segment is literal can only match paths with the same first segment.
-  - The index is built when the manifest is loaded (open question 1).
+  - The index is built when the manifest is loaded, never stored (ADR-0023).
 - **Order and cap.** Matches come back in the manifest's order: priority, then id (SPEC-006). Only the first `matching.max_rules_per_request` (default 5) apply. The rest are ignored and counted, and the health check reports them (SPEC-016).
 - **Stacking.** `RuleEvaluator::evaluate()` takes the matched rules and an `IdentityResolver`, and goes through the rules in order:
   1. It asks the resolver for the rule's identity hash. `null` means the rule does not apply to this request, for example because of a missing identity with `skip` (ADR-0022, SPEC-008) or an exemption (SPEC-009). The rule is then skipped: no attempt.
@@ -28,7 +28,7 @@ The manifest (SPEC-006) holds every active rule. A request needs the rules that 
   4. The first enforcing rule that rejects stops evaluation. Every attempt counted so far is released, dry-run rules included (ADR-0008, ADR-0021).
 - **Storage failures:**
   - A failed release keeps the rejection. The remaining releases still run, and the failures are listed in the result (ADR-0021). Reporting them is SPEC-012's.
-  - A failed attempt stops evaluation, with a `Failed` outcome that names the rule, the exception and what was counted (open question 5). SPEC-012 turns it into fail-open or 503.
+  - A failed attempt stops evaluation, with a `Failed` outcome that names the rule, the exception and what was counted. SPEC-012 turns it into fail-open or 503.
 - **The result.** An `Evaluation` holds:
   - the outcome: `Allowed`, `Rejected` or `Failed`
   - the rejecting or failing rule, with its attempt or exception
@@ -37,7 +37,7 @@ The manifest (SPEC-006) holds every active rule. A request needs the rules that 
   - the skipped rules and the release failures
 
   Headers, the 429 and events come from it later (SPEC-010, SPEC-011, SPEC-012).
-- **Location.** The matcher and the evaluator live in `src/Engine` (`Engine\Matching`, `Engine\Stacking`). The mutation gate and the engine's arch rules (no database, no wall clock) then cover them (open question 4). `RequestTarget` lives in `src/Http`.
+- **Location.** The matcher and the evaluator live in `src/Engine` (`Engine\Matching`, `Engine\Stacking`). The mutation gate and the engine's arch rules (no database, no wall clock) then cover them. `RequestTarget` lives in `src/Http`.
 
 ## Acceptance criteria
 Stacking criteria use the cache driver on the array store and a fake clock at T0+10, window 60 s, one identity.
@@ -124,7 +124,7 @@ Stacking criteria use the cache driver on the array store and a fake clock at T0
 - `src/Engine/Stacking/RuleEvaluator.php`: `evaluate(list<CompiledRule>, IdentityResolver): Evaluation`.
 - `src/Engine/Stacking/Evaluation.php`, `EvaluationOutcome.php` (an enum) and `CountedAttempt.php`.
 - `src/Engine/Contracts/IdentityResolver.php`: `resolve(CompiledRule): ?string`, the SHA-256 identity hash or `null`. SPEC-008 implements it.
-- `src/Manifest/Manifest.php`: gains `index`, built in the constructor (open question 1).
+- `src/Manifest/Manifest.php`: gains `index`, built in the constructor (ADR-0023).
 - `config/dynamic-throttle.php`: the `matching` section.
 - `benchmarks/Engine/RuleMatcherBench.php`
 - Tests:
@@ -156,12 +156,9 @@ Stacking criteria use the cache driver on the array store and a fake clock at T0
 - `composer bench`: the matcher subjects run, and the PR reports their numbers
 
 ## Open questions
-1. **Build the pre-index when the manifest loads, instead of storing it in the manifest?** ADR-0008 says "the compiler pre-indexes".
-   - An index derived at load time can never disagree with the rules, and needs no new manifest format or index validation.
-   - On FPM, decoding the manifest is already linear in the number of rules, so building the index adds a similar linear step. On Octane it happens once per refresh.
-
-   Recommended: build at load, and record it in a short ADR note amending ADR-0008.
-2. **Should `GET` rules also match `HEAD`?** Laravel routes GET and HEAD together, so otherwise HEAD avoids GET limits. Recommended: yes.
-3. **Ignore a leading slash in patterns?** `/api/*` is a common mistake that would otherwise never match, silently. Recommended: yes, and SPEC-018 also warns when saving.
-4. **Put the matcher and evaluator in `src/Engine`,** so mutation testing and the engine's arch rules cover them? Recommended: yes.
-5. **Should a failed attempt stop evaluation with a `Failed` outcome, instead of throwing?** SPEC-012 then builds fail-open and fail-closed on facts, and may continue past fail-open rules. Recommended: yes.
+None. The maintainer accepted all five recommendations on 2026-09-24:
+1. The pre-index is built when the manifest loads, never stored. ADR-0023 records it, and amends ADR-0008.
+2. `GET` rules also match `HEAD`.
+3. A leading slash in a pattern is ignored.
+4. The matcher and the evaluator live in `src/Engine`.
+5. A failed attempt stops evaluation with a `Failed` outcome, and `evaluate()` does not throw.
