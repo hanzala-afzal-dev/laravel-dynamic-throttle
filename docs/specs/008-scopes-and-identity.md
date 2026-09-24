@@ -1,6 +1,6 @@
 # SPEC-008: Scopes, identities and custom resolvers
 
-- Status: In progress
+- Status: Done
 - ADRs: ADR-0004, ADR-0009, ADR-0010, ADR-0017, ADR-0020, ADR-0022, ADR-0024
 - Roadmap phase: 2
 
@@ -177,6 +177,9 @@ Unless stated otherwise, resolver criteria use `RequestIdentityResolver` on a `R
 - **An identifier that is an object,** such as a UUID value object from `getAuthIdentifier()`, counts by its string form when it is `Stringable`, and is a resolution error otherwise.
 - **Rotating `APP_KEY`** resets every counter once (ADR-0024). Counter windows are at most 24 hours.
 - **No `APP_KEY`:** identities fall back to plain SHA-256, and the health check says so (SPEC-016), so rate limiting keeps working.
+- **A resolution error a client can cause.** For example, a custom resolver that throws on an unknown header value. It ends evaluation at that rule (decision 1), so later rules do not count the request, and the default fail-open policy lets it through. Whether an identity error should fail only its own rule and let evaluation go on is an open question, raised in PR #5.
+- **Multi-database tenancy.** User 42 of two tenants is one identity on a `user` rule, because counters live outside the tenancy bootstrappers (ADR-0020 point 8). A custom scope that includes the tenant key counts them apart. Whether the package should do this itself is an open question, raised in PR #5.
+- **NAT64 and SIIT.** IPv4 clients that a translator presents as IPv6, such as `64:ff9b::203.0.113.7`, share the translator's /64 like any IPv6 client. Only IPv4-mapped addresses (`::ffff:…`) are unwrapped. Whether to unwrap the well-known NAT64 prefix too is an open question, raised in PR #5.
 
 ## End-to-end verification
 - `composer test`, `composer analyse`, `composer format:check` and `composer refactor:check`
