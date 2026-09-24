@@ -201,6 +201,23 @@ it('AC-14: skips a rule whose identity resolves to null, and goes on to the next
         ->and([stackCount($stack->cache, 'b'), stackCount($stack->cache, 'c')])->toBe([0, 1]);
 });
 
+it('AC-12 and AC-14: keeps the would-block and skipped rules when a later rule rejects, or fails', function (): void {
+    $stack = stackStore();
+    $rules = [stackRule('d', 1, 10, RuleMode::DryRun), stackRule('k', 5, 20), stackRule('s', 1, 30)];
+    $evaluator = new RuleEvaluator($stack->store);
+    $ids = fn (array $items): array => array_map(
+        fn (RuleAttempt|CompiledRule $item): string => $item instanceof RuleAttempt ? $item->rule->id : $item->id,
+        $items,
+    );
+
+    $evaluator->evaluate($rules, oneClient(['k']));
+    $rejected = $evaluator->evaluate($rules, oneClient(['k']));
+    $failed = (new RuleEvaluator(failingFor($stack->store, attemptsOf: 's')))->evaluate($rules, oneClient(['k']));
+
+    expect([$rejected->outcome, $ids($rejected->wouldBlock), $ids($rejected->skipped)])->toBe([EvaluationOutcome::Rejected, ['d'], ['k']])
+        ->and([$failed->outcome, $ids($failed->wouldBlock), $ids($failed->skipped)])->toBe([EvaluationOutcome::Failed, ['d'], ['k']]);
+});
+
 it('AC-15: keeps the rejection when a release fails, and still releases the others', function (): void {
     $stack = stackStore();
     $evaluator = new RuleEvaluator(failingFor($stack->store, releasesOf: 'a'));
