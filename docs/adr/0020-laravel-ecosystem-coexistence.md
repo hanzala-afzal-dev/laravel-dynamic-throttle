@@ -1,9 +1,9 @@
 # ADR-0020: Coexistence with the Laravel ecosystem
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-24
 - Roadmap phase: 2–3
-- Amends, if accepted: ADR-0004, ADR-0007, ADR-0008, ADR-0009, ADR-0010
+- Amends: [ADR-0004](0004-request-pipeline.md), [ADR-0007](0007-rule-storage-and-distribution.md), [ADR-0008](0008-rule-matching.md), [ADR-0009](0009-scopes-and-identity.md), [ADR-0010](0010-failure-policy.md)
 - Related: ADR-0005, ADR-0017
 
 ## Context
@@ -39,9 +39,7 @@
       - `mergeConfigFrom` merges only top-level keys. An app that published the 0.1 config would silently lose every nested default added later, such as `middleware.auto_attach` or `failure.cooldown_seconds`.
       - `replaceConfigRecursivelyFrom` keeps nested defaults, but merges lists by index. A user who removes an entry from a default list gets it back.
 
-## Decision (proposed)
-
-Each point can be accepted or rejected on its own (see "Questions for the maintainer").
+## Decision
 
 1. **Only the rejection leaves the middleware.** This extends ADR-0010 point 6 from storage to every exception the package raises on the request path:
    - storage errors
@@ -49,24 +47,32 @@ Each point can be accepted or rejected on its own (see "Questions for the mainta
    - the app's own scope resolvers
    - a corrupt manifest
 
-   The middleware catches these, logs them (rate-limited) and applies the failure policy: fail-open by default, 503 for fail-closed rules. Only the 429 (`ThrottleRequestsException`) and the 503 leave it. Config is also checked where a mistake is cheap to see: `php artisan about`, the health check, and `dynamic-throttle:status`, which exits non-zero so deploy scripts can stop on it.
+   The middleware catches these and applies the failure policy: fail-open by default, 503 for fail-closed rules. Only the 429 (`ThrottleRequestsException`) and the 503 leave it.
+   - It reports each caught error through Laravel's `report()`, so the app's error tracker (Sentry, Flare, Bugsnag, Nightwatch) sees it, not just the log. The ADR-0010 cooldown keeps that from flooding the tracker.
+   - **Strict mode**, opt-in and off by default, follows the style of `Model::shouldBeStrict()`: for example, `DynamicThrottle::strict(! app()->isProduction())`. It rethrows config errors and errors from the app's resolvers, because those are programming mistakes that should fail loudly in development. Storage errors follow the failure policy even in strict mode.
+   - Config is also checked where a mistake is cheap to see: `php artisan about`, the health check, and `dynamic-throttle:status`, which exits non-zero so deploy scripts can stop on it.
 2. **Counters survive `cache:clear`.** Defaults stay as they are, so a fresh app works without config changes. Instead:
-   - The docs recommend a dedicated Redis connection on its own database for the Redis driver.
+   - The docs recommend a dedicated Redis connection on its own database for the Redis driver, with a ready-to-copy `dynamic-throttle` connection for `config/database.php`.
+   - Laravel's own `throttle` also resets on `cache:clear`, so this default matches Laravel.
    - The health check warns when the counters share a database with a cache store.
    - The manifest stays in the cache store. After a flush it rebuilds itself (ADR-0007).
 3. **An `except` list.** Config `except` holds path patterns (`Str::is`, like rules) that no rule ever applies to. They are checked before matching.
    - Defaults: `horizon/*`, `telescope/*`, `pulse`, `pulse/*`, `nova/*`, `nova-api/*`, `livewire/*`, `broadcasting/auth`, `sanctum/csrf-cookie`, `up`.
    - The dashboard stays protected in code (ADR-0004 point 5), not through this list, so editing the list can never lock admins out.
    - The health check reports installed packages whose configured path is missing from `except`, such as `horizon.path`.
+   - A rule never overrides `except`. To throttle an excluded path, remove it from the list.
+   - Livewire posts every component to one endpoint, so no path rule can target a single component, such as a login form. The docs say to limit those inside the component with Laravel's `RateLimiter`, as Breeze and Jetstream do. Apps that want a coarse limit on all Livewire traffic remove `livewire/*` from the list.
 4. **Declaring other auth middleware.** Config `middleware.after` (default `[]`) lists extra middleware aliases or classes. The package sorts its middleware after them, as it does after Laravel's auth middleware. ADR-0004's health check stays as the safety net.
 5. **Guards for the `user` scope.**
    - Config `scopes.user.guards` defaults to `null`: the guard the request authenticated with, as today.
    - A list, such as `['sanctum', 'web']`, tries each guard in order.
    - Trying a guard that has not authenticated the request yet costs that guard's own lookup, such as Sanctum's token query. The docs say so, and the default never triggers one.
+   - For token clients, the docs point to the `api_token` scope first: it needs no lookup at all.
 6. **Deterministic order.** Rules with the same priority run in ascending id order. The compiler fixes the order (ADR-0008).
 7. **Distinctive table names and a configurable connection**, as Telescope and Pulse do:
    - The tables become `dynamic_throttle_rules`, `dynamic_throttle_exemptions`, `dynamic_throttle_settings`, `dynamic_throttle_audit_log` and `dynamic_throttle_metrics_hourly`.
    - Config `database.connection` (default `null`: the app's default connection) chooses the connection they use.
+   - Migrations are published with `publishesMigrations()`, which gives them fresh timestamps, and are never loaded automatically. The app owns its schema, and published migrations are never edited (ADR-0017).
 8. **Multi-tenancy in v1: one set of rules per app.**
    - Rules live on the configured connection (point 7). Counters live on the configured cache store or Redis connection.
    - The docs show how to keep both out of tenancy bootstrappers.
@@ -75,6 +81,10 @@ Each point can be accepted or rejected on its own (see "Questions for the mainta
 10. **Config merging.** The provider merges config with its own small helper, which handles both cases the Laravel helpers split:
     - Nested maps are merged recursively, so new defaults appear after an upgrade.
     - Lists such as `except`, `auto_attach` and `guards` are replaced as a whole, so removed entries stay removed.
+
+    The helper ships before any nested config key does, in the first Phase 2 spec. Once users have published a config, it is too late.
+11. **Nothing changes until the app opts in.** `middleware.auto_attach` defaults to `[]`, and the package registers no global middleware, so installing it changes no request.
+12. **A test helper for host apps.** `DynamicThrottle::fake()` swaps the counters for an in-memory store, like Laravel's other fakes. Tests can then assert that a route was throttled or allowed.
 
 ## Reasoning
 
@@ -86,7 +96,7 @@ Each point can be accepted or rejected on its own (see "Questions for the mainta
 
 ## Alternatives considered
 
-- **Throw on bad config at boot.** Typos surface at deploy, but one bad env var takes a server down, and every console command fails with it. Rejected for the request path. Console commands report the problem instead.
+- **Throw on bad config at boot.** Typos surface at deploy, but one bad env var takes a server down, and every console command fails with it. Rejected. Console commands and strict mode surface the problem instead.
 - **A default Redis database for the limiter.** A fresh app has no such connection, so the defaults would fail. Rejected in favor of the warning.
 - **Resolving other packages' paths on the request path**, from `horizon.path` and similar keys. That couples the request path to their config keys. Only the health check reads them.
 - **Configurable table names**, as spatie/laravel-permission does. Every model and migration would read config, and published migrations would depend on config at migrate time. Rejected.
@@ -107,8 +117,9 @@ Each point can be accepted or rejected on its own (see "Questions for the mainta
 ## Verification
 
 - Point 1: feature tests for an unknown driver, an undefined store, an invalid prefix, a throwing resolver and a corrupt manifest.
-  - Each request passes (fail-open), with one log entry per cooldown.
+  - Each request passes (fail-open), with one `report()` call per cooldown.
   - A fail-closed rule answers 503.
+  - In strict mode, config and resolver errors are rethrown, and a storage error still fails open.
   - `dynamic-throttle:status` exits non-zero.
 - Point 2: a health-check test for the shared-database warning.
 - Point 3: tests with a `*` rule:
@@ -123,15 +134,16 @@ Each point can be accepted or rejected on its own (see "Questions for the mainta
 - Point 10: a provider test:
   - A config published by an older version gets the new nested defaults.
   - A list the user shortened stays short.
+- Point 11: with the default config and a `*` rule, no route is throttled.
+- Point 12: a test app asserts that a route was throttled through `DynamicThrottle::fake()`.
 
-## Questions for the maintainer
+## Decision record
 
-1. Point 1: should everything except the 429 and the 503 be caught, including the app's own resolver errors?
-2. Point 2: is a warning enough, or should the limiter get its own Redis database by default?
-3. Point 3: `except` with these defaults? Should a rule be able to override it on purpose?
-4. Point 4: `middleware.after`, or keep detection only (ADR-0004)?
-5. Point 5: `scopes.user.guards`, given its cost when a guard has not run yet?
-6. Point 6: ties broken by id?
-7. Point 7: `dynamic_throttle_*` fixed names plus `database.connection`, or configurable names?
-8. Point 8: rules per app in v1, with per-tenant limits through a custom scope?
-9. Points 9 and 10: agreed, or anything to change?
+Proposed and accepted on 2026-09-24. The maintainer accepted every point, with refinements added before acceptance:
+- `report()` and strict mode (point 1)
+- the ready-to-copy connection (point 2)
+- the no-override rule and the Livewire caveat (point 3)
+- `api_token` first (point 5)
+- published migrations (point 7)
+- the helper shipping first (point 10)
+- points 11 and 12

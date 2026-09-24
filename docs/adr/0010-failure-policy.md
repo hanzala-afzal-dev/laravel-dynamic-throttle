@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-23
 - Roadmap phase: 2
-- Amended by: [ADR-0021](0021-compensation-dry-run-and-failed-release.md) (a failed release keeps the rejection)
+- Amended by: [ADR-0020](0020-laravel-ecosystem-coexistence.md) (every exception from the package, not only storage; `report()` and strict mode), [ADR-0021](0021-compensation-dry-run-and-failed-release.md) (a failed release keeps the rejection)
 - Related: ADR-0005, ADR-0007, ADR-0011
 
 ## Context

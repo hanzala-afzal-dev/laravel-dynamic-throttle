@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-23
 - Roadmap phase: 2
+- Amended by: [ADR-0020](0020-laravel-ecosystem-coexistence.md) (`scopes.user.guards`, per-tenant limits through a custom scope)
 - Related: ADR-0004, ADR-0008
 
 ## Context

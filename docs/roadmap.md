@@ -71,6 +71,21 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 - SPEC-011: dry-run (ADR-0012)
 - SPEC-012: failure policy (ADR-0010)
 
+**Added by ADR-0020 and ADR-0021 (2026-09-24)**
+- First, before any nested config key ships: the config merge that keeps new defaults and replaces lists (ADR-0020 point 10).
+- SPEC-005: `dynamic_throttle_*` tables, a configurable connection, published migrations (point 7).
+- SPEC-007: equal priorities run in id order (point 6).
+- SPEC-008: `scopes.user.guards` (point 5), and a `custom:tenant` example for per-tenant limits (point 8).
+- SPEC-010:
+  - the `except` list and `middleware.after` (points 3 and 4)
+  - nothing attached by default (point 11)
+  - releasing dry-run rules too (ADR-0021)
+  - `DynamicThrottle::fake()` for host apps' tests (point 12)
+- SPEC-012:
+  - every exception caught, with `report()` and strict mode (point 1)
+  - a failed release keeps the rejection and starts the cooldown (ADR-0021)
+- SPEC-016 (Phase 3): the shared-database warning, missing `except` paths, two limiters on one route, and config checks (points 1, 2, 3 and 9).
+
 **Exit criteria**
 - Every acceptance criterion has a passing test.
 - Zero database queries during a throttled request with a warm manifest (query-count assertion).

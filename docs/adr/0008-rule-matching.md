@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-23
 - Roadmap phase: 2
+- Amended by: [ADR-0020](0020-laravel-ecosystem-coexistence.md) (rules with equal priorities run in id order)
 - Related: ADR-0005, ADR-0007, ADR-0012
 
 ## Context

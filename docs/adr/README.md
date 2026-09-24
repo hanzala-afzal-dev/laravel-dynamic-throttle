@@ -37,7 +37,7 @@ This folder records the important decisions for `laravel-dynamic-throttle`: what
 | [0017](0017-versioning-and-release.md) | Versioning and release | Accepted | 6 |
 | [0018](0018-minimal-dashboard.md) | Minimal dashboard: Blade and vanilla JavaScript | Accepted | 4–5 |
 | [0019](0019-tested-laravel-floors.md) | Declare only the Laravel versions CI tests | Accepted | 0 |
-| [0020](0020-laravel-ecosystem-coexistence.md) | Coexistence with the Laravel ecosystem | Proposed | 2–3 |
+| [0020](0020-laravel-ecosystem-coexistence.md) | Coexistence with the Laravel ecosystem | Accepted | 2–3 |
 | [0021](0021-compensation-dry-run-and-failed-release.md) | Compensation for dry-run rules and failed releases | Accepted | 2 |
 
 ## Template
