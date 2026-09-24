@@ -291,3 +291,77 @@ it('AC-19: applies Laravel\'s Redis key prefix to the script\'s key', function (
 
     expect([(int) $server->exists($laravelPrefix.$base), (int) $server->exists($base)])->toBe([1, 0]);
 })->with('redis clients');
+
+/*
+| SPEC-004: release() with the Redis driver.
+*/
+
+it('SPEC-004 AC-8: releasing changes the attempt\'s field by -1 and writes nothing else', function (string $client): void {
+    $clock = new FakeClock;
+    $clock->setSeconds(FakeClock::T0 + 10);
+    $redis = redisDriverManager($client);
+    $keys = new KeyBuilder(redisDriverPrefix());
+    $store = new RedisLimiterStore($redis, 'default', $keys, $clock);
+    $key = new CounterKey('1', hash('sha256', 'A'));
+
+    $attempts = array_map(fn (): Attempt => $store->attempt($key, 5, 60), range(1, 3));
+    $store->release($attempts[0]);
+    $hashKey = $keys->counterBase($key, 60);
+    $fields = $redis->connection()->hgetall($hashKey);
+    $pttl = (int) $redis->connection()->pttl($hashKey);
+
+    // A field at 0 stays at 0.
+    $single = new CounterKey('2', hash('sha256', 'A'));
+    $only = $store->attempt($single, 5, 60);
+    $store->release($only);
+    $store->release($only);
+
+    // A counter never used gets no key.
+    $unused = new CounterKey('3', hash('sha256', 'A'));
+    $store->release(new Attempt($unused, 5, 60, 30_000_000, true, 4, 0));
+
+    expect($fields)->toEqual(['30000000' => '2'])
+        ->and($pttl)->toBeGreaterThan(124_000)->toBeLessThanOrEqual(125_000)
+        ->and($redis->connection()->hget($keys->counterBase($single, 60), '30000000'))->toEqual(0)
+        ->and((int) $redis->connection()->exists($keys->counterBase($unused, 60)))->toBe(0);
+})->with('redis clients');
+
+it('SPEC-004 AC-9: releases after SCRIPT FLUSH, then through EVALSHA', function (string $client): void {
+    $server = redisServer();
+    // A user that may not run EVAL: its releases only succeed through EVALSHA.
+    $server->rawCommand('ACL', 'SETUSER', 'dt-evalsha-only', 'reset', 'on', 'nopass', '~*', '&*', '+@all', '-eval');
+
+    $clock = new FakeClock;
+    $clock->setSeconds(FakeClock::T0 + 10);
+    $keys = new KeyBuilder(redisDriverPrefix());
+    $redis = redisDriverManager($client);
+    $store = new RedisLimiterStore($redis, 'default', $keys, $clock);
+    $evalshaOnly = new RedisLimiterStore(redisDriverManager($client, username: 'dt-evalsha-only'), 'default', $keys, $clock);
+    $key = new CounterKey('1', hash('sha256', 'A'));
+    $attempts = array_map(fn (): Attempt => $store->attempt($key, 5, 60), range(1, 3));
+
+    // Same lock as AC-6 of SPEC-003, which flushes the script cache too.
+    while (! $server->set('dt-test:script-flush-lock', '1', ['nx', 'ex' => 30])) {
+        usleep(10_000);
+    }
+
+    try {
+        $server->script('flush');
+        $store->release($attempts[0]);
+        $loaded = $server->script('exists', RedisLimiterStore::releaseScriptSha());
+        $evalshaOnly->release($attempts[1]);
+    } finally {
+        $server->del('dt-test:script-flush-lock');
+    }
+
+    expect($loaded)->toBe([1])
+        ->and($redis->connection()->hget($keys->counterBase($key, 60), '30000000'))->toEqual(1);
+})->with('redis clients');
+
+it('SPEC-004 AC-12: reports a Redis it cannot reach as unavailable when releasing', function (string $client): void {
+    $store = new RedisLimiterStore(redisDriverManager($client, port: 1), 'default', new KeyBuilder('dt:'), new FakeClock);
+    $allowed = new Attempt(new CounterKey('1', hash('sha256', 'A')), 5, 60, 30_000_000, true, 4, 0);
+
+    expect(fn () => $store->release($allowed))
+        ->toThrow(StorageUnavailableException::class, 'The Redis limiter store could not release the request.');
+})->with('redis clients');

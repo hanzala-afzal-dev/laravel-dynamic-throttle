@@ -73,13 +73,14 @@ function exceptionChain(Throwable $exception): string
 
 /**
  * A phpredis client that answers EVALSHA and EVAL with fixed replies and records
- * what it received. Mockery cannot mock a method named eval, a reserved word.
+ * what it received, naming each script by its SHA-1. Mockery cannot mock a
+ * method named eval, a reserved word.
  */
 function scriptedPhpRedis(mixed $evalsha, ?string $lastError = null, mixed $eval = null): Redis
 {
     return new class($evalsha, $lastError, $eval) extends Redis
     {
-        /** @var list<array{string, array<mixed>, int}> */
+        /** @var list<array{string, string, array<mixed>, int}> */
         public array $received = [];
 
         public function __construct(private readonly mixed $evalshaReply, private readonly ?string $lastError, private readonly mixed $evalReply)
@@ -89,14 +90,14 @@ function scriptedPhpRedis(mixed $evalsha, ?string $lastError = null, mixed $eval
 
         public function evalsha(string $sha1, array $args = [], int $num_keys = 0): mixed
         {
-            $this->received[] = ['evalsha', $args, $num_keys];
+            $this->received[] = ['evalsha', $sha1, $args, $num_keys];
 
             return $this->evalshaReply;
         }
 
         public function eval(string $script, array $args = [], int $num_keys = 0): mixed
         {
-            $this->received[] = [str_contains($script, "redis.call('TIME')") ? 'eval' : 'eval of something else', $args, $num_keys];
+            $this->received[] = ['eval', sha1($script), $args, $num_keys];
 
             return $this->evalReply;
         }
@@ -127,7 +128,10 @@ it('AC-6: falls back to EVAL once when phpredis reports NOSCRIPT', function (): 
     $attempt = stubbedAttempt(stubbedRedisStore(new PhpRedisConnection($client)));
 
     expect([$attempt->allowed, $attempt->windowIndex])->toBe([true, 30_000_000])
-        ->and($client->received)->toBe([['evalsha', stubbedScriptArguments(), 1], ['eval', stubbedScriptArguments(), 1]]);
+        ->and($client->received)->toBe([
+            ['evalsha', RedisLimiterStore::scriptSha(), stubbedScriptArguments(), 1],
+            ['eval', RedisLimiterStore::scriptSha(), stubbedScriptArguments(), 1],
+        ]);
 });
 
 it('AC-6: falls back to EVAL once when predis reports NOSCRIPT', function (Throwable|PredisError $noscript): void {
@@ -229,3 +233,56 @@ it('AC-18: reports a phpredis connection around another client as unavailable', 
                 ->and($exception->getPrevious()?->getMessage())->toBe('Unsupported phpredis client class@anonymous.');
         });
 });
+
+/*
+| SPEC-004: release() runs its own script through the same EVALSHA/EVAL runner.
+*/
+
+function stubbedAllowedAttempt(): Attempt
+{
+    return new Attempt(new CounterKey('1', hash('sha256', 'A')), 5, 60, 30_000_000, true, 4, 0);
+}
+
+it('SPEC-004 AC-7: releasing a rejected attempt makes no call to Redis', function (): void {
+    $factory = new class implements RedisFactory
+    {
+        public int $connections = 0;
+
+        public function connection($name = null): Connection
+        {
+            $this->connections++;
+
+            throw new RuntimeException('Redis was called.');
+        }
+    };
+    $store = new RedisLimiterStore($factory, 'default', new KeyBuilder('dt:'), new FakeClock);
+
+    $store->release(new Attempt(new CounterKey('1', hash('sha256', 'A')), 5, 60, 30_000_000, false, 0, 62));
+
+    expect($factory->connections)->toBe(0);
+});
+
+it('SPEC-004 AC-9: falls back to EVAL of the release script once when phpredis reports NOSCRIPT', function (): void {
+    $client = scriptedPhpRedis(evalsha: false, lastError: 'NOSCRIPT No matching script. Please use EVAL.', eval: 1);
+
+    stubbedRedisStore(new PhpRedisConnection($client))->release(stubbedAllowedAttempt());
+
+    // KEYS[1] is the counter's hash, ARGV[1] the window the attempt was counted in.
+    $arguments = ['dt:c:1:60:'.hash('sha256', 'A'), '30000000'];
+
+    expect($client->received)->toBe([
+        ['evalsha', RedisLimiterStore::releaseScriptSha(), $arguments, 1],
+        ['eval', RedisLimiterStore::releaseScriptSha(), $arguments, 1],
+    ]);
+});
+
+it('SPEC-004 AC-12: reports a release reply that is not an integer as unavailable', function (mixed $reply): void {
+    $client = scriptedPhpRedis(evalsha: $reply);
+
+    expect(fn () => stubbedRedisStore(new PhpRedisConnection($client))->release(stubbedAllowedAttempt()))
+        ->toThrow(StorageUnavailableException::class, 'The Redis limiter store returned an unexpected reply.');
+})->with([
+    'a status reply' => ['OK'],
+    'a list' => [[1]],
+    'a numeric string' => ['1'],
+]);

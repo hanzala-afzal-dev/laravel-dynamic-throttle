@@ -313,6 +313,83 @@ it('AC-8: measures time within a window below the second', function (StoreUnderT
         ->and($later->allowed)->toBeTrue();
 })->with('limiter stores');
 
+/*
+|--------------------------------------------------------------------------
+| SPEC-004: release() uncounts an allowed attempt
+|--------------------------------------------------------------------------
+*/
+
+it('SPEC-004 AC-1: gives a released attempt\'s place back', function (StoreUnderTest $subject): void {
+    $subject->clock->setSeconds(FakeClock::T0 + 10);
+    $attempts = array_map(fn (): Attempt => $subject->store->attempt(contractKey(), 5, 60), range(1, 5));
+
+    $subject->store->release($attempts[2]);
+    $next = $subject->store->attempt(contractKey(), 5, 60);
+    $after = $subject->store->attempt(contractKey(), 5, 60);
+
+    expect(array_map(fn (Attempt $attempt): bool => $attempt->allowed, $attempts))->toBe([true, true, true, true, true])
+        ->and([$next->allowed, $next->remaining])->toBe([true, 0])
+        ->and($after->allowed)->toBeFalse();
+})->with('limiter stores');
+
+it('SPEC-004 AC-2: releasing a rejected attempt changes nothing', function (StoreUnderTest $subject): void {
+    $subject->clock->setSeconds(FakeClock::T0 + 10);
+    contractAttempts($subject, 5);
+    $rejected = $subject->store->attempt(contractKey(), 5, 60);
+
+    $subject->store->release($rejected);
+
+    expect($rejected->allowed)->toBeFalse()
+        ->and($subject->store->attempt(contractKey(), 5, 60)->allowed)->toBeFalse();
+})->with('limiter stores');
+
+it('SPEC-004 AC-3: releases from the window the attempt was counted in', function (StoreUnderTest $subject): void {
+    $subject->clock->setSeconds(FakeClock::T0 + 59);
+    $attempts = array_map(fn (): Attempt => $subject->store->attempt(contractKey(), 5, 60), range(1, 5));
+
+    // The previous window still weighs 5 × 60 / 60 = 5 at the start of the next one.
+    $subject->clock->setSeconds(FakeClock::T0 + 60);
+    $beforeRelease = $subject->store->attempt(contractKey(), 5, 60);
+    $subject->store->release($attempts[0]);
+    $afterRelease = $subject->store->attempt(contractKey(), 5, 60);
+    $next = $subject->store->attempt(contractKey(), 5, 60);
+
+    expect($attempts[0]->windowIndex)->toBe(30_000_000)
+        ->and($beforeRelease->allowed)->toBeFalse()
+        ->and([$afterRelease->allowed, $afterRelease->remaining, $afterRelease->windowIndex])->toBe([true, 0, 30_000_001])
+        ->and($next->allowed)->toBeFalse();
+})->with('limiter stores');
+
+it('SPEC-004 AC-4: never takes a count below 0', function (StoreUnderTest $subject): void {
+    $subject->clock->setSeconds(FakeClock::T0 + 10);
+    $only = $subject->store->attempt(contractKey(), 2, 60);
+
+    $subject->store->release($only);
+    $subject->store->release($only);
+
+    // A count of -1 would let three attempts through.
+    expect(array_column(contractAttempts($subject, 3, max: 2), 0))->toBe([true, true, false]);
+})->with('limiter stores');
+
+it('SPEC-004 AC-5: releasing for a counter that holds nothing changes nothing', function (StoreUnderTest $subject): void {
+    $subject->clock->setSeconds(FakeClock::T0 + 10);
+
+    $subject->store->release(new Attempt(contractKey(), 2, 60, 30_000_000, true, 1, 0));
+
+    expect(array_column(contractAttempts($subject, 3, max: 2), 0))->toBe([true, true, false]);
+})->with('limiter stores');
+
+it('SPEC-004 AC-6: only changes its own counter', function (StoreUnderTest $subject): void {
+    $subject->clock->setSeconds(FakeClock::T0 + 10);
+    $ruleOne = array_map(fn (): Attempt => $subject->store->attempt(contractKey('1'), 5, 60), range(1, 5));
+    contractAttempts($subject, 5, key: contractKey('2'));
+
+    $subject->store->release($ruleOne[0]);
+
+    expect($subject->store->attempt(contractKey('1'), 5, 60)->allowed)->toBeTrue()
+        ->and($subject->store->attempt(contractKey('2'), 5, 60)->allowed)->toBeFalse();
+})->with('limiter stores');
+
 it('AC-8: puts window edges exactly on the microsecond', function (StoreUnderTest $subject): void {
     $subject->clock->setMicroseconds((FakeClock::T0 + 59) * 1_000_000 + 999_999);
     $lastMicrosecond = $subject->store->attempt(contractKey(), 5, 60);

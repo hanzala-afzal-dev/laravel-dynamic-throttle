@@ -7,7 +7,10 @@ declare(strict_types=1);
 | time, so every worker hits the counter at the same moment, makes N attempts
 | on one counter, and prints how many were allowed.
 |
-| php concurrency-worker.php <backend> <host> <port> <prefix> <attempts> <max> <window> <now> <start-at>
+| php concurrency-worker.php <backend> <host> <port> <prefix> <attempts> <max> <window> <now> <start-at> [release]
+|
+| With "release", it releases every attempt it was allowed right after it (SPEC-004
+| AC-13), and prints how many were allowed and how many were released.
 */
 
 use Afzal\DynamicThrottle\Engine\CounterKey;
@@ -24,6 +27,7 @@ use Illuminate\Redis\RedisManager;
 require __DIR__.'/../../vendor/autoload.php';
 
 [, $backend, $host, $port, $prefix, $attempts, $max, $window, $now, $startAt] = $argv;
+$release = ($argv[10] ?? '') === 'release';
 
 $clock = new FakeClock;
 $clock->setSeconds((int) $now);
@@ -48,9 +52,21 @@ while (microtime(true) < (float) $startAt) {
 }
 
 $allowed = 0;
+$released = 0;
 
 for ($i = 0; $i < (int) $attempts; $i++) {
-    $allowed += $store->attempt($key, (int) $max, (int) $window)->allowed ? 1 : 0;
+    $attempt = $store->attempt($key, (int) $max, (int) $window);
+
+    if (! $attempt->allowed) {
+        continue;
+    }
+
+    $allowed++;
+
+    if ($release) {
+        $store->release($attempt);
+        $released++;
+    }
 }
 
-echo $allowed;
+echo $release ? "{$allowed} {$released}" : $allowed;

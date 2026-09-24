@@ -155,3 +155,102 @@ it('AC-11: reports a store whose increment returns false as unavailable', functi
     expect(fn (): Attempt => $store->attempt(new CounterKey('1', hash('sha256', 'A')), 5, 60))
         ->toThrow(StorageUnavailableException::class);
 });
+
+/*
+| SPEC-004: release() with the cache driver.
+*/
+
+it('SPEC-004 AC-7: releasing a rejected attempt makes no call to the store', function (): void {
+    $arrayStore = new class extends ArrayStore
+    {
+        /** @var list<string> */
+        public array $calls = [];
+
+        public function get($key): mixed
+        {
+            $this->calls[] = 'get';
+
+            return parent::get($key);
+        }
+
+        public function many(array $keys): mixed
+        {
+            $this->calls[] = 'many';
+
+            return parent::many($keys);
+        }
+
+        public function put($key, $value, $seconds): mixed
+        {
+            $this->calls[] = 'put';
+
+            return parent::put($key, $value, $seconds);
+        }
+
+        public function increment($key, $value = 1): mixed
+        {
+            $this->calls[] = 'increment';
+
+            return parent::increment($key, $value);
+        }
+
+        public function decrement($key, $value = 1): mixed
+        {
+            $this->calls[] = 'decrement';
+
+            return parent::decrement($key, $value);
+        }
+
+        public function forget($key): mixed
+        {
+            $this->calls[] = 'forget';
+
+            return parent::forget($key);
+        }
+    };
+    $store = new CacheLimiterStore(new Repository($arrayStore), new KeyBuilder('dt:'), new FakeClock);
+
+    $store->release(new Attempt(new CounterKey('1', hash('sha256', 'A')), 5, 60, 30_000_000, false, 0, 62));
+
+    expect($arrayStore->calls)->toBe([]);
+});
+
+it('SPEC-004 AC-10: never creates a window key', function (): void {
+    $store = new CacheLimiterStore(Cache::store('array'), new KeyBuilder('dt:'), new FakeClock);
+    $hash = hash('sha256', 'A');
+
+    // Allowed, but its window key is gone: expired or evicted.
+    $store->release(new Attempt(new CounterKey('1', $hash), 5, 60, 30_000_000, true, 4, 0));
+
+    expect(Cache::store('array')->has("dt:c:1:60:{$hash}:30000000"))->toBeFalse();
+});
+
+it('SPEC-004 AC-12: reports a store that throws while releasing as unavailable', function (string $failing): void {
+    $failure = new RuntimeException('Connection refused');
+    $arrayStore = new class($failure, $failing) extends ArrayStore
+    {
+        public function __construct(private readonly RuntimeException $failure, private readonly string $failing)
+        {
+            parent::__construct();
+        }
+
+        public function get($key): mixed
+        {
+            return $this->failing === 'get' ? throw $this->failure : parent::get($key);
+        }
+
+        public function decrement($key, $value = 1): int|bool
+        {
+            return $this->failing === 'decrement' ? throw $this->failure : parent::decrement($key, $value);
+        }
+    };
+    $hash = hash('sha256', 'A');
+    $arrayStore->put("dt:c:1:60:{$hash}:30000000", 3, 125);
+    $store = new CacheLimiterStore(new Repository($arrayStore), new KeyBuilder('dt:'), new FakeClock);
+
+    expect(fn () => $store->release(new Attempt(new CounterKey('1', $hash), 5, 60, 30_000_000, true, 1, 0)))
+        ->toThrow(function (StorageUnavailableException $exception) use ($failure): void {
+            expect($exception->getPrevious())->toBe($failure)
+                ->and($exception->getMessage())->toBe('The limiter store could not release the request.');
+        });
+})->with(['get', 'decrement']);

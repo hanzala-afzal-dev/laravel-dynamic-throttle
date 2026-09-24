@@ -82,3 +82,49 @@ it('AC-20: reports a failed read of the previous window as unavailable, not as 0
             expect($exception->getMessage())->toMatch('/\AMemcached could not read the previous window: \S/');
         });
 });
+
+/*
+| SPEC-004 AC-11 and AC-12: release() with the cache driver on real services.
+*/
+
+it('SPEC-004 AC-11: releases on a Redis cache store whose phpredis connection serializes values', function (): void {
+    if (! extension_loaded('redis')) {
+        $this->markTestSkipped('ext-redis is not installed.');
+    }
+
+    $redis = new RedisManager(new Container, 'phpredis', [
+        'default' => [
+            'host' => (string) env('REDIS_HOST', '127.0.0.1'),
+            'port' => (int) env('REDIS_PORT', 6379),
+            'database' => 0,
+            'serializer' => Redis::SERIALIZER_PHP,
+        ],
+    ]);
+    $clock = new FakeClock;
+    $clock->setSeconds(FakeClock::T0 + 10);
+    $store = new CacheLimiterStore(new Repository(new RedisStore($redis)), new KeyBuilder('dt-serializer-'.bin2hex(random_bytes(4)).':'), $clock);
+    $key = new CounterKey('1', hash('sha256', 'A'));
+    $attempts = array_map(fn (): Attempt => $store->attempt($key, 5, 60), range(1, 5));
+
+    $store->release($attempts[0]);
+
+    expect($store->attempt($key, 5, 60)->allowed)->toBeTrue();
+});
+
+it('SPEC-004 AC-12: reports a failed read of the window as unavailable when releasing', function (): void {
+    if (! extension_loaded('memcached')) {
+        $this->markTestSkipped('ext-memcached is not installed.');
+    }
+
+    // Reads go to a server that is down, so get() returns null with an error result code.
+    $down = new Memcached;
+    $down->addServer('127.0.0.1', 1);
+    $store = new CacheLimiterStore(new Repository(new MemcachedStore($down)), new KeyBuilder('dt-memcached-'.bin2hex(random_bytes(4)).':'), new FakeClock);
+    $allowed = new Attempt(new CounterKey('1', hash('sha256', 'A')), 5, 60, 30_000_000, true, 4, 0);
+
+    // The message names Memcached's own error, such as "SERVER IS MARKED DEAD".
+    expect(fn () => $store->release($allowed))
+        ->toThrow(function (StorageUnavailableException $exception): void {
+            expect($exception->getMessage())->toMatch('/\AMemcached could not read the window: \S/');
+        });
+});

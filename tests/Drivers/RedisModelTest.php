@@ -117,3 +117,72 @@ it('AC-8: decides exactly like the PHP reference on random traffic', function (s
         ->and($decisions['rejected'])->toBeGreaterThan(300)
         ->and($nextWindowAttempts)->toBeGreaterThan(100);
 })->with(['phpredis', 'predis']);
+
+it('SPEC-004 AC-14: still decides exactly like the reference when attempts are released', function (string $client): void {
+    if ($client === 'phpredis' && ! extension_loaded('redis')) {
+        $this->markTestSkipped('ext-redis is not installed.');
+    }
+
+    $clock = new FakeClock;
+    $prefix = 'dt-model-'.bin2hex(random_bytes(4)).':';
+    $redis = new RedisLimiterStore(new RedisManager(new Container, $client, [
+        'default' => ['host' => (string) env('REDIS_HOST', '127.0.0.1'), 'port' => (int) env('REDIS_PORT', 6379), 'database' => 0],
+    ]), 'default', new KeyBuilder($prefix), $clock);
+    $reference = new CacheLimiterStore(new Repository(new ArrayStore), new KeyBuilder($prefix), $clock);
+    $releases = new Randomizer(new Mt19937(20_260_924));
+
+    $mismatches = [];
+    $overLimit = [];
+    /** @var array<string, int> $kept allowed minus released, per aligned window of each counter */
+    $kept = [];
+    /** @var list<array{Attempt, Attempt, string, string}> $held allowed and not released yet */
+    $held = [];
+    $lastWindow = [];
+    $released = 0;
+    $releasedFromEarlierWindow = 0;
+
+    foreach (redisModelTraffic(20_260_923, 2_000) as $step => [$now, $identity, $window, $max]) {
+        $clock->setMicroseconds($now);
+        $key = new CounterKey('1', hash('sha256', $identity));
+        $counter = "{$identity}:{$window}";
+
+        $actual = $redis->attempt($key, $max, $window);
+        $expected = $reference->attempt($key, $max, $window);
+
+        if (redisModelSummary($actual) !== redisModelSummary($expected)) {
+            $mismatches[] = sprintf('step %d (%s, window %d, max %d): Redis %s, reference %s',
+                $step, $identity, $window, $max, json_encode(redisModelSummary($actual)), json_encode(redisModelSummary($expected)));
+        }
+
+        $lastWindow[$counter] = $actual->windowIndex;
+
+        if ($actual->allowed) {
+            $bucket = "{$counter}:{$actual->windowIndex}";
+            $kept[$bucket] = ($kept[$bucket] ?? 0) + 1;
+            $held[] = [$actual, $expected, $bucket, $counter];
+
+            if ($kept[$bucket] > $max) {
+                $overLimit[] = "step {$step}: window {$bucket} keeps {$kept[$bucket]} with max {$max}";
+            }
+        }
+
+        // One time in four, release a held attempt: the latest one, or any earlier one.
+        if ($held !== [] && $releases->getInt(1, 4) === 1) {
+            $index = $releases->getInt(0, 1) === 0 ? array_key_last($held) : $releases->getInt(0, count($held) - 1);
+            [$heldActual, $heldExpected, $bucket, $heldCounter] = $held[$index];
+            array_splice($held, $index, 1);
+
+            $redis->release($heldActual);
+            $reference->release($heldExpected);
+            $kept[$bucket]--;
+            $released++;
+            $releasedFromEarlierWindow += $heldActual->windowIndex < $lastWindow[$heldCounter] ? 1 : 0;
+        }
+    }
+
+    expect($mismatches)->toHaveCount(0, implode("\n", array_slice($mismatches, 0, 5)))
+        ->and($overLimit)->toHaveCount(0, implode("\n", array_slice($overLimit, 0, 5)))
+        // The releases must exercise both cases, or matching decisions would prove little.
+        ->and($released)->toBeGreaterThanOrEqual(300)
+        ->and($releasedFromEarlierWindow)->toBeGreaterThanOrEqual(30);
+})->with(['phpredis', 'predis']);
