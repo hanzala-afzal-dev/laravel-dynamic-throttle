@@ -11,7 +11,7 @@ use Afzal\DynamicThrottle\Engine\Contracts\Clock;
 use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
 use Afzal\DynamicThrottle\Engine\Identity\IdentityHasher;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
-use Afzal\DynamicThrottle\Engine\Matching\RuleMatcher;
+use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
 use Afzal\DynamicThrottle\Http\IdentitySettings;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Models\Rule;
@@ -61,7 +61,11 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
             $this->refreshSeconds($app),
         ));
 
-        $this->app->scoped(RuleMatcher::class, fn (Application $app): RuleMatcher => new RuleMatcher($this->maxRulesPerRequest($app)));
+        // The cap lives in the evaluator, which knows which rules count a request (ADR-0025).
+        $this->app->scoped(RuleEvaluator::class, fn (Application $app): RuleEvaluator => new RuleEvaluator(
+            $app->make(LimiterStore::class),
+            $this->maxRulesPerRequest($app),
+        ));
 
         // Apps register their custom scopes once, at boot, so they live for the worker.
         $this->app->singleton(DynamicThrottle::class);

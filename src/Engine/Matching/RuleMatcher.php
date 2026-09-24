@@ -8,17 +8,14 @@ use Afzal\DynamicThrottle\Manifest\Manifest;
 use Illuminate\Support\Str;
 
 /**
- * Finds the rules that apply to a request (ADR-0008, SPEC-007).
+ * Finds the rules that match a request (ADR-0008, SPEC-007).
  */
 final readonly class RuleMatcher
 {
-    public function __construct(
-        /** matching.max_rules_per_request: later matches are ignored. */
-        private int $maxRulesPerRequest = 5,
-    ) {}
-
     /**
-     * The matching rules in manifest order (priority, then id), up to the cap.
+     * Every matching rule in manifest order: priority, then id. The evaluator
+     * applies the per-request cap, because only it knows which rules count
+     * the request (ADR-0025).
      *
      * @param  string  $method  as Request::getMethod() returns it
      * @param  string  $path  as Request::decodedPath() returns it (RequestTarget)
@@ -26,20 +23,13 @@ final readonly class RuleMatcher
     public function match(Manifest $manifest, string $method, string $path): MatchResult
     {
         $rules = [];
-        $ignored = 0;
 
         foreach ($manifest->index->candidates($method, $path) as $position) {
-            if (! Str::is($manifest->index->pattern($position), $path)) {
-                continue;
-            }
-
-            if (count($rules) < $this->maxRulesPerRequest) {
+            if (Str::is($manifest->index->pattern($position), $path)) {
                 $rules[] = $manifest->rules[$position];
-            } else {
-                $ignored++;
             }
         }
 
-        return new MatchResult($rules, $ignored);
+        return new MatchResult($rules);
     }
 }
