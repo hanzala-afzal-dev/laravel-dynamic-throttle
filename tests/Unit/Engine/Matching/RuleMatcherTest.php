@@ -51,6 +51,14 @@ it('AC-2: matches methods, and GET rules also match HEAD', function (string $rul
     'HEAD does not match GET' => ['HEAD', 'GET', false],
 ]);
 
+it('AC-2: offers each rule once to a request whose method is *', function (): void {
+    // Symfony keeps any method the server passes on, and * is a valid HTTP token.
+    $manifest = new Manifest(1, [matchingRule('1', '*', 'api/*'), matchingRule('2', '*', '*')]);
+
+    expect($manifest->index->candidates('*', 'api/x'))->toBe([0, 1])
+        ->and(matchedIds($manifest, '*', 'api/x'))->toBe(['1', '2']);
+});
+
 it('AC-3: matches patterns with Str::is on the whole path, ignoring a leading slash', function (string $pattern, string $path, bool $matches): void {
     $manifest = new Manifest(1, [matchingRule('1', '*', $pattern)]);
 

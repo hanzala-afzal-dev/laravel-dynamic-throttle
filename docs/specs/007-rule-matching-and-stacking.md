@@ -54,6 +54,7 @@ Stacking criteria use the cache driver on the array store and a fake clock at T0
   - a `POST` rule matches only `POST`
   - a `GET` rule matches `GET` and `HEAD`, not `POST`
   - a `HEAD` rule matches `HEAD`, not `GET`
+  - a request whose method is `*` is offered each `*` rule once
 - **AC-3** Patterns:
 
   | Pattern | Matches | Does not match |
@@ -146,6 +147,7 @@ Stacking criteria use the cache driver on the array store and a fake clock at T0
 ## Edge cases and failure modes
 - **URL encoding:** handled by matching the decoded path, as the router does (AC-1).
 - **An encoded slash.** `api%2Fusers` decodes to `api/users`, as in routing.
+- **A request method of `*`.** Symfony keeps any method the server passes on, and `*` is a valid HTTP token. Only `*` rules match it, and each counts it once (AC-2).
 - **Case.** Paths and patterns are case-sensitive, like Laravel's routes. `API/users` does not reach an `api/users` route either.
 - **Trailing slashes** are trimmed by `decodedPath()`, the same as in routing.
 - **CORS preflights** (`OPTIONS`) are answered by Laravel's global `HandleCors` middleware before routing, so route middleware never sees them. Without it, a `*` rule would count them.
