@@ -30,16 +30,16 @@ final class ClientIp
             return self::UNKNOWN;
         }
 
+        $bytes = inet_pton($ip);
+
         // An IPv4 address, or something that is not an IP at all, is used as it is: it is hashed anyway.
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) === false) {
+        if ($bytes === false || strlen($bytes) === 4) {
             return $ip;
         }
 
-        $bytes = (string) inet_pton($ip);
-
-        // ::ffff:203.0.113.7 is an IPv4 client on a dual-stack socket.
+        // ::ffff:203.0.113.7 is an IPv4 client on a dual-stack socket. inet_ntop() cannot fail on 4 bytes.
         if (str_starts_with($bytes, str_repeat("\0", 10)."\xff\xff")) {
-            return (string) inet_ntop(substr($bytes, 12));
+            return (string) inet_ntop(substr($bytes, 12)); // @pest-mutate-ignore: RemoveStringCast
         }
 
         $wholeBytes = intdiv($ipv6Prefix, 8);
@@ -47,7 +47,7 @@ final class ClientIp
         $remainingBits = $ipv6Prefix % 8;
 
         if ($remainingBits > 0) {
-            $network .= chr(ord($bytes[$wholeBytes]) & (0xFF << (8 - $remainingBits)) & 0xFF);
+            $network .= chr(ord($bytes[$wholeBytes]) & (0xFF << (8 - $remainingBits)));
         }
 
         return inet_ntop(str_pad($network, 16, "\0")).'/'.$ipv6Prefix;
