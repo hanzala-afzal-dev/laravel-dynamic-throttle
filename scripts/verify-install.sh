@@ -53,4 +53,8 @@ php artisan migrate --force --no-interaction
 php artisan migrate:status | grep -q 'create_dynamic_throttle_rules_table.*Ran'
 php artisan db:table dynamic_throttle_rules
 
-step "OK: ${PACKAGE} installs into Laravel ${LARAVEL_MAJOR}, boots and migrates"
+step "Compiling the rules manifest (SPEC-006)"
+php artisan dynamic-throttle:compile
+php artisan schedule:list | grep -q 'dynamic-throttle:compile'
+
+step "OK: ${PACKAGE} installs into Laravel ${LARAVEL_MAJOR}, boots, migrates and compiles"

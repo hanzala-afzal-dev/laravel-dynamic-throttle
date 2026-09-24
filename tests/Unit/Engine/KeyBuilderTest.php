@@ -45,3 +45,10 @@ it('AC-12: rejects an unsafe prefix', function (string $prefix): void {
     'a slash' => ['dt/'],
     'a unicode letter' => ['dü:'],
 ]);
+
+it('SPEC-006: builds the manifest keys from the prefix, apart from every counter key', function (): void {
+    $keys = new KeyBuilder('dt:');
+
+    expect([$keys->manifest(), $keys->manifestLock(), $keys->manifestRebuild()])->toBe(['dt:m', 'dt:m:lock', 'dt:m:rebuild'])
+        ->and($keys->counterBase(new CounterKey('1', hash('sha256', 'A')), 60))->toStartWith('dt:c:');
+});

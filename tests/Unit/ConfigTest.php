@@ -55,3 +55,29 @@ it('AC-7: uses the default connection when DYNAMIC_THROTTLE_DB_CONNECTION is not
     expect(loadPackageConfig())->toHaveKey('database')
         ->and(loadPackageConfig()['database']['connection'])->toBeNull();
 });
+
+/*
+| SPEC-006 AC-21: the manifest's read path and scheduled compile.
+*/
+
+it('AC-21: refreshes the in-memory manifest every 2 seconds unless DYNAMIC_THROTTLE_MANIFEST_REFRESH says otherwise', function (): void {
+    expect(loadPackageConfig()['manifest'])->toBe(['refresh_seconds' => 2, 'schedule' => true]);
+
+    $_SERVER['DYNAMIC_THROTTLE_MANIFEST_REFRESH'] = '0';
+
+    try {
+        expect(loadPackageConfig()['manifest']['refresh_seconds'])->toBe(0);
+    } finally {
+        unset($_SERVER['DYNAMIC_THROTTLE_MANIFEST_REFRESH']);
+    }
+});
+
+it('AC-21: falls back to 2 seconds for a refresh that is not a whole number of seconds', function (string $value): void {
+    $_SERVER['DYNAMIC_THROTTLE_MANIFEST_REFRESH'] = $value;
+
+    try {
+        expect(loadPackageConfig()['manifest']['refresh_seconds'])->toBe(2);
+    } finally {
+        unset($_SERVER['DYNAMIC_THROTTLE_MANIFEST_REFRESH']);
+    }
+})->with(['-1', 'soon', '1.5']);

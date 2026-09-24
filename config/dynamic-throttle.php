@@ -89,4 +89,28 @@ return [
         'connection' => env('DYNAMIC_THROTTLE_DB_CONNECTION'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Compiled rules (the manifest)
+    |--------------------------------------------------------------------------
+    |
+    | Requests read the rules from a manifest in the cache store above, never
+    | from the database (docs/adr/0007). Octane and queue workers also keep
+    | it in memory, and check the cache again every refresh_seconds, so a
+    | changed rule reaches them within that time. 0 means every request
+    | reads the cache.
+    |
+    | "schedule" registers "php artisan dynamic-throttle:compile" in your
+    | scheduler every five minutes, so the manifest heals itself after the
+    | cache is cleared. Your scheduler must be running.
+    |
+    */
+
+    'manifest' => [
+        'refresh_seconds' => filter_var(env('DYNAMIC_THROTTLE_MANIFEST_REFRESH', 2), FILTER_VALIDATE_INT, [
+            'options' => ['min_range' => 0, 'default' => 2],
+        ]),
+        'schedule' => true,
+    ],
+
 ];

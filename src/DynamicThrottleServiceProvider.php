@@ -4,13 +4,20 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle;
 
+use Afzal\DynamicThrottle\Compiler\ManifestCompiler;
+use Afzal\DynamicThrottle\Compiler\RuleObserver;
+use Afzal\DynamicThrottle\Console\CompileCommand;
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
 use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
+use Afzal\DynamicThrottle\Manifest\ManifestRepository;
+use Afzal\DynamicThrottle\Models\Rule;
 use Afzal\DynamicThrottle\Support\ConfigMerger;
 use Afzal\DynamicThrottle\Support\LaravelClock;
 use Afzal\DynamicThrottle\Support\LimiterStoreFactory;
 use Composer\InstalledVersions;
+use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Foundation\CachesConfiguration;
 use Illuminate\Foundation\Console\AboutCommand;
@@ -34,6 +41,22 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
 
         // Scoped: Octane builds it once per request, so config changes apply on the next request.
         $this->app->scoped(LimiterStore::class, fn (Application $app): LimiterStore => $app->make(LimiterStoreFactory::class)->make());
+
+        $this->app->bind(ManifestCompiler::class, fn (Application $app): ManifestCompiler => new ManifestCompiler(
+            $this->manifestCache($app),
+            $app->make(KeyBuilder::class),
+        ));
+
+        // Scoped, so each Octane request registers its rebuild on its own app. The rules
+        // themselves stay in process memory across requests (ManifestMemory).
+        $this->app->scoped(ManifestRepository::class, fn (Application $app): ManifestRepository => new ManifestRepository(
+            $this->manifestCache($app),
+            $app->make(KeyBuilder::class),
+            $app->make(Clock::class),
+            $app->make(ManifestCompiler::class),
+            $app,
+            $this->refreshSeconds($app),
+        ));
     }
 
     /**
@@ -54,11 +77,40 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
         $config->set('dynamic-throttle', ConfigMerger::merge($defaults, is_array($app) ? $app : []));
     }
 
+    /**
+     * The manifest lives in the same cache store as the counters (ADR-0005 point 6).
+     */
+    private function manifestCache(Application $app): CacheRepository
+    {
+        $store = $app->make('config')->get('dynamic-throttle.store');
+
+        return $app->make('cache')->store(is_string($store) && $store !== '' ? $store : null);
+    }
+
+    private function refreshSeconds(Application $app): int
+    {
+        $seconds = $app->make('config')->get('dynamic-throttle.manifest.refresh_seconds');
+
+        return is_int($seconds) && $seconds >= 0 ? $seconds : 2;
+    }
+
     public function boot(): void
     {
+        // Admins edit rules from the dashboard too, so this is not console-only.
+        Rule::observe(RuleObserver::class);
+
         if (! $this->app->runningInConsole()) {
             return;
         }
+
+        $this->commands([CompileCommand::class]);
+
+        // Heals a manifest the cache lost (SPEC-006). manifest.schedule turns it off.
+        $this->callAfterResolving(Schedule::class, function (Schedule $schedule): void {
+            if ($this->app->make('config')->get('dynamic-throttle.manifest.schedule') !== false) {
+                $schedule->command('dynamic-throttle:compile')->everyFiveMinutes();
+            }
+        });
 
         $this->publishes([
             __DIR__.'/../config/dynamic-throttle.php' => $this->app->configPath('dynamic-throttle.php'),
