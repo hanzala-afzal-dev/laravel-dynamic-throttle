@@ -1,7 +1,7 @@
 # SPEC-008: Scopes, identities and custom resolvers
 
-- Status: Draft
-- ADRs: ADR-0004, ADR-0009, ADR-0010, ADR-0017, ADR-0020, ADR-0022
+- Status: In progress
+- ADRs: ADR-0004, ADR-0009, ADR-0010, ADR-0017, ADR-0020, ADR-0022, ADR-0024
 - Roadmap phase: 2
 
 ## Problem
@@ -31,7 +31,7 @@ A rule counts requests per client, and its scope decides who the client is (ADR-
 - **Users and guards** (ADR-0020 point 5):
   - By default, `scopes.user.guards` is `null`. The user is then the one the request authenticated with: the default guard, which Laravel's auth middleware sets, and only when that guard already holds a user (`hasUser()`). The scope never triggers a user lookup of its own, so a route without auth middleware counts its requests as guests, as ADR-0004 expects.
   - A list, such as `['sanctum', 'web']`, asks each guard in order, and the first user found wins. Asking a guard that has not authenticated the request costs that guard's own lookup, such as Sanctum's token query. That is the documented price of the option (ADR-0020).
-  - The identity includes the user's class, so a `User` and an `Admin` with the same id never share a counter (open question 2).
+  - The identity includes the user's class, so a `User` and an `Admin` with the same id never share a counter.
 - **API tokens** come from `$request->bearerToken()`. Only the hash is ever stored.
 - **Custom scopes** are registered by the app, usually in a service provider's `boot()`:
   ```php
@@ -45,15 +45,15 @@ A rule counts requests per client, and its scope decides who the client is (ADR-
   - Names are 1 to 64 characters from `a-z`, `0-9`, `_` and `-`, like rule ids. Registering a name again replaces the resolver.
   - Per-tenant limits are one rule with the `custom` scope `tenant` (ADR-0020 point 8): each tenant gets its own counter.
 - **Resolved once per request.** Within one request, each scope and parameter is resolved at most once, however many rules use it. A custom resolver that queries the database runs once per request, not once per rule. Nothing is kept from one request to the next, on Octane either.
-- **Hashing.** An identity is hashed before it reaches a key (ADR-0009), into 64 lowercase hex characters. Open question 3: HMAC-SHA-256 with a key derived from `APP_KEY`, instead of plain SHA-256.
+- **Hashing.** An identity is hashed before it reaches a key, into 64 lowercase hex characters: HMAC-SHA-256 with a key derived from `APP_KEY` (ADR-0024, which amends ADR-0009). Plain SHA-256 would hide tokens, but not IPv4 addresses or numeric ids, which can be hashed and matched in seconds.
 - **Resolution errors:**
   - These count as resolution errors:
     - a `custom` scope that is not registered
     - a resolver that throws, or returns anything else, such as an array, an object or `true`
     - a guard that is not defined, or fails
-  - Open question 1: the evaluator ends with a `Failed` outcome for that rule, as for a failed attempt (SPEC-007). The error is an `IdentityUnavailableException` that names the scope and keeps the cause.
+  - The evaluator ends with a `Failed` outcome for that rule, as for a failed attempt (SPEC-007), and keeps what earlier rules counted. The error is an `IdentityUnavailableException` that names the scope and keeps the cause.
   - SPEC-012 then applies the rule's failure policy, reporting and strict mode (ADR-0020 point 1).
-- **Location** (open question 4):
+- **Location:**
   - The pure parts live in `src/Engine/Identity`, so the mutation gate covers them: IP grouping, the identity for a scope and a value, and hashing.
   - Reading the request, the guards and the registered resolvers lives in `src/Http`.
 
@@ -103,7 +103,7 @@ Unless stated otherwise, resolver criteria use `RequestIdentityResolver` on a `R
   - `Plan`, `''` and a 65-character name are rejected at registration with an `InvalidArgumentException`.
 
 ### Errors, memoization and hashing
-- **AC-12 Resolution errors** (open question 1). Take a rule `a` that counts, then a rule `b` whose scope fails in each of these ways:
+- **AC-12 Resolution errors.** Take a rule `a` that counts, then a rule `b` whose scope fails in each of these ways:
   - `b`'s custom scope is not registered
   - its resolver throws a `RuntimeException`
   - its resolver returns `['x']`, `new stdClass` or `true`
@@ -117,7 +117,9 @@ Unless stated otherwise, resolver criteria use `RequestIdentityResolver` on a `R
   - Rules of every scope are evaluated on the cache driver.
   - Afterwards, no key the store wrote contains the token `tok-QWERTY`, the header value `client-QWERTY`, the plan `plan-QWERTY` or the IP `203.0.113.7`.
   - Every identity is 64 lowercase hex characters.
-- **AC-15 Keyed hashing** (open question 3): the same identity under two app keys hashes differently, and neither hash is the plain SHA-256 of the identity.
+- **AC-15 Keyed hashing** (ADR-0024):
+  - The same identity under two app keys hashes differently, and neither hash is the plain SHA-256 of the identity.
+  - Without an app key, the hash is the plain SHA-256.
 
 ### Tenants, config and arch
 - **AC-16 Per-tenant limits** (ADR-0020 point 8). One rule has the custom scope `tenant`, max 2, window 60, on the cache driver with the fake clock:
@@ -139,7 +141,7 @@ Unless stated otherwise, resolver criteria use `RequestIdentityResolver` on a `R
 - `src/Engine/Identity/ClientIp.php`: groups an IP.
 - `src/Engine/Identity/ScopeIdentity.php`: the identity for a rule, from the scope's value and the grouped IP, or `null` to skip.
 - `src/Engine/Identity/IdentityHasher.php`: hashes an identity.
-- `src/Engine/Exceptions/IdentityUnavailableException.php`. With open question 1, `RuleEvaluator` catches it and `RuleFailure` accepts it.
+- `src/Engine/Exceptions/IdentityUnavailableException.php`. `RuleEvaluator` catches it, and `RuleFailure` accepts it as well as a `StorageUnavailableException`.
 - `src/Http/RequestIdentityResolver.php`: implements `Engine\Contracts\IdentityResolver` for one request. `forRequest(Request)` is what SPEC-010's middleware calls.
 - `config/dynamic-throttle.php`: the `scopes` section, with `ip.ipv6_prefix` and `user.guards`.
 - Tests:
@@ -164,7 +166,7 @@ Unless stated otherwise, resolver criteria use `RequestIdentityResolver` on a `R
 - **Octane.** Registered resolvers live for the worker, because they are registered at boot. Resolved identities live for one request.
 - **Large values.** A 10 KB header value is hashed like any other.
 - **An identifier that is an object,** such as a UUID value object from `getAuthIdentifier()`, counts by its string form when it is `Stringable`, and is a resolution error otherwise.
-- **Rotating `APP_KEY`** would reset every counter once, with open question 3. Counter windows are at most 24 hours.
+- **Rotating `APP_KEY`** resets every counter once (ADR-0024). Counter windows are at most 24 hours.
 - **No `APP_KEY`:** identities fall back to plain SHA-256, and the health check says so (SPEC-016), so rate limiting keeps working.
 
 ## End-to-end verification
@@ -172,13 +174,9 @@ Unless stated otherwise, resolver criteria use `RequestIdentityResolver` on a `R
 - `composer test:mutate`: `Engine\Identity` is in the gate
 
 ## Open questions
-1. **A resolution error ends evaluation with a `Failed` outcome for that rule**, as a failed attempt does. This came from the SPEC-007 review. Today such an error escapes `evaluate()`, and the rule that failed, plus what earlier rules counted, is lost. ADR-0020 point 1 needs both to apply that rule's failure policy, and strict mode needs the error.
-   - *Recommended:* yes, through `IdentityUnavailableException`, which wraps the cause.
-2. **The user identity includes the user's class.** ADR-0009 names only `getAuthIdentifier()`, so a `User` and an `Admin` with the same id would share a counter in apps with more than one user model.
-   - *Recommended:* include the class. Renaming a user model then resets its counters once.
-3. **Keyed hashing.** Plain SHA-256 hides tokens, but not small spaces. Every IPv4 address, or every numeric user id, can be hashed and matched in seconds, so anyone who can read the cache can recover them. That defeats ADR-0009's point. HMAC-SHA-256 with a key derived from `APP_KEY` costs the same.
-   - *Recommended:* yes, recorded in a short ADR that amends ADR-0009.
-4. **Where the code lives.**
-   - *Recommended:* the pure identity code in `src/Engine/Identity`, so mutation testing covers it, and the request-reading code in `src/Http`.
-5. **The cap and `skip`,** raised in PR #4 and not yet answered. `skip` arrives with this spec, and skipped rules still use cap slots. Five `user` rules with `skip` can push a guest rule past the cap, and then guests are never limited.
-   - *Recommended:* a short ADR amending ADR-0008, in its own small PR right after this one and before SPEC-010 applies rules to requests. Skipped rules would never use a slot, and dry-run rules would get their own.
+None. The maintainer accepted all five recommendations on 2026-09-24:
+1. A resolution error ends evaluation with a `Failed` outcome for that rule, through `IdentityUnavailableException`, which wraps the cause. SPEC-007's evaluator is amended accordingly.
+2. The user identity includes the user's class.
+3. Identities are hashed with HMAC-SHA-256 and a key derived from `APP_KEY`. ADR-0024 records it, and amends ADR-0009.
+4. The pure identity code lives in `src/Engine/Identity`, and the request-reading code in `src/Http`.
+5. The cap and `skip`: a short ADR amending ADR-0008 comes in its own small PR right after this one, before SPEC-010 applies rules to requests (roadmap, Phase 2).

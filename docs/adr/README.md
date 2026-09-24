@@ -41,6 +41,7 @@ This folder records the important decisions for `laravel-dynamic-throttle`: what
 | [0021](0021-compensation-dry-run-and-failed-release.md) | Compensation for dry-run rules and failed releases | Accepted | 2 |
 | [0022](0022-skip-rules-without-identity.md) | Rules can skip requests without an identity, on every scope | Accepted | 2 |
 | [0023](0023-pre-index-built-at-load.md) | The rule pre-index is built when the manifest loads | Accepted | 2 |
+| [0024](0024-keyed-identity-hashing.md) | Identities are hashed with a key derived from APP_KEY | Accepted | 2 |
 
 ## Template
 
