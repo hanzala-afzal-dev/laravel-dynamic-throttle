@@ -12,8 +12,9 @@ use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Engine\Internal\AttemptGuard;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Illuminate\Contracts\Redis\Factory as RedisFactory;
+use Illuminate\Redis\Connections\PhpRedisConnection;
+use Illuminate\Redis\Connections\PredisConnection;
 use InvalidArgumentException;
-use Predis\ClientInterface as PredisClient;
 use Predis\Response\ErrorInterface as PredisError;
 use Predis\Response\ServerException as PredisServerException;
 use Redis;
@@ -33,8 +34,10 @@ final readonly class RedisLimiterStore implements LimiterStore
     /**
      * KEYS[1]: the counter's hash. ARGV[1]: max attempts. ARGV[2]: window in seconds.
      * ARGV[3]: the time in microseconds, or '' to read Redis TIME (the argument is for tests).
-     * Returns {allowed (1 or 0), remaining, retry after, window index}, integers only,
-     * because Redis truncates Lua numbers in replies.
+     * Returns {allowed (1 or 0), the rounded-up estimate with this request (0 when
+     * rejected), retry after, window index}, integers only, because Redis truncates
+     * Lua numbers in replies. PHP computes remaining from the estimate: a Lua number
+     * is a double, so max - estimate would be inexact above 2^53 (AC-20).
      */
     private const string SCRIPT = <<<'LUA'
         local max = tonumber(ARGV[1])
@@ -68,7 +71,7 @@ final readonly class RedisLimiterStore implements LimiterStore
                 end
             end
             redis.call('EXPIRE', KEYS[1], 2 * window + 5)
-            return {1, max - math.ceil(estimate + 1), 0, index}
+            return {1, math.ceil(estimate + 1), 0, index}
         end
 
         local until_next_window = window - elapsed
@@ -102,7 +105,7 @@ final readonly class RedisLimiterStore implements LimiterStore
         // Same checks as the cache driver, before touching the store (SPEC-002 AC-16).
         AttemptGuard::check($maxAttempts, $windowSeconds);
 
-        $reply = $this->run($this->keys->counterBase($key, $windowSeconds), [
+        [$allowed, $estimate, $retryAfter, $windowIndex] = $this->run($this->keys->counterBase($key, $windowSeconds), [
             (string) $maxAttempts,
             (string) $windowSeconds,
             $this->testClock instanceof Clock ? (string) $this->testClock->microseconds() : '',
@@ -112,10 +115,10 @@ final readonly class RedisLimiterStore implements LimiterStore
             key: $key,
             limit: $maxAttempts,
             windowSeconds: $windowSeconds,
-            windowIndex: $reply[3],
-            allowed: $reply[0] === 1,
-            remaining: $reply[1],
-            retryAfter: $reply[2],
+            windowIndex: $windowIndex,
+            allowed: $allowed === 1,
+            remaining: $allowed === 1 ? $maxAttempts - $estimate : 0,
+            retryAfter: $retryAfter,
         );
     }
 
@@ -132,8 +135,10 @@ final readonly class RedisLimiterStore implements LimiterStore
 
     /**
      * Runs the script with EVALSHA and falls back to EVAL when Redis no longer
-     * has it (NOSCRIPT, after a restart or failover). Laravel's phpredis evalsha()
-     * sends SCRIPT LOAD on every call, so this talks to the clients directly.
+     * has it (NOSCRIPT, after a restart or failover). Both go through the
+     * connection's command(), which rebuilds a phpredis client after a lost
+     * connection (AC-16), but not through Laravel's phpredis evalsha(), which
+     * sends SCRIPT LOAD on every call.
      *
      * @param  list<string>  $arguments
      * @return array{int, int, int, int}
@@ -142,12 +147,11 @@ final readonly class RedisLimiterStore implements LimiterStore
     {
         try {
             $connection = $this->redis->connection($this->connection);
-            $client = $connection->client();
 
             $reply = match (true) {
-                $client instanceof Redis, $client instanceof RedisCluster => $this->runWithPhpRedis($client, $key, $arguments),
-                $client instanceof PredisClient => $this->runWithPredis($client, $key, $arguments),
-                default => throw new InvalidArgumentException('Unsupported Redis client '.get_debug_type($client).'; use phpredis or predis.'),
+                $connection instanceof PhpRedisConnection => $this->runWithPhpRedis($connection, $key, $arguments),
+                $connection instanceof PredisConnection => $this->runWithPredis($connection, $key, $arguments),
+                default => throw new InvalidArgumentException('Unsupported Redis connection '.get_debug_type($connection).'; use phpredis or predis.'),
             };
         } catch (Throwable $exception) {
             throw StorageUnavailableException::because('The Redis limiter store could not count the request.', $exception);
@@ -162,31 +166,44 @@ final readonly class RedisLimiterStore implements LimiterStore
     }
 
     /**
+     * phpredis answers an error with false and keeps the message as its last error.
+     *
      * @param  list<string>  $arguments
      */
-    private function runWithPhpRedis(Redis|RedisCluster $client, string $key, array $arguments): mixed
+    private function runWithPhpRedis(PhpRedisConnection $connection, string $key, array $arguments): mixed
     {
-        $reply = $client->evalSha(self::scriptSha(), [$key, ...$arguments], 1);
+        $reply = $connection->command('evalsha', [self::scriptSha(), [$key, ...$arguments], 1]);
 
-        if ($reply === false && str_starts_with((string) $client->getLastError(), 'NOSCRIPT')) {
-            $client->clearLastError();
-            $reply = $client->eval(self::SCRIPT, [$key, ...$arguments], 1);
+        if ($reply === false && str_starts_with($this->lastError($connection), 'NOSCRIPT')) {
+            $reply = $connection->command('eval', [self::SCRIPT, [$key, ...$arguments], 1]);
         }
 
         if ($reply === false) {
-            throw StorageUnavailableException::because('Redis rejected the limiter script: '.$client->getLastError());
+            throw StorageUnavailableException::because('Redis rejected the limiter script: '.$this->lastError($connection));
         }
 
         return $reply;
     }
 
+    private function lastError(PhpRedisConnection $connection): string
+    {
+        // Read after each command: command() replaces the client after a lost connection.
+        $client = $connection->client();
+
+        if (! $client instanceof Redis && ! $client instanceof RedisCluster) {
+            throw new InvalidArgumentException('Unsupported phpredis client '.get_debug_type($client).'.');
+        }
+
+        return (string) $client->getLastError();
+    }
+
     /**
      * @param  list<string>  $arguments
      */
-    private function runWithPredis(PredisClient $client, string $key, array $arguments): mixed
+    private function runWithPredis(PredisConnection $connection, string $key, array $arguments): mixed
     {
         try {
-            $reply = $client->evalsha(self::scriptSha(), 1, $key, ...$arguments);
+            $reply = $connection->command('evalsha', [self::scriptSha(), 1, $key, ...$arguments]);
         } catch (PredisServerException $exception) {
             if ($exception->getErrorType() !== 'NOSCRIPT') {
                 throw $exception;
@@ -197,7 +214,7 @@ final readonly class RedisLimiterStore implements LimiterStore
 
         // Without the "exceptions" option, predis returns errors instead of throwing them.
         if ($reply === null || ($reply instanceof PredisError && $reply->getErrorType() === 'NOSCRIPT')) {
-            $reply = $client->eval(self::SCRIPT, 1, $key, ...$arguments);
+            $reply = $connection->command('eval', [self::SCRIPT, 1, $key, ...$arguments]);
         }
 
         if ($reply instanceof PredisError) {

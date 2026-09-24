@@ -33,11 +33,13 @@ final readonly class LimiterStoreFactory
         $store = $this->string('dynamic-throttle.store') ?? $this->string('cache.default');
         $storeIsRedis = $this->string("cache.stores.{$store}.driver") === 'redis';
         $storeConnection = $storeIsRedis ? ($this->string("cache.stores.{$store}.connection") ?? 'default') : null;
+        // A dedicated connection with short timeouts, whichever mode picks the Redis driver (ADR-0010).
+        $redisConnection = $this->string('dynamic-throttle.redis_connection');
 
         return match ($driver) {
-            'auto' => $storeConnection !== null ? $this->redisStore($storeConnection) : $this->cacheStore($store),
+            'auto' => $storeConnection !== null ? $this->redisStore($redisConnection ?? $storeConnection) : $this->cacheStore($store),
             'cache' => $this->cacheStore($store),
-            'redis' => $this->redisStore($this->string('dynamic-throttle.redis_connection') ?? $storeConnection ?? 'default'),
+            'redis' => $this->redisStore($redisConnection ?? $storeConnection ?? 'default'),
             default => throw new InvalidArgumentException("Unknown dynamic-throttle.driver \"{$driver}\": use auto, redis or cache."),
         };
     }
