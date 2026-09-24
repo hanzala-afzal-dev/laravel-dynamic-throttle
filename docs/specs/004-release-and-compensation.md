@@ -41,7 +41,9 @@ Window 60 s and max 5 unless stated. Times are offsets from T0 = 1,800,000,000 s
   - Releasing an attempt whose field holds 0 leaves the field in place, at 0.
   - Releasing an attempt for a counter never used creates no key.
 - **AC-9 (Redis driver)** After `SCRIPT FLUSH`, a release still succeeds. A connection whose ACL user may not run `EVAL` can release afterwards, which proves the fallback loaded the release script.
-- **AC-10 (cache driver)** Release never creates a key: on the array store, releasing an allowed attempt whose window key is missing leaves the key missing. Otherwise the Redis and file stores would create it with -1 and no expiry.
+- **AC-10 (cache driver)** Release writes nothing when the window's count is missing or 0:
+  - On the array store, releasing an allowed attempt whose window key is missing leaves the key missing. Otherwise the Redis and file stores would create it with -1 and no expiry.
+  - When the key holds 0, release reads it and makes no other call. A decrement followed by adding the count back would also end at 0, but an attempt counted while the key held -1 would allow one extra request.
 - **AC-11 (cache driver, Redis cache store)** Release works when the phpredis connection serializes values: after five allowed attempts at T0+10, release one, and the sixth attempt is allowed.
 - **AC-12 (failures)** These make `release()` of an allowed attempt throw `StorageUnavailableException`:
   - a cache store that throws on `get` or on `decrement`, with the store's exception as `previous`
