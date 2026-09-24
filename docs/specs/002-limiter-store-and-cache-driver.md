@@ -96,7 +96,7 @@ Window 60 s and max 5 unless stated. Times are offsets from T0 = 1,800,000,000 s
 
 ## Edge cases and failure modes
 - **Missing keys.** Stores differ on `increment` of a missing key: Redis creates it without a TTL, and Memcached and the database store fail. `add` first makes every store behave the same.
-- **Rollback.** Only a key this request just incremented is decremented. A key evicted or flushed in the microseconds between the increment and the undo is the exception: a Redis store then creates it with -1 and no TTL. Reads treat negative counts as 0 (AC-17), so the only cost is one stray key.
+- **Rollback.** Only a key this request just incremented is decremented. A key evicted or flushed in the microseconds between the increment and the undo is the exception: Redis, file and array stores then create it with -1 and no TTL. Reads treat negative counts as 0 (AC-17), but the next increment only brings the key back to 0, so that window allows one extra request, and the key never expires. SPEC-004's `release()` avoids the extra request by adding the count back when a decrement goes below 0 (SPEC-004 AC-15), and the undo could do the same.
 - **Clock skew between servers.** It only shifts window edges slightly (ADR-0006). The +5 s on the TTL absorbs it.
 - **Store down.** Any failure up to the decision raises `StorageUnavailableException`:
   - Memcached returns `false` from `increment` instead of throwing, so an integer check catches it.
