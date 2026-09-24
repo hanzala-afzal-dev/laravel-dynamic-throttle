@@ -31,7 +31,8 @@ it('AC-14: writes no raw identifier into any key, whatever the scope', function 
     ];
     $resolver = Identities::resolver($request);
 
-    $evaluation = (new RuleEvaluator(Identities::store($array)))->evaluate($rules, $resolver);
+    // Six enforcing rules, one per scope: the cap must let all of them count (ADR-0025).
+    $evaluation = (new RuleEvaluator(Identities::store($array), count($rules)))->evaluate($rules, $resolver);
     $keys = implode("\n", (fn (): array => array_keys($this->storage))->call($array));
 
     expect($evaluation->outcome)->toBe(EvaluationOutcome::Allowed)
