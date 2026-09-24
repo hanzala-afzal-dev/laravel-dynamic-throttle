@@ -43,6 +43,16 @@ it('AC-10: auto picks the Redis driver on a redis cache store, on that store\'s 
         ->and($store->connection)->toBe('cache');
 });
 
+it('AC-10: auto uses redis_connection on a redis cache store when it is set', function (): void {
+    config()->set('cache.default', 'throttle-redis');
+    config()->set('dynamic-throttle.redis_connection', 'limiter');
+
+    $store = selectedStore();
+
+    expect($store)->toBeInstanceOf(RedisLimiterStore::class)
+        ->and($store->connection)->toBe('limiter');
+});
+
 it('AC-10: auto picks the cache driver on any other store', function (string $name, string $storeClass): void {
     if ($name === 'memcached' && ! extension_loaded('memcached')) {
         $this->markTestSkipped('ext-memcached is not installed.');
@@ -93,7 +103,13 @@ it('AC-12: the store setting overrides the default cache store', function (): vo
     expect(selectedStore()->cache->getStore())->toBeInstanceOf(FileStore::class);
 });
 
-it('AC-13: resolves the store from the container without touching the network', function (): void {
+it('AC-13: resolves the store from the container without touching the network', function (string $client): void {
+    // predis connects lazily anyway; phpredis would fail at once if resolving connected.
+    if ($client === 'phpredis' && ! extension_loaded('redis')) {
+        $this->markTestSkipped('ext-redis is not installed.');
+    }
+
+    config()->set('database.redis.client', $client);
     config()->set('database.redis.unreachable', ['host' => '127.0.0.1', 'port' => 1, 'timeout' => 0.5, 'read_write_timeout' => 0.5]);
     config()->set('cache.stores.throttle-redis.connection', 'unreachable');
     config()->set('cache.default', 'throttle-redis');
@@ -103,7 +119,7 @@ it('AC-13: resolves the store from the container without touching the network', 
     expect($store)->toBeInstanceOf(RedisLimiterStore::class)
         ->and(fn (): Attempt => $store->attempt(new CounterKey('1', hash('sha256', 'A')), 5, 60))
         ->toThrow(StorageUnavailableException::class);
-});
+})->with(['phpredis', 'predis']);
 
 it('AC-14: rejects an unknown driver and names the valid ones', function (): void {
     config()->set('dynamic-throttle.driver', 'memcached');

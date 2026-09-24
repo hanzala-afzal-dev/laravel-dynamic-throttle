@@ -286,6 +286,18 @@ it('AC-16: accepts the smallest valid limit and window', function (StoreUnderTes
         ->and([$second->allowed, $second->retryAfter])->toBe([false, 2]);
 })->with('limiter stores');
 
+it('SPEC-003 AC-20: keeps remaining exact for limits above 2^53', function (StoreUnderTest $subject, int $max, int $remaining): void {
+    $subject->clock->setSeconds(FakeClock::T0 + 10);
+
+    $attempt = $subject->store->attempt(contractKey(), $max, 60);
+
+    expect([$attempt->allowed, $attempt->remaining])->toBe([true, $remaining]);
+})->with('limiter stores')->with([
+    // A Lua number is a double: 2^53 + 3 rounds to 2^53 + 4 there.
+    '2^53 + 3' => [2 ** 53 + 3, 2 ** 53 + 2],
+    'PHP_INT_MAX' => [PHP_INT_MAX, PHP_INT_MAX - 1],
+]);
+
 it('AC-8: measures time within a window below the second', function (StoreUnderTest $subject): void {
     $subject->clock->setSeconds(FakeClock::T0 + 10);
     $first = array_column(contractAttempts($subject, 4, max: 4, window: 1), 0);
