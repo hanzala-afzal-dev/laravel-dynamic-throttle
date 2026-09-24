@@ -344,6 +344,15 @@ it('ADR-0025: counts at most five dry-run rules on top, and the enforcing rule a
         ->and(ruleIds($evaluation->ignored))->toBe(['d6', 'd7']);
 });
 
+it('ADR-0025: allows five rules per mode by default, as matching.max_rules_per_request does', function (): void {
+    $stack = stackStore();
+    $rules = matchedForCap(array_map(fn (int $n): CompiledRule => stackRule("e{$n}", 100, $n), range(1, 7)));
+
+    $evaluation = (new RuleEvaluator($stack->store))->evaluate($rules, oneClient());
+
+    expect([count($evaluation->attempts), ruleIds($evaluation->ignored)])->toBe([5, ['e6', 'e7']]);
+});
+
 it('ADR-0025: never resolves the identity of an ignored rule', function (): void {
     $stack = stackStore();
     $resolved = [];
