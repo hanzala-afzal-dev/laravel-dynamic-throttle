@@ -91,6 +91,21 @@ final readonly class RedisLimiterStore implements LimiterStore
         return {0, 0, retry_after, index}
         LUA;
 
+    /**
+     * KEYS[1]: the counter's hash. ARGV[1]: the window index the attempt was counted in.
+     * Decrements that window's field when it holds a count above 0, so it never
+     * creates a field or a key, and leaves the TTL alone (SPEC-004). Returns 1 when
+     * it released a count, 0 otherwise.
+     */
+    private const string RELEASE_SCRIPT = <<<'LUA'
+        local count = tonumber(redis.call('HGET', KEYS[1], ARGV[1]))
+        if count and count > 0 then
+            redis.call('HINCRBY', KEYS[1], ARGV[1], -1)
+            return 1
+        end
+        return 0
+        LUA;
+
     public function __construct(
         private RedisFactory $redis,
         /** The Redis connection name; public so driver selection can be checked. */
@@ -105,11 +120,18 @@ final readonly class RedisLimiterStore implements LimiterStore
         // Same checks as the cache driver, before touching the store (SPEC-002 AC-16).
         AttemptGuard::check($maxAttempts, $windowSeconds);
 
-        [$allowed, $estimate, $retryAfter, $windowIndex] = $this->run($this->keys->counterBase($key, $windowSeconds), [
+        $reply = $this->run(self::SCRIPT, 'count', $this->keys->counterBase($key, $windowSeconds), [
             (string) $maxAttempts,
             (string) $windowSeconds,
             $this->testClock instanceof Clock ? (string) $this->testClock->microseconds() : '',
         ]);
+
+        if (! is_array($reply) || ! array_is_list($reply) || count($reply) !== 4 || count(array_filter($reply, is_int(...))) !== 4) {
+            throw StorageUnavailableException::because('The Redis limiter store returned an unexpected reply.');
+        }
+
+        /** @var array{int, int, int, int} $reply */
+        [$allowed, $estimate, $retryAfter, $windowIndex] = $reply;
 
         return new Attempt(
             key: $key,
@@ -120,6 +142,22 @@ final readonly class RedisLimiterStore implements LimiterStore
             remaining: $allowed === 1 ? $maxAttempts - $estimate : 0,
             retryAfter: $retryAfter,
         );
+    }
+
+    public function release(Attempt $attempt): void
+    {
+        // A rejected attempt was never counted.
+        if (! $attempt->allowed) {
+            return;
+        }
+
+        $reply = $this->run(self::RELEASE_SCRIPT, 'release', $this->keys->counterBase($attempt->key, $attempt->windowSeconds), [
+            (string) $attempt->windowIndex,
+        ]);
+
+        if (! is_int($reply)) {
+            throw StorageUnavailableException::because('The Redis limiter store returned an unexpected reply.');
+        }
     }
 
     /**
@@ -134,35 +172,38 @@ final readonly class RedisLimiterStore implements LimiterStore
     }
 
     /**
+     * The SHA-1 that EVALSHA uses for the release script.
+     *
+     * @internal
+     */
+    public static function releaseScriptSha(): string
+    {
+        return hash('sha1', self::RELEASE_SCRIPT);
+    }
+
+    /**
      * Runs the script with EVALSHA and falls back to EVAL when Redis no longer
      * has it (NOSCRIPT, after a restart or failover). Both go through the
      * connection's command(), which rebuilds a phpredis client after a lost
      * connection (AC-16), but not through Laravel's phpredis evalsha(), which
      * sends SCRIPT LOAD on every call.
      *
+     * @param  'count'|'release'  $operation  for the message when Redis cannot be used
      * @param  list<string>  $arguments
-     * @return array{int, int, int, int}
      */
-    private function run(string $key, array $arguments): array
+    private function run(string $script, string $operation, string $key, array $arguments): mixed
     {
         try {
             $connection = $this->redis->connection($this->connection);
 
-            $reply = match (true) {
-                $connection instanceof PhpRedisConnection => $this->runWithPhpRedis($connection, $key, $arguments),
-                $connection instanceof PredisConnection => $this->runWithPredis($connection, $key, $arguments),
+            return match (true) {
+                $connection instanceof PhpRedisConnection => $this->runWithPhpRedis($connection, $script, $key, $arguments),
+                $connection instanceof PredisConnection => $this->runWithPredis($connection, $script, $key, $arguments),
                 default => throw new InvalidArgumentException('Unsupported Redis connection '.get_debug_type($connection).'; use phpredis or predis.'),
             };
         } catch (Throwable $exception) {
-            throw StorageUnavailableException::because('The Redis limiter store could not count the request.', $exception);
+            throw StorageUnavailableException::because("The Redis limiter store could not {$operation} the request.", $exception);
         }
-
-        if (! is_array($reply) || ! array_is_list($reply) || count($reply) !== 4 || count(array_filter($reply, is_int(...))) !== 4) {
-            throw StorageUnavailableException::because('The Redis limiter store returned an unexpected reply.');
-        }
-
-        /** @var array{int, int, int, int} $reply */
-        return $reply;
     }
 
     /**
@@ -170,12 +211,12 @@ final readonly class RedisLimiterStore implements LimiterStore
      *
      * @param  list<string>  $arguments
      */
-    private function runWithPhpRedis(PhpRedisConnection $connection, string $key, array $arguments): mixed
+    private function runWithPhpRedis(PhpRedisConnection $connection, string $script, string $key, array $arguments): mixed
     {
-        $reply = $connection->command('evalsha', [self::scriptSha(), [$key, ...$arguments], 1]);
+        $reply = $connection->command('evalsha', [hash('sha1', $script), [$key, ...$arguments], 1]);
 
         if ($reply === false && str_starts_with($this->lastError($connection), 'NOSCRIPT')) {
-            $reply = $connection->command('eval', [self::SCRIPT, [$key, ...$arguments], 1]);
+            $reply = $connection->command('eval', [$script, [$key, ...$arguments], 1]);
         }
 
         if ($reply === false) {
@@ -200,10 +241,10 @@ final readonly class RedisLimiterStore implements LimiterStore
     /**
      * @param  list<string>  $arguments
      */
-    private function runWithPredis(PredisConnection $connection, string $key, array $arguments): mixed
+    private function runWithPredis(PredisConnection $connection, string $script, string $key, array $arguments): mixed
     {
         try {
-            $reply = $connection->command('evalsha', [self::scriptSha(), 1, $key, ...$arguments]);
+            $reply = $connection->command('evalsha', [hash('sha1', $script), 1, $key, ...$arguments]);
         } catch (PredisServerException $exception) {
             if ($exception->getErrorType() !== 'NOSCRIPT') {
                 throw $exception;
@@ -214,7 +255,7 @@ final readonly class RedisLimiterStore implements LimiterStore
 
         // Without the "exceptions" option, predis returns errors instead of throwing them.
         if ($reply === null || ($reply instanceof PredisError && $reply->getErrorType() === 'NOSCRIPT')) {
-            $reply = $connection->command('eval', [self::SCRIPT, 1, $key, ...$arguments]);
+            $reply = $connection->command('eval', [$script, 1, $key, ...$arguments]);
         }
 
         if ($reply instanceof PredisError) {
