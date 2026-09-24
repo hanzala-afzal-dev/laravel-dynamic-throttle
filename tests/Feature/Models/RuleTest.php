@@ -99,3 +99,14 @@ it('AC-15: stores rules on the configured connection', function (): void {
 
     expect(DB::connection('secondary')->table('dynamic_throttle_rules')->count())->toBe(1);
 });
+
+it('AC-15: lets an explicit connection win over the configured one', function (): void {
+    useSecondaryConnection();
+    RuleSchema::migrate();
+    config()->set('dynamic-throttle.database.connection', null);
+
+    Rule::on('secondary')->create(RuleSchema::attributes());
+
+    expect(Rule::on('secondary')->count())->toBe(1)
+        ->and(Schema::hasTable('dynamic_throttle_rules'))->toBeFalse();
+});

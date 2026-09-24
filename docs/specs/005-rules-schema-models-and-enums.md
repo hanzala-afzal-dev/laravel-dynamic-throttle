@@ -84,7 +84,7 @@ Rules are data (ADR-0001), stored in the database (ADR-0007). Before anything ca
   - `max_attempts`, `window_seconds` and `priority` return integers
   - `enabled` returns a boolean
   - `response_override` returns the same array that was saved
-- **AC-15** The model uses `database.connection`: with `secondary` configured, a created rule lands on `secondary`.
+- **AC-15** The model uses `database.connection`: with `secondary` configured, a created rule lands on `secondary`. An explicit connection still wins: with `database.connection` unset, `Rule::on('secondary')` reads and writes `secondary`.
 - **AC-16 (arch)** `Afzal\DynamicThrottle\Enums` depends on nothing from `Illuminate\Database`. The existing rules keep `Models` away from `Engine` and `Http\Middleware`.
 
 ## Interfaces and files
