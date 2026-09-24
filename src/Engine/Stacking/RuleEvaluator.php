@@ -7,6 +7,7 @@ namespace Afzal\DynamicThrottle\Engine\Stacking;
 use Afzal\DynamicThrottle\Engine\Contracts\IdentityResolver;
 use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
 use Afzal\DynamicThrottle\Engine\CounterKey;
+use Afzal\DynamicThrottle\Engine\Exceptions\IdentityUnavailableException;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Enums\RuleMode;
 use Afzal\DynamicThrottle\Manifest\CompiledRule;
@@ -23,8 +24,9 @@ final readonly class RuleEvaluator
     ) {}
 
     /**
-     * Never throws a StorageUnavailableException: a failed attempt ends with a
-     * Failed outcome, and a failed release is listed (ADR-0021).
+     * Never throws a StorageUnavailableException or an IdentityUnavailableException:
+     * a failed attempt, or an identity that cannot be resolved, ends with a Failed
+     * outcome (SPEC-008), and a failed release is listed (ADR-0021).
      *
      * @param  list<CompiledRule>  $rules  the matched rules, in manifest order
      */
@@ -35,7 +37,11 @@ final readonly class RuleEvaluator
         $skipped = [];
 
         foreach ($rules as $rule) {
-            $identity = $identities->resolve($rule);
+            try {
+                $identity = $identities->resolve($rule);
+            } catch (IdentityUnavailableException $exception) {
+                return Evaluation::failed(new RuleFailure($rule, $exception), $attempts, $wouldBlock, $skipped);
+            }
 
             if ($identity === null) {
                 $skipped[] = $rule;

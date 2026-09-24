@@ -29,6 +29,7 @@ The manifest (SPEC-006) holds every active rule. A request needs the rules that 
 - **Storage failures:**
   - A failed release keeps the rejection. The remaining releases still run, and the failures are listed in the result (ADR-0021). Reporting them is SPEC-012's.
   - A failed attempt stops evaluation, with a `Failed` outcome that names the rule, the exception and what was counted. SPEC-012 turns it into fail-open or 503.
+  - A rule whose identity cannot be resolved ends evaluation the same way (SPEC-008, which amends this spec).
 - **The result.** An `Evaluation` holds:
   - the outcome: `Allowed`, `Rejected` or `Failed`
   - the rejecting or failing rule, with its attempt or exception

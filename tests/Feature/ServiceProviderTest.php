@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use Afzal\DynamicThrottle\DynamicThrottle;
 use Afzal\DynamicThrottle\DynamicThrottleServiceProvider;
 use Afzal\DynamicThrottle\Engine\Matching\RuleMatcher;
+use Afzal\DynamicThrottle\Facades\DynamicThrottle as DynamicThrottleFacade;
+use Afzal\DynamicThrottle\Http\IdentitySettings;
 use Afzal\DynamicThrottle\Manifest\CompiledRule;
 use Afzal\DynamicThrottle\Manifest\Manifest;
 use Afzal\DynamicThrottle\Tests\Support\ManifestFixtures;
@@ -110,4 +113,47 @@ it('AC-7: falls back to 5 rules for a published cap below 1 or not an integer', 
     'a fraction' => [2.5],
     'text' => ['many'],
     'null' => [null],
+]);
+
+/*
+| SPEC-008: one scope registry for the app, behind the facade, and the scopes
+| config as the resolver sees it. A published config can hold anything (AC-17).
+*/
+
+it('SPEC-008: shares one scope registry across the app, behind the facade', function (): void {
+    expect(app(DynamicThrottle::class))->toBe(app(DynamicThrottle::class))
+        ->and(DynamicThrottleFacade::getFacadeRoot())->toBe(app(DynamicThrottle::class));
+});
+
+it('AC-17: takes the published IPv6 prefix and guard list', function (): void {
+    config()->set('dynamic-throttle.scopes.ip.ipv6_prefix', 48);
+    config()->set('dynamic-throttle.scopes.user.guards', ['sanctum', 'web']);
+
+    $settings = app(IdentitySettings::class);
+
+    expect([$settings->ipv6Prefix, $settings->guards])->toBe([48, ['sanctum', 'web']]);
+});
+
+it('AC-17: groups IPv6 by /64 when the published prefix is outside 1 to 128 or not an integer', function (mixed $prefix): void {
+    config()->set('dynamic-throttle.scopes.ip.ipv6_prefix', $prefix);
+
+    expect(app(IdentitySettings::class)->ipv6Prefix)->toBe(64);
+})->with([
+    'zero' => [0],
+    'too long' => [129],
+    'a fraction' => [2.5],
+    'text' => ['wide'],
+    'null' => [null],
+]);
+
+it('AC-17: uses the authenticated guard when the published guards are not a list of names', function (mixed $guards): void {
+    config()->set('dynamic-throttle.scopes.user.guards', $guards);
+
+    expect(app(IdentitySettings::class)->guards)->toBeNull();
+})->with([
+    'null' => [null],
+    'a string' => ['web'],
+    'an empty list' => [[]],
+    'a list with a number' => [['web', 5]],
+    'a map' => [['first' => 'web']],
 ]);

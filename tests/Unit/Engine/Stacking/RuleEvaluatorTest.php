@@ -6,6 +6,7 @@ use Afzal\DynamicThrottle\Engine\Attempt;
 use Afzal\DynamicThrottle\Engine\Contracts\IdentityResolver;
 use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
 use Afzal\DynamicThrottle\Engine\CounterKey;
+use Afzal\DynamicThrottle\Engine\Exceptions\IdentityUnavailableException;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Stacking\Evaluation;
@@ -243,6 +244,29 @@ it('AC-16: stops with a Failed outcome when an attempt fails, releasing nothing 
     expect($evaluation->outcome)->toBe(EvaluationOutcome::Failed)
         ->and($evaluation->failure?->rule->id)->toBe('b')
         ->and($evaluation->failure?->exception->getMessage())->toBe('The store is down.')
+        ->and(attemptSummary($evaluation->attempts))->toBe([['a', false]])
+        ->and([stackCount($stack->cache, 'a'), stackCount($stack->cache, 'c')])->toBe([1, 0]);
+});
+
+it('SPEC-008 AC-12: stops with a Failed outcome when a rule\'s identity cannot be resolved, keeping earlier counts', function (): void {
+    $stack = stackStore();
+    $identities = new class implements IdentityResolver
+    {
+        public function resolve(CompiledRule $rule): string
+        {
+            return $rule->id === 'b'
+                ? throw IdentityUnavailableException::because('The identity for custom:plan could not be resolved.')
+                : hash('sha256', 'client');
+        }
+    };
+
+    $evaluation = (new RuleEvaluator($stack->store))
+        ->evaluate([stackRule('a', 100, 10), stackRule('b', 100, 20), stackRule('c', 100, 30)], $identities);
+
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Failed)
+        ->and($evaluation->failure?->rule->id)->toBe('b')
+        ->and($evaluation->failure?->exception)->toBeInstanceOf(IdentityUnavailableException::class)
+        ->and($evaluation->failure?->exception->getMessage())->toBe('The identity for custom:plan could not be resolved.')
         ->and(attemptSummary($evaluation->attempts))->toBe([['a', false]])
         ->and([stackCount($stack->cache, 'a'), stackCount($stack->cache, 'c')])->toBe([1, 0]);
 });

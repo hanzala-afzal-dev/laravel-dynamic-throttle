@@ -9,8 +9,10 @@ use Afzal\DynamicThrottle\Compiler\RuleObserver;
 use Afzal\DynamicThrottle\Console\CompileCommand;
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
 use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
+use Afzal\DynamicThrottle\Engine\Identity\IdentityHasher;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Matching\RuleMatcher;
+use Afzal\DynamicThrottle\Http\IdentitySettings;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Models\Rule;
 use Afzal\DynamicThrottle\Support\ConfigMerger;
@@ -60,6 +62,20 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
         ));
 
         $this->app->scoped(RuleMatcher::class, fn (Application $app): RuleMatcher => new RuleMatcher($this->maxRulesPerRequest($app)));
+
+        // Apps register their custom scopes once, at boot, so they live for the worker.
+        $this->app->singleton(DynamicThrottle::class);
+
+        $this->app->singleton(IdentityHasher::class, function (Application $app): IdentityHasher {
+            $key = $app->make('config')->get('app.key');
+
+            return new IdentityHasher(is_string($key) ? $key : null);
+        });
+
+        $this->app->bind(IdentitySettings::class, fn (Application $app): IdentitySettings => new IdentitySettings(
+            $this->ipv6Prefix($app),
+            $this->guards($app),
+        ));
     }
 
     /**
@@ -102,6 +118,32 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
         $cap = $app->make('config')->get('dynamic-throttle.matching.max_rules_per_request');
 
         return is_int($cap) && $cap >= 1 ? $cap : 5;
+    }
+
+    private function ipv6Prefix(Application $app): int
+    {
+        $prefix = $app->make('config')->get('dynamic-throttle.scopes.ip.ipv6_prefix');
+
+        return is_int($prefix) && $prefix >= 1 && $prefix <= 128 ? $prefix : 64;
+    }
+
+    /**
+     * scopes.user.guards: a non-empty list of guard names, or null for the guard the
+     * request authenticated with. Anything else counts as null.
+     *
+     * @return list<string>|null
+     */
+    private function guards(Application $app): ?array
+    {
+        $guards = $app->make('config')->get('dynamic-throttle.scopes.user.guards');
+
+        if (! is_array($guards) || $guards === [] || ! array_is_list($guards)) {
+            return null;
+        }
+
+        $names = array_filter($guards, fn (mixed $guard): bool => is_string($guard) && $guard !== '');
+
+        return count($names) === count($guards) ? array_values($names) : null;
     }
 
     public function boot(): void

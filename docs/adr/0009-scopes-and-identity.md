@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-23
 - Roadmap phase: 2
-- Amended by: [ADR-0020](0020-laravel-ecosystem-coexistence.md) (`scopes.user.guards`, per-tenant limits through a custom scope), [ADR-0022](0022-skip-rules-without-identity.md) (`on_missing_identity` for built-in scopes)
+- Amended by: [ADR-0020](0020-laravel-ecosystem-coexistence.md) (`scopes.user.guards`, per-tenant limits through a custom scope), [ADR-0022](0022-skip-rules-without-identity.md) (`on_missing_identity` for built-in scopes), [ADR-0024](0024-keyed-identity-hashing.md) (identities hashed with a key derived from `APP_KEY`)
 - Related: ADR-0004, ADR-0008
 
 ## Context

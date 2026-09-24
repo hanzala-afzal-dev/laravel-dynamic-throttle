@@ -135,4 +135,37 @@ return [
         ]),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Scopes
+    |--------------------------------------------------------------------------
+    |
+    | A rule's scope decides who a request counts for: its IP, user, API token
+    | or a header, everyone at once, or a scope your app registers, such as a
+    | tenant (docs/adr/0009):
+    |
+    |     DynamicThrottle::scope('tenant', fn (Request $request) => ...);
+    |
+    | "ipv6_prefix" groups IPv6 clients, because one client usually controls
+    | a whole /64 and could otherwise rotate addresses for fresh counters.
+    | 128 counts every address on its own.
+    |
+    | "guards" is null to count the user the request authenticated as, which
+    | never costs a lookup. A list such as ['sanctum', 'web'] asks each guard
+    | in turn, and pays that guard's own lookup, such as a token query.
+    |
+    */
+
+    'scopes' => [
+        'ip' => [
+            // Read as written, like refresh_seconds above.
+            'ipv6_prefix' => filter_var(Env::getRepository()->get('DYNAMIC_THROTTLE_IPV6_PREFIX') ?? 64, FILTER_VALIDATE_INT, [
+                'options' => ['min_range' => 1, 'max_range' => 128, 'default' => 64],
+            ]),
+        ],
+        'user' => [
+            'guards' => null,
+        ],
+    ],
+
 ];

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Afzal\DynamicThrottle\DynamicThrottle;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
@@ -26,8 +27,9 @@ use Illuminate\Support\Facades\Schema;
 | The rules only see direct dependencies, so every request-path namespace
 | gets its own rules. A namespace's rules cover its sub-namespaces (checked
 | with a probe in Engine\Matching), so Engine\Matching and Engine\Stacking
-| fall under the engine's (SPEC-007 AC-18). When SPEC-008 adds scopes
-| outside Engine, give them their own rules.
+| fall under the engine's (SPEC-007 AC-18), and so does Engine\Identity
+| (SPEC-008 AC-18). Reading identities from the request lives in Http, which
+| has its own rules.
 |
 */
 
@@ -68,6 +70,18 @@ arch('the middleware never touches the database (ADR-0007)')
 
 arch('request handling never touches the database (ADR-0007, SPEC-007 AC-18)')
     ->expect('Afzal\DynamicThrottle\Http')
+    ->not->toUse($databaseAccess);
+
+arch('the facade never touches the database (SPEC-008 AC-18)')
+    ->expect('Afzal\DynamicThrottle\Facades')
+    ->not->toUse($databaseAccess);
+
+arch('the scope registry behind the facade never touches the database (SPEC-008 AC-18)')
+    ->expect(DynamicThrottle::class)
+    ->not->toUse($databaseAccess);
+
+arch('the public contracts never touch the database (SPEC-008 AC-18)')
+    ->expect('Afzal\DynamicThrottle\Contracts')
     ->not->toUse($databaseAccess);
 
 arch('the manifest read path never touches the database (ADR-0007, SPEC-006 AC-19)')
