@@ -103,7 +103,7 @@ it('AC-15: stores rules on the configured connection', function (): void {
 it('AC-15: lets an explicit connection win over the configured one', function (): void {
     useSecondaryConnection();
     RuleSchema::migrate();
-    config()->set('dynamic-throttle.database.connection', null);
+    config()->set('dynamic-throttle.database.connection');
 
     Rule::on('secondary')->create(RuleSchema::attributes());
 
