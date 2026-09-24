@@ -6,6 +6,7 @@ use Afzal\DynamicThrottle\Engine\Exceptions\IdentityUnavailableException;
 use Afzal\DynamicThrottle\Engine\Stacking\EvaluationOutcome;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleAttempt;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
+use Afzal\DynamicThrottle\Engine\Stacking\RuleFailure;
 use Afzal\DynamicThrottle\Facades\DynamicThrottle;
 use Afzal\DynamicThrottle\Manifest\CompiledRule;
 use Afzal\DynamicThrottle\Tests\Support\Auth\TestAdmin;
@@ -75,6 +76,14 @@ it('AC-2: counts an IPv4-mapped address as its IPv4 address, and requests withou
     expect(Identities::of(Identities::request('::ffff:203.0.113.7'), $rule))->toBe(Identities::of(Identities::request('203.0.113.7'), $rule))
         ->and(Identities::of(Identities::request(null), $rule))->toBe(Identities::of(Identities::request(null), $rule))
         ->not->toBe(Identities::of(Identities::request('203.0.113.7'), $rule));
+});
+
+it('AC-2: counts an address in the well-known NAT64 prefix as its IPv4 address (decision 8)', function (): void {
+    $rule = Identities::rule('ip');
+
+    expect(Identities::of(Identities::request('64:ff9b::203.0.113.7'), $rule))
+        ->toBe(Identities::of(Identities::request('203.0.113.7'), $rule))
+        ->not->toBe(Identities::of(Identities::request('64:ff9b::203.0.113.8'), $rule));
 });
 
 it('AC-3: counts a user as one client from any IP, and tells users and user types apart', function (): void {
@@ -355,7 +364,7 @@ it('AC-11: rejects a class that is not a ScopeResolver', function (string $class
     'a class that does not exist' => ['App\Scopes\MissingPlan'],
 ]);
 
-it('AC-12: ends evaluation with a Failed outcome for a rule whose identity cannot be resolved', function (string $failure, string $scope, ?string $causeClass, string $cause): void {
+it('AC-12: fails only the rule whose identity cannot be resolved, and the rules around it still count', function (string $failure, string $scope, ?string $causeClass, string $cause): void {
     $failing = match ($failure) {
         'undefined guard', 'unreadable user id', 'user id without a string form' => Identities::rule('user', id: 'b'),
         'unreadable client IP' => Identities::rule('ip', id: 'b'),
@@ -389,19 +398,20 @@ it('AC-12: ends evaluation with a Failed outcome for a rule whose identity canno
     };
     $request = $failure === 'unreadable client IP' ? conflictingForwardedRequest() : Identities::request();
 
-    // Rule a is global, which never reads the client IP.
+    // Rules a and c are global, which never read the client IP.
     $evaluation = (new RuleEvaluator(Identities::store()))
-        ->evaluate([Identities::rule('global', id: 'a'), $failing], Identities::resolver($request));
-    $previous = $evaluation->failure?->exception->getPrevious();
+        ->evaluate([Identities::rule('global', id: 'a'), $failing, Identities::rule('global', id: 'c')], Identities::resolver($request));
+    $failure = $evaluation->failures[0] ?? null;
+    $previous = $failure?->exception->getPrevious();
 
     expect($evaluation->outcome)->toBe(EvaluationOutcome::Failed)
-        ->and($evaluation->failure?->rule->id)->toBe('b')
-        ->and($evaluation->failure?->exception)->toBeInstanceOf(IdentityUnavailableException::class)
-        ->and($evaluation->failure?->exception->getMessage())->toStartWith("The identity for {$scope} could not be resolved")
+        ->and(array_map(fn (RuleFailure $failure): string => $failure->rule->id, $evaluation->failures))->toBe(['b'])
+        ->and($failure?->exception)->toBeInstanceOf(IdentityUnavailableException::class)
+        ->and($failure?->exception->getMessage())->toStartWith("The identity for {$scope} could not be resolved")
         ->and($previous instanceof Throwable ? $previous::class : null)->toBe($causeClass)
         ->and($previous?->getMessage() ?? '')->toContain($cause)
         ->and(array_map(fn (RuleAttempt $attempt): array => [$attempt->rule->id, $attempt->released, $attempt->attempt->remaining], $evaluation->attempts))
-        ->toBe([['a', false, 59]]);
+        ->toBe([['a', false, 59], ['c', false, 59]]);
 })->with([
     'an unregistered custom scope' => ['unregistered', 'custom:plan', null, ''],
     'a resolver that throws' => ['throws', 'custom:plan', RuntimeException::class, 'The plan service is down.'],
@@ -449,3 +459,32 @@ it('AC-13: resolves each scope once per request, however many rules use it', fun
         ->and(array_unique($silverIdentities))->toHaveCount(1)
         ->and($silverIdentities[0])->not->toBe($goldIdentities[0]);
 });
+
+it('AC-13: asks a scope that fails once per request, and fails every rule that uses it with the same exception', function (string $scope): void {
+    $calls = 0;
+    $failing = function () use (&$calls): never {
+        $calls++;
+
+        throw new RuntimeException('The service is down.');
+    };
+    if ($scope === 'custom') {
+        DynamicThrottle::scope('plan', $failing);
+    } else {
+        Auth::viaRequest('failing', $failing);
+        config()->set('auth.guards.failing', ['driver' => 'failing']);
+        config()->set('dynamic-throttle.scopes.user.guards', ['failing']);
+    }
+    $rules = array_map(
+        fn (string $id): CompiledRule => Identities::rule($scope, parameter: $scope === 'custom' ? 'plan' : null, id: $id),
+        ['p1', 'p2', 'p3'],
+    );
+
+    $evaluation = (new RuleEvaluator(Identities::store()))->evaluate($rules, Identities::resolver(Identities::request()));
+    $exceptions = array_map(fn (RuleFailure $failure): Throwable => $failure->exception, $evaluation->failures);
+
+    expect($calls)->toBe(1)
+        ->and(array_map(fn (RuleFailure $failure): string => $failure->rule->id, $evaluation->failures))->toBe(['p1', 'p2', 'p3'])
+        ->and($exceptions[1])->toBe($exceptions[0])
+        ->and($exceptions[2])->toBe($exceptions[0])
+        ->and($exceptions[0]->getPrevious()?->getMessage())->toBe('The service is down.');
+})->with(['a custom resolver that throws' => ['custom'], 'a guard that throws' => ['user']]);

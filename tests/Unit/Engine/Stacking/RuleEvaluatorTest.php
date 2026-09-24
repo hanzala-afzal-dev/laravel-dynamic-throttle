@@ -122,6 +122,38 @@ function attemptSummary(array $attempts): array
     return array_map(fn (RuleAttempt $attempt): array => [$attempt->rule->id, $attempt->released], $attempts);
 }
 
+/**
+ * @param  list<RuleFailure>  $failures
+ * @return list<array{string, string}>
+ */
+function failureSummary(array $failures): array
+{
+    return array_map(fn (RuleFailure $failure): array => [$failure->rule->id, $failure->exception->getMessage()], $failures);
+}
+
+/**
+ * One client for every rule, except the rules whose identity cannot be resolved.
+ *
+ * @param  list<string>  $unresolvable
+ */
+function failingIdentities(array $unresolvable): IdentityResolver
+{
+    return new readonly class($unresolvable) implements IdentityResolver
+    {
+        /**
+         * @param  list<string>  $unresolvable
+         */
+        public function __construct(private array $unresolvable) {}
+
+        public function resolve(CompiledRule $rule): string
+        {
+            return in_array($rule->id, $this->unresolvable, true)
+                ? throw IdentityUnavailableException::because('The identity for custom:plan could not be resolved.')
+                : hash('sha256', 'client');
+        }
+    };
+}
+
 it('AC-9: counts an allowed request on every matched rule, in order', function (): void {
     $stack = stackStore();
 
@@ -129,7 +161,7 @@ it('AC-9: counts an allowed request on every matched rule, in order', function (
 
     expect($evaluation->outcome)->toBe(EvaluationOutcome::Allowed)
         ->and(attemptSummary($evaluation->attempts))->toBe([['a', false], ['b', false]])
-        ->and([$evaluation->rejection, $evaluation->failure, $evaluation->wouldBlock, $evaluation->skipped])->toBe([null, null, [], []])
+        ->and([$evaluation->rejection, $evaluation->failures, $evaluation->wouldBlock, $evaluation->skipped])->toBe([null, [], [], []])
         ->and([stackCount($stack->cache, 'a'), stackCount($stack->cache, 'b')])->toBe([1, 1]);
 });
 
@@ -244,33 +276,68 @@ it('AC-16: stops with a Failed outcome when an attempt fails, releasing nothing 
         ->evaluate([stackRule('a', 100, 10), stackRule('b', 100, 20), stackRule('c', 100, 30)], oneClient());
 
     expect($evaluation->outcome)->toBe(EvaluationOutcome::Failed)
-        ->and($evaluation->failure?->rule->id)->toBe('b')
-        ->and($evaluation->failure?->exception->getMessage())->toBe('The store is down.')
+        ->and(failureSummary($evaluation->failures))->toBe([['b', 'The store is down.']])
         ->and(attemptSummary($evaluation->attempts))->toBe([['a', false]])
         ->and([stackCount($stack->cache, 'a'), stackCount($stack->cache, 'c')])->toBe([1, 0]);
 });
 
-it('SPEC-008 AC-12: stops with a Failed outcome when a rule\'s identity cannot be resolved, keeping earlier counts', function (): void {
+/*
+| SPEC-008 AC-12 and AC-19 (decision 6): an identity that cannot be resolved
+| fails only its own rule, and evaluation goes on to the next one.
+*/
+
+it('SPEC-008 AC-12: fails only the rule whose identity cannot be resolved, and the rules after it still count', function (): void {
     $stack = stackStore();
-    $identities = new class implements IdentityResolver
-    {
-        public function resolve(CompiledRule $rule): string
-        {
-            return $rule->id === 'b'
-                ? throw IdentityUnavailableException::because('The identity for custom:plan could not be resolved.')
-                : hash('sha256', 'client');
-        }
-    };
 
     $evaluation = (new RuleEvaluator($stack->store))
-        ->evaluate([stackRule('a', 100, 10), stackRule('b', 100, 20), stackRule('c', 100, 30)], $identities);
+        ->evaluate([stackRule('a', 100, 10), stackRule('b', 100, 20), stackRule('c', 100, 30)], failingIdentities(['b']));
 
     expect($evaluation->outcome)->toBe(EvaluationOutcome::Failed)
-        ->and($evaluation->failure?->rule->id)->toBe('b')
-        ->and($evaluation->failure?->exception)->toBeInstanceOf(IdentityUnavailableException::class)
-        ->and($evaluation->failure?->exception->getMessage())->toBe('The identity for custom:plan could not be resolved.')
+        ->and(failureSummary($evaluation->failures))->toBe([['b', 'The identity for custom:plan could not be resolved.']])
+        ->and($evaluation->failures[0]->exception)->toBeInstanceOf(IdentityUnavailableException::class)
+        ->and(attemptSummary($evaluation->attempts))->toBe([['a', false], ['c', false]])
+        ->and([stackCount($stack->cache, 'a'), stackCount($stack->cache, 'b'), stackCount($stack->cache, 'c')])->toBe([1, 0, 1]);
+});
+
+it('SPEC-008 AC-19: still rejects on an enforcing rule after a failed identity, and lists the failure', function (): void {
+    $stack = stackStore();
+    $evaluator = new RuleEvaluator($stack->store);
+    $rules = [stackRule('a', 100, 10), stackRule('b', 100, 20), stackRule('s', 1, 30)];
+
+    $evaluator->evaluate($rules, failingIdentities(['b']));
+    $second = $evaluator->evaluate($rules, failingIdentities(['b']));
+
+    expect($second->outcome)->toBe(EvaluationOutcome::Rejected)
+        ->and($second->rejection?->rule->id)->toBe('s')
+        ->and(attemptSummary($second->attempts))->toBe([['a', true]])
+        ->and(failureSummary($second->failures))->toBe([['b', 'The identity for custom:plan could not be resolved.']])
+        ->and(stackCount($stack->cache, 'a'))->toBe(1);
+});
+
+it('SPEC-008 AC-19: stops at a failed attempt after a failed identity, and lists both failures in order', function (): void {
+    $stack = stackStore();
+    $rules = [stackRule('a', 100, 10), stackRule('b', 100, 20), stackRule('c', 100, 30), stackRule('d', 100, 40)];
+
+    $evaluation = (new RuleEvaluator(failingFor($stack->store, attemptsOf: 'c')))->evaluate($rules, failingIdentities(['b']));
+
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Failed)
+        ->and(failureSummary($evaluation->failures))->toBe([
+            ['b', 'The identity for custom:plan could not be resolved.'],
+            ['c', 'The store is down.'],
+        ])
         ->and(attemptSummary($evaluation->attempts))->toBe([['a', false]])
-        ->and([stackCount($stack->cache, 'a'), stackCount($stack->cache, 'c')])->toBe([1, 0]);
+        ->and(stackCount($stack->cache, 'd'))->toBe(0);
+});
+
+it('SPEC-008 AC-19: gives a rule whose identity failed no slot, because it made no attempt (ADR-0025)', function (): void {
+    $stack = stackStore();
+
+    $evaluation = (new RuleEvaluator($stack->store, 1))
+        ->evaluate([stackRule('b', 100, 10), stackRule('c', 100, 20)], failingIdentities(['b']));
+
+    expect(attemptSummary($evaluation->attempts))->toBe([['c', false]])
+        ->and($evaluation->ignored)->toBe([])
+        ->and(failureSummary($evaluation->failures))->toBe([['b', 'The identity for custom:plan could not be resolved.']]);
 });
 
 /*

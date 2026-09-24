@@ -42,6 +42,24 @@ it('AC-2: counts an IPv4-mapped IPv6 address as its IPv4 address', function (): 
         ->and(ClientIp::group('::ffff:203.0.113.7', 128))->toBe('203.0.113.7');
 });
 
+it('AC-2: counts an address in the well-known NAT64 prefix 64:ff9b::/96 as its IPv4 address (decision 8)', function (string $ip, int $prefix): void {
+    expect(ClientIp::group($ip, $prefix))->toBe('203.0.113.7');
+})->with([
+    'the dotted notation' => ['64:ff9b::203.0.113.7', 64],
+    'the hex notation' => ['64:ff9b::cb00:7107', 64],
+    'written out in full' => ['0064:ff9b:0000:0000:0000:0000:cb00:7107', 64],
+    'a /128' => ['64:ff9b::203.0.113.7', 128],
+    'a /32, as wide as the prefix itself' => ['64:ff9b::203.0.113.7', 32],
+]);
+
+it('AC-2: groups the addresses around the NAT64 prefix like any IPv6 address', function (string $ip, string $group): void {
+    expect(ClientIp::group($ip, 64))->toBe($group);
+})->with([
+    'outside the /96' => ['64:ff9b::1:cb00:7107', '64:ff9b::/64'],
+    'the local-use prefix of RFC 8215' => ['64:ff9b:1::cb00:7107', '64:ff9b:1::/64'],
+    'a neighbouring prefix' => ['64:ff9a::cb00:7107', '64:ff9a::/64'],
+]);
+
 it('AC-2: gives every request without an IP the same identity', function (?string $ip): void {
     expect(ClientIp::group($ip, 64))->toBe(ClientIp::UNKNOWN)
         ->and(ClientIp::UNKNOWN)->toBe('unknown');
