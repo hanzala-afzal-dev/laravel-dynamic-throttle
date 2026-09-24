@@ -53,21 +53,24 @@ A rule counts requests per client, and its scope decides who the client is (ADR-
     DynamicThrottle::scope('tenant-user', function (): ?string {
         $guard = Auth::guard();
 
-        // Like the user scope: only a user that auth has already loaded, so no lookup of its own.
+        // Like the user scope with scopes.user.guards unset: only a user that auth has already loaded.
         if (tenant() === null || ! $guard->hasUser()) {
             return null;
         }
 
         $user = $guard->user();
 
-        // json_encode keeps the parts apart, whatever characters they contain.
-        return json_encode([tenant()->getTenantKey(), $user::class, $user->getAuthIdentifier()], JSON_THROW_ON_ERROR);
+        // serialize() keeps the parts apart, whatever bytes they contain.
+        return serialize([(string) tenant()->getTenantKey(), $user::class, (string) $user->getAuthIdentifier()]);
     });
     ```
-    `tenant()` is stancl/tenancy's helper. With spatie/laravel-multitenancy, use `Tenant::current()` and its `getKey()`.
+    - `tenant()` is stancl/tenancy's helper. With spatie/laravel-multitenancy, use `Tenant::current()` and its `getKey()`.
+    - Like the `user` scope, it includes the user's class, and counts an id that is `Stringable` by its string form.
 - **Resolved once per request.** Within one request, each scope and parameter is resolved at most once, however many rules use it. A custom resolver that queries the database runs once per request, not once per rule. Nothing is kept from one request to the next, on Octane either.
   - A scope that fails is not asked again (decision 6). Every rule that uses it fails with the same exception, so a failing resolver or guard also runs once per request.
-  - After a failed read, the client IP is read again for each rule that needs it. The read costs nothing, and each error names its own rule's scope.
+  - A `scope_parameter` left on a scope that takes none, such as a `user` rule's, does not make the scope asked twice.
+  - The client IP is read at most once too. Symfony throws on conflicting forwarded headers only on the first read, and answers `0.0.0.0` after that. So after a failed read, every rule that needs the IP fails, each with an error that names its own scope and has the same cause.
+  - The IP is read from a copy of the request, so the app's own `$request->ip()` still throws, as it would without the package.
 - **Hashing.** An identity is hashed before it reaches a key, into 64 lowercase hex characters: HMAC-SHA-256 with a key derived from `APP_KEY` (ADR-0024, which amends ADR-0009). Plain SHA-256 would hide tokens, but not IPv4 addresses or numeric ids, which can be hashed and matched in seconds.
 - **Resolution errors:**
   - These count as resolution errors:
@@ -145,6 +148,8 @@ Unless stated otherwise, resolver criteria use `RequestIdentityResolver` on a `R
   - `b` is an `ip` rule, and trusted proxies send conflicting `Forwarded` and `X-Forwarded-For` headers
 
   In every case, `evaluate()` lists one failure, for rule `b`: an `IdentityUnavailableException` that names the scope, and keeps the cause as its previous exception when there is one. Rules `a` and `c` both count the request, the outcome is `Failed`, and `evaluate()` does not throw. With the conflicting headers, `global` and a present user still resolve.
+
+  With the conflicting headers, every rule that needs the IP fails, not only the first. An `ip` rule and a guest's fallback on a `user` rule fail with the same cause, and the `global` rules around them count. Two clients with conflicting headers never share a counter, and the request's own `ip()` still throws afterwards.
 - **AC-19 An identity error fails only its own rule** (decision 6). Rule `b`'s identity cannot be resolved:
   - An enforcing rule after `b` that rejects the request still rejects it. The outcome is `Rejected`, the earlier rule's count is released, and `b`'s failure is listed.
   - A rule after `b` whose attempt fails stops evaluation with a `Failed` outcome. Both failures are listed, `b`'s first, and the rule after them does not count the request.
@@ -152,7 +157,7 @@ Unless stated otherwise, resolver criteria use `RequestIdentityResolver` on a `R
 - **AC-13 Once per request:**
   - Three matched rules with the custom scope `plan` call the resolver once.
   - Two requests call it once each, with their own values.
-  - A scope that fails is asked once too. Three `custom` rules call a resolver that throws once, and three `user` rules ask a guard that throws, listed in `scopes.user.guards`, once. Each time, the three rules fail with the same exception.
+  - A scope that fails is asked once too. Three `custom` rules call a resolver that throws once. Three `user` rules, two of them with a leftover `scope_parameter`, ask a guard that throws, listed in `scopes.user.guards`, once. Each time, the three rules fail with the same exception.
 - **AC-14 No raw identifier in any key:**
   - Rules of every scope are evaluated on the cache driver.
   - Afterwards, no key the store wrote contains the token `tok-QWERTY`, the header value `client-QWERTY`, the plan `plan-QWERTY` or the IP `203.0.113.7`.
@@ -166,7 +171,7 @@ Unless stated otherwise, resolver criteria use `RequestIdentityResolver` on a `R
 - **AC-16 Per-tenant limits** (ADR-0020 point 8). One rule has the custom scope `tenant`, max 2, window 60, on the cache driver with the fake clock:
   - Tenant `acme`'s third request is rejected.
   - Tenant `globex`'s first request is still allowed.
-  - The multi-database recipe's scope, with max 1, counts user 42 of `acme` and user 42 of `globex` apart: in `acme`, user 42's second request is rejected, and in `globex`, user 42's first is still allowed. A guest is missing.
+  - The multi-database recipe's scope, with max 1, counts users per tenant. In `acme`, user 42's second request is rejected and user 43's first is allowed, and in `globex`, user 42's first is allowed. A guest, or a request without a tenant, is missing. Two users whose ids are different `Stringable` objects are counted apart.
 - **AC-17 Config:**
   - `scopes.ip.ipv6_prefix` comes from `DYNAMIC_THROTTLE_IPV6_PREFIX` and defaults to 64. `0`, `129`, `wide`, `1.5` and `true` fall back to 64.
   - `scopes.user.guards` defaults to `null`.
@@ -213,7 +218,8 @@ Unless stated otherwise, resolver criteria use `RequestIdentityResolver` on a `R
 - **An identifier that is an object,** such as a UUID value object from `getAuthIdentifier()`, counts by its string form when it is `Stringable`, and is a resolution error otherwise.
 - **Rotating `APP_KEY`** resets every counter once (ADR-0024). Counter windows are at most 24 hours.
 - **No `APP_KEY`:** identities fall back to plain SHA-256, and the health check says so (SPEC-016), so rate limiting keeps working.
-- **A resolution error a client can cause.** For example, a custom resolver that throws on an unknown header value. Only the rules that use that scope fail (decision 6). Later rules, such as an IP limit, still count the client and reject it once it goes over, so the error cannot switch limits off.
+- **A resolution error a client can cause.** For example, a custom resolver that throws on an unknown header value. Only the rules that use that scope fail (decision 6). Later rules, such as an IP limit, still count the client and reject it once it goes over, so the error cannot switch the other rules off. The failing rule itself follows its failure policy: fail-open, the default, lets the request past that rule.
+- **Conflicting forwarded headers.** When the client IP cannot be read, every rule that needs it fails, and only `global` rules and present identities count the request. An app that trusts both `Forwarded` and `X-Forwarded-For` from a proxy that passes a client's own header through lets that client cause the conflict, and so get past its IP rules under fail-open. Laravel's `TrustProxies` does not trust `Forwarded` by default, and Symfony's error says to distrust one of the two.
 - **A fail-closed rule whose identity fails.** The rules after it still count the request, which SPEC-012 may then answer with a 503. Whether that 503 releases their counts is SPEC-012's decision.
 - **Multi-database tenancy.** User 42 of two tenants is one identity on a `user` rule, because counters live outside the tenancy bootstrappers (ADR-0020 point 8). The recipe under custom scopes counts them apart (decision 7).
 - **NAT64 and SIIT.** A translator that uses the well-known prefix presents IPv4 clients as `64:ff9b::203.0.113.7`, and each counts as its IPv4 address (decision 8).
