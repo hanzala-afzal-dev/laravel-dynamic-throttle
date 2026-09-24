@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-use Afzal\DynamicThrottle\Manifest\Manifest;
 use Afzal\DynamicThrottle\Enums\FailurePolicy;
 use Afzal\DynamicThrottle\Enums\MissingIdentity;
 use Afzal\DynamicThrottle\Enums\RequestMethod;
 use Afzal\DynamicThrottle\Enums\RuleMode;
 use Afzal\DynamicThrottle\Enums\Scope;
 use Afzal\DynamicThrottle\Manifest\InvalidManifest;
+use Afzal\DynamicThrottle\Manifest\Manifest;
 use Afzal\DynamicThrottle\Manifest\ManifestCodec;
 use Afzal\DynamicThrottle\Manifest\ManifestState;
 use Afzal\DynamicThrottle\Tests\Support\ManifestFixtures;

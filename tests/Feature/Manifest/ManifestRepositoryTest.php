@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-use Afzal\DynamicThrottle\Manifest\Manifest;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Manifest\Contracts\ManifestRebuilder;
 use Afzal\DynamicThrottle\Manifest\InvalidManifest;
+use Afzal\DynamicThrottle\Manifest\Manifest;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Manifest\ManifestState;
 use Afzal\DynamicThrottle\Models\Rule;
