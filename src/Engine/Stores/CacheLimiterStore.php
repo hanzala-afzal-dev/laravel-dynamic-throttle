@@ -71,7 +71,7 @@ final readonly class CacheLimiterStore implements LimiterStore
         }
 
         if ($previous === null) {
-            $this->ensureReadSucceeded('the previous window');
+            $this->ensureMemcachedSucceeded('read the previous window');
         }
 
         $evaluation = $this->counter->evaluate(
@@ -99,9 +99,10 @@ final readonly class CacheLimiterStore implements LimiterStore
 
     /**
      * Reads the window's count, and decrements it only when it is above 0 (SPEC-004).
-     * A missing key expired or was evicted, and decrementing it would create it with
-     * -1 and no expiry on Redis and file stores. The read and the decrement are two
-     * operations, so two releases racing on a count of 1 could both decrement it.
+     * A missing key expired or was evicted, and decrementing it would create it at -1,
+     * with no expiry, on Redis, file and array stores. The key can still vanish
+     * between the read and the decrement, and two releases racing on a count of 1
+     * can both decrement it, so a count that goes below 0 is added back (AC-15).
      */
     public function release(Attempt $attempt): void
     {
@@ -119,7 +120,7 @@ final readonly class CacheLimiterStore implements LimiterStore
         }
 
         if ($count === null) {
-            $this->ensureReadSucceeded('the window');
+            $this->ensureMemcachedSucceeded('read the window');
         }
 
         if (! is_numeric($count) || $count < 1) {
@@ -127,9 +128,21 @@ final readonly class CacheLimiterStore implements LimiterStore
         }
 
         try {
-            $this->withoutSerialization(fn (): int|bool => $this->cache->decrement($windowKey));
+            $count = $this->withoutSerialization(fn (): int|bool => $this->cache->decrement($windowKey));
         } catch (Throwable $exception) {
             throw StorageUnavailableException::because('The limiter store could not release the request.', $exception);
+        }
+
+        // Memcached returns false both when the key expired after the read and when it is down.
+        if ($count === false) {
+            $this->ensureMemcachedSucceeded('decrement the window');
+        } elseif ($count < 0) {
+            // A count of -1 would let the window allow one extra request.
+            try {
+                $this->withoutSerialization(fn (): int|bool => $this->cache->increment($windowKey));
+            } catch (Throwable $exception) {
+                throw StorageUnavailableException::because('The limiter store could not release the request.', $exception);
+            }
         }
     }
 
@@ -147,10 +160,11 @@ final readonly class CacheLimiterStore implements LimiterStore
     }
 
     /**
-     * Memcached's get() returns null both for a missing key and for an error, so a
-     * dead node would silently count a window as 0 (SPEC-002 AC-20, SPEC-004 AC-12).
+     * Memcached's get() returns null, and its decrement() false, both for a missing
+     * key and for an error, so a dead node would silently count a window as 0 or skip
+     * a release (SPEC-002 AC-20, SPEC-004 AC-12).
      */
-    private function ensureReadSucceeded(string $window): void
+    private function ensureMemcachedSucceeded(string $operation): void
     {
         $store = $this->cache->getStore();
 
@@ -161,7 +175,7 @@ final readonly class CacheLimiterStore implements LimiterStore
         $memcached = $store->getMemcached();
 
         if (! in_array($memcached->getResultCode(), [Memcached::RES_SUCCESS, Memcached::RES_NOTFOUND], true)) {
-            throw StorageUnavailableException::because("Memcached could not read {$window}: ".$memcached->getResultMessage());
+            throw StorageUnavailableException::because("Memcached could not {$operation}: ".$memcached->getResultMessage());
         }
     }
 
