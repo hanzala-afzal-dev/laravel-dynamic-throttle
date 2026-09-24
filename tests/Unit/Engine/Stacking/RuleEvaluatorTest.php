@@ -9,6 +9,7 @@ use Afzal\DynamicThrottle\Engine\CounterKey;
 use Afzal\DynamicThrottle\Engine\Exceptions\IdentityUnavailableException;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
+use Afzal\DynamicThrottle\Engine\Matching\RuleMatcher;
 use Afzal\DynamicThrottle\Engine\Stacking\Evaluation;
 use Afzal\DynamicThrottle\Engine\Stacking\EvaluationOutcome;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleAttempt;
@@ -17,6 +18,7 @@ use Afzal\DynamicThrottle\Engine\Stacking\RuleFailure;
 use Afzal\DynamicThrottle\Engine\Stores\CacheLimiterStore;
 use Afzal\DynamicThrottle\Enums\RuleMode;
 use Afzal\DynamicThrottle\Manifest\CompiledRule;
+use Afzal\DynamicThrottle\Manifest\Manifest;
 use Afzal\DynamicThrottle\Tests\Support\FakeClock;
 use Afzal\DynamicThrottle\Tests\Support\ManifestFixtures;
 use Illuminate\Cache\ArrayStore;
@@ -269,4 +271,99 @@ it('SPEC-008 AC-12: stops with a Failed outcome when a rule\'s identity cannot b
         ->and($evaluation->failure?->exception->getMessage())->toBe('The identity for custom:plan could not be resolved.')
         ->and(attemptSummary($evaluation->attempts))->toBe([['a', false]])
         ->and([stackCount($stack->cache, 'a'), stackCount($stack->cache, 'c')])->toBe([1, 0]);
+});
+
+/*
+| ADR-0025: the cap counts attempts on the store, per mode. The rules go through
+| the matcher first, as a request's do, and all match "api/x".
+*/
+
+/**
+ * @param  list<CompiledRule>  $rules  in priority order
+ * @return list<CompiledRule>
+ */
+function matchedForCap(array $rules): array
+{
+    return (new RuleMatcher)->match(new Manifest(1, $rules), 'GET', 'api/x')->rules;
+}
+
+/**
+ * @param  list<CompiledRule>  $rules
+ * @return list<string>
+ */
+function ruleIds(array $rules): array
+{
+    return array_map(fn (CompiledRule $rule): string => $rule->id, $rules);
+}
+
+it('ADR-0025: lets a guest rule count behind five rules that skip guests', function (): void {
+    $stack = stackStore();
+    $skipping = array_map(fn (int $n): CompiledRule => stackRule("skip{$n}", 100, $n), range(1, 5));
+    $rules = matchedForCap([...$skipping, stackRule('guests', 1, 100)]);
+    $evaluator = new RuleEvaluator($stack->store, 5);
+    $guest = oneClient(['skip1', 'skip2', 'skip3', 'skip4', 'skip5']);
+
+    $first = $evaluator->evaluate($rules, $guest);
+    $second = $evaluator->evaluate($rules, $guest);
+
+    expect([$first->outcome, $second->outcome])->toBe([EvaluationOutcome::Allowed, EvaluationOutcome::Rejected])
+        ->and($second->rejection?->rule->id)->toBe('guests')
+        ->and(ruleIds($first->skipped))->toBe(['skip1', 'skip2', 'skip3', 'skip4', 'skip5']);
+});
+
+it('ADR-0025: gives dry-run rules slots of their own, so they never switch off an enforcing rule', function (): void {
+    $stack = stackStore();
+    $enforcing = array_map(fn (int $n): CompiledRule => stackRule("e{$n}", 100, $n + 1), range(1, 5));
+    $rules = matchedForCap([stackRule('d', 100, 1, RuleMode::DryRun), ...$enforcing]);
+
+    $evaluation = (new RuleEvaluator($stack->store, 5))->evaluate($rules, oneClient());
+
+    expect(attemptSummary($evaluation->attempts))->toBe([['d', false], ['e1', false], ['e2', false], ['e3', false], ['e4', false], ['e5', false]])
+        ->and($evaluation->ignored)->toBe([]);
+});
+
+it('ADR-0025: counts at most five enforcing rules, and lists the rest as ignored', function (): void {
+    $stack = stackStore();
+    $rules = matchedForCap(array_map(fn (int $n): CompiledRule => stackRule("e{$n}", 100, $n), range(1, 7)));
+
+    $evaluation = (new RuleEvaluator($stack->store, 5))->evaluate($rules, oneClient());
+
+    expect(ruleIds(array_map(fn (RuleAttempt $attempt): CompiledRule => $attempt->rule, $evaluation->attempts)))->toBe(['e1', 'e2', 'e3', 'e4', 'e5'])
+        ->and(ruleIds($evaluation->ignored))->toBe(['e6', 'e7'])
+        ->and([stackCount($stack->cache, 'e5'), stackCount($stack->cache, 'e6')])->toBe([1, 0]);
+});
+
+it('ADR-0025: counts at most five dry-run rules on top, and the enforcing rule after them', function (): void {
+    $stack = stackStore();
+    $dryRun = array_map(fn (int $n): CompiledRule => stackRule("d{$n}", 100, $n, RuleMode::DryRun), range(1, 7));
+    $rules = matchedForCap([...$dryRun, stackRule('e', 100, 8)]);
+
+    $evaluation = (new RuleEvaluator($stack->store, 5))->evaluate($rules, oneClient());
+
+    expect(ruleIds(array_map(fn (RuleAttempt $attempt): CompiledRule => $attempt->rule, $evaluation->attempts)))->toBe(['d1', 'd2', 'd3', 'd4', 'd5', 'e'])
+        ->and(ruleIds($evaluation->ignored))->toBe(['d6', 'd7']);
+});
+
+it('ADR-0025: never resolves the identity of an ignored rule', function (): void {
+    $stack = stackStore();
+    $resolved = [];
+    $identities = new class($resolved) implements IdentityResolver
+    {
+        /**
+         * @param  list<string>  $resolved
+         */
+        public function __construct(private array &$resolved) {}
+
+        public function resolve(CompiledRule $rule): string
+        {
+            $this->resolved[] = $rule->id;
+
+            return hash('sha256', 'client');
+        }
+    };
+    $rules = matchedForCap(array_map(fn (int $n): CompiledRule => stackRule("e{$n}", 100, $n), range(1, 7)));
+
+    (new RuleEvaluator($stack->store, 5))->evaluate($rules, $identities);
+
+    expect($resolved)->toBe(['e1', 'e2', 'e3', 'e4', 'e5']);
 });
