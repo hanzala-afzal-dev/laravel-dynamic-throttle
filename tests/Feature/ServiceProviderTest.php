@@ -39,3 +39,32 @@ it('reports its version and kill switch in php artisan about', function (): void
         ->and($about['dynamic_throttle'])->toHaveKeys(['version', 'enabled'])
         ->and($about['dynamic_throttle']['enabled'])->toBeTrue();
 });
+
+/*
+| SPEC-005 AC-6: the provider merges with ConfigMerger (ADR-0020 point 10).
+*/
+
+it('AC-6: gives a config published before a section existed that section\'s defaults', function (): void {
+    config()->set('dynamic-throttle', [
+        'enabled' => true,
+        'driver' => 'auto',
+        'store' => null,
+        'redis_connection' => null,
+        'prefix' => 'app:',
+    ]);
+
+    app()->register(DynamicThrottleServiceProvider::class, force: true);
+
+    expect(config('dynamic-throttle.prefix'))->toBe('app:')
+        ->and(config()->has('dynamic-throttle.database.connection'))->toBeTrue()
+        ->and(config('dynamic-throttle.database.connection'))->toBeNull();
+});
+
+it('AC-6: fills an empty section with its defaults, which mergeConfigFrom would not', function (): void {
+    config()->set('dynamic-throttle', ['database' => []]);
+
+    app()->register(DynamicThrottleServiceProvider::class, force: true);
+
+    expect(config()->has('dynamic-throttle.database.connection'))->toBeTrue()
+        ->and(config('dynamic-throttle.prefix'))->toBe('dt:');
+});
