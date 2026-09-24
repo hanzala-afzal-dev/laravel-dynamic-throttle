@@ -30,7 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Rule matching and stacking, not yet applied to requests:
   - A rule matches by method and by a pattern on the URL-decoded path. `*` matches every method, and `GET` rules also match `HEAD`. In patterns, `*` matches any characters, and a leading slash is ignored.
   - Every matching rule counts the request, in priority order. The first one that rejects it stops, and the others' counts are released. Dry-run rules never reject.
-  - Config key `matching.max_rules_per_request` (`DYNAMIC_THROTTLE_MAX_RULES`, default 5): matches beyond it are ignored.
+  - Config key `matching.max_rules_per_request` (`DYNAMIC_THROTTLE_MAX_RULES`, default 5): at most this many enforcing rules count a request, and as many dry-run rules. Rules that do not apply to the request take no slot, and adding a dry-run rule never switches off an enforcing one. Rules beyond the cap are ignored.
 - Scopes decide who a rule counts a request for. Like matching, they are not yet applied to requests:
   - `ip`, `user`, `api_token`, `header` and `global`, plus custom scopes that you register with `DynamicThrottle::scope('tenant', fn (Request $request) => ...)` or a `ScopeResolver` class. Per-tenant limits are one rule with a custom scope.
   - IPv6 clients are grouped by `scopes.ip.ipv6_prefix` (`DYNAMIC_THROTTLE_IPV6_PREFIX`, default 64), so rotating addresses inside a /64 does not escape a limit.
