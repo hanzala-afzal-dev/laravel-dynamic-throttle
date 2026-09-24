@@ -189,15 +189,16 @@ it('AC-13: releases dry-run rules like enforcing ones (ADR-0021)', function (): 
         ->and(stackCount($stack->cache, 'd'))->toBe(1);
 });
 
-it('AC-14: skips a rule whose identity resolves to null', function (): void {
+it('AC-14: skips a rule whose identity resolves to null, and goes on to the next', function (): void {
     $stack = stackStore();
+    $rules = [stackRule('a', 5, 10), stackRule('b', 5, 20), stackRule('c', 5, 30)];
 
-    $evaluation = (new RuleEvaluator($stack->store))->evaluate([stackRule('a', 5, 10), stackRule('b', 5, 20)], oneClient(['b']));
+    $evaluation = (new RuleEvaluator($stack->store))->evaluate($rules, oneClient(['b']));
 
     expect($evaluation->outcome)->toBe(EvaluationOutcome::Allowed)
-        ->and(attemptSummary($evaluation->attempts))->toBe([['a', false]])
+        ->and(attemptSummary($evaluation->attempts))->toBe([['a', false], ['c', false]])
         ->and(array_map(fn (CompiledRule $rule): string => $rule->id, $evaluation->skipped))->toBe(['b'])
-        ->and(stackCount($stack->cache, 'b'))->toBe(0);
+        ->and([stackCount($stack->cache, 'b'), stackCount($stack->cache, 'c')])->toBe([0, 1]);
 });
 
 it('AC-15: keeps the rejection when a release fails, and still releases the others', function (): void {
