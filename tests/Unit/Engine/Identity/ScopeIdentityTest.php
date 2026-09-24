@@ -14,6 +14,14 @@ covers(ScopeIdentity::class);
 | prefixes, so they can never share a counter.
 */
 
+/**
+ * The client IP, read only when an identity needs it.
+ */
+function identityIp(string $ip = '203.0.113.7'): Closure
+{
+    return fn (): string => $ip;
+}
+
 function identityRule(string $scope, string $missing = 'ip'): CompiledRule
 {
     return CompiledRule::fromArray(ManifestFixtures::rule([
@@ -24,7 +32,7 @@ function identityRule(string $scope, string $missing = 'ip'): CompiledRule
 }
 
 it('gives each scope its identity', function (string $scope, ?string $value, string $identity): void {
-    expect(ScopeIdentity::for(identityRule($scope), $value, '203.0.113.7'))->toBe($identity);
+    expect(ScopeIdentity::for(identityRule($scope), $value, identityIp()))->toBe($identity);
 })->with([
     'AC-1: ip' => ['ip', null, 'ip:203.0.113.7'],
     'AC-1: ip ignores a value' => ['ip', 'anything', 'ip:203.0.113.7'],
@@ -37,7 +45,7 @@ it('gives each scope its identity', function (string $scope, ?string $value, str
 ]);
 
 it('falls back to the scope\'s IP identity when the identity is missing', function (string $scope, ?string $value, string $identity): void {
-    expect(ScopeIdentity::for(identityRule($scope), $value, '203.0.113.7'))->toBe($identity);
+    expect(ScopeIdentity::for(identityRule($scope), $value, identityIp()))->toBe($identity);
 })->with([
     'AC-4: a guest' => ['user', null, 'guest:203.0.113.7'],
     'AC-4: a guest with an empty id' => ['user', '', 'guest:203.0.113.7'],
@@ -50,7 +58,7 @@ it('falls back to the scope\'s IP identity when the identity is missing', functi
 ]);
 
 it('skips the rule when the identity is missing and the rule says skip', function (string $scope, ?string $value): void {
-    expect(ScopeIdentity::for(identityRule($scope, 'skip'), $value, '203.0.113.7'))->toBeNull();
+    expect(ScopeIdentity::for(identityRule($scope, 'skip'), $value, identityIp()))->toBeNull();
 })->with([
     'AC-4: a guest' => ['user', null],
     'AC-7: an empty token' => ['api_token', ''],
@@ -59,12 +67,26 @@ it('skips the rule when the identity is missing and the rule says skip', functio
 ]);
 
 it('counts a present identity on a skip rule, and never skips ip or global', function (): void {
-    expect(ScopeIdentity::for(identityRule('user', 'skip'), 'App\Models\User:42', '203.0.113.7'))->toBe('user:App\Models\User:42')
-        ->and(ScopeIdentity::for(identityRule('ip', 'skip'), null, '203.0.113.7'))->toBe('ip:203.0.113.7')
-        ->and(ScopeIdentity::for(identityRule('global', 'skip'), null, '203.0.113.7'))->toBe('global');
+    expect(ScopeIdentity::for(identityRule('user', 'skip'), 'App\Models\User:42', identityIp()))->toBe('user:App\Models\User:42')
+        ->and(ScopeIdentity::for(identityRule('ip', 'skip'), null, identityIp()))->toBe('ip:203.0.113.7')
+        ->and(ScopeIdentity::for(identityRule('global', 'skip'), null, identityIp()))->toBe('global');
 });
 
 it('uses the IP it is given for fallbacks, grouped or unknown', function (): void {
-    expect(ScopeIdentity::for(identityRule('user'), null, '2001:db8:1:2::/64'))->toBe('guest:2001:db8:1:2::/64')
-        ->and(ScopeIdentity::for(identityRule('api_token'), null, 'unknown'))->toBe('anon:unknown');
+    expect(ScopeIdentity::for(identityRule('user'), null, identityIp('2001:db8:1:2::/64')))->toBe('guest:2001:db8:1:2::/64')
+        ->and(ScopeIdentity::for(identityRule('api_token'), null, identityIp('unknown')))->toBe('anon:unknown');
 });
+
+it('reads the client IP only when the identity needs it', function (string $scope, string $missing, ?string $value, ?string $identity): void {
+    // Symfony throws when trusted proxies send conflicting headers; a rule that needs no IP must still resolve.
+    $unreadable = fn (): string => throw new RuntimeException('The client IP cannot be read.');
+
+    expect(ScopeIdentity::for(identityRule($scope, $missing), $value, $unreadable))->toBe($identity);
+})->with([
+    'global' => ['global', 'ip', null, 'global'],
+    'a present user' => ['user', 'ip', 'App\Models\User:42', 'user:App\Models\User:42'],
+    'a present token' => ['api_token', 'ip', 'abc', 'token:abc'],
+    'a present header' => ['header', 'ip', 'c1', 'header:c1'],
+    'a present custom value' => ['custom', 'ip', 'gold', 'custom:gold'],
+    'a guest on a skip rule' => ['user', 'skip', null, null],
+]);

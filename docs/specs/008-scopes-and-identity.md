@@ -28,11 +28,12 @@ A rule counts requests per client, and its scope decides who the client is (ADR-
   - An IPv6 address is grouped by `scopes.ip.ipv6_prefix`, default 64: `2001:db8:1:2::1` and `2001:db8:1:2:ffff::9` share an identity.
   - An IPv4-mapped IPv6 address (`::ffff:203.0.113.7`) counts as its IPv4 address.
   - A request with no IP counts as `unknown`: all such requests share one identity.
+  - The IP is read only when a rule needs it: the `ip` scope, or a fallback. A `global` rule, or a present identity, still resolves when the IP cannot be read.
 - **Users and guards** (ADR-0020 point 5):
   - By default, `scopes.user.guards` is `null`. The user is then the one the request authenticated with: the default guard, which Laravel's auth middleware sets, and only when that guard already holds a user (`hasUser()`). The scope never triggers a user lookup of its own, so a route without auth middleware counts its requests as guests, as ADR-0004 expects.
   - A list, such as `['sanctum', 'web']`, asks each guard in order, and the first user found wins. Asking a guard that has not authenticated the request costs that guard's own lookup, such as Sanctum's token query. That is the documented price of the option (ADR-0020).
   - The identity includes the user's class, so a `User` and an `Admin` with the same id never share a counter.
-- **API tokens** come from `$request->bearerToken()`. Only the hash is ever stored.
+- **API tokens** come from `$request->bearerToken()`, without the spaces or tabs around them. RFC 9110 allows several spaces after `Bearer`, and Passport and jwt-auth accept `Bearer  abc` as the token `abc`. Without trimming, one token could multiply its limit. Only the hash is ever stored.
 - **Custom scopes** are registered by the app, usually in a service provider's `boot()`:
   ```php
   use Afzal\DynamicThrottle\Facades\DynamicThrottle;
@@ -51,6 +52,8 @@ A rule counts requests per client, and its scope decides who the client is (ADR-
     - a `custom` scope that is not registered
     - a resolver that throws, or returns anything else, such as an array, an object or `true`
     - a guard that is not defined, or fails
+    - a user id, or a custom value, that cannot be read or turned into a string
+    - a client IP that cannot be read, such as when trusted proxies send conflicting `Forwarded` and `X-Forwarded-For` headers
   - The evaluator ends with a `Failed` outcome for that rule, as for a failed attempt (SPEC-007), and keeps what earlier rules counted. The error is an `IdentityUnavailableException` that names the scope and keeps the cause.
   - SPEC-012 then applies the rule's failure policy, reporting and strict mode (ADR-0020 point 1).
 - **Location:**
@@ -78,14 +81,15 @@ Unless stated otherwise, resolver criteria use `RequestIdentityResolver` on a `R
   - With `ip`, two guests from `203.0.113.7` are the same identity. A guest from `203.0.113.8` differs, and neither equals user 42's identity.
   - With `skip`, `resolve()` returns `null`.
 - **AC-5 Default guards** (ADR-0020 point 5):
-  - The session holds user 42 on a route without auth middleware, so the guard has not resolved a user. The request counts as a guest, and no database query runs.
-  - Once the guard has resolved user 42, as auth middleware does, it counts as user 42.
+  - The session holds user 42 on a route without auth middleware, with a session guard and a database user provider. The guard has not loaded the user, so the request counts as a guest, and no database query runs.
+  - Once the guard has loaded user 42, as auth middleware does with one query, the request counts as user 42.
 - **AC-6 A guard list:**
-  - With `['api', 'web']`, a request whose user is only on `web` counts as that user.
+  - With `['none', 'api', 'web']`, where `none` has no user and `api` and `web` have users 1 and 2, the request counts as user 1, and `web` is never asked.
   - A guard name that is not defined is a resolution error (AC-12).
 - **AC-7 `api_token`:**
   - `Bearer abc` from two IPs is the same identity.
   - `abc` and `abd` differ.
+  - `Bearer  abc` (two spaces), `Bearer` and a tab, `Bearer abc ` and `Bearer abc ,x` are the same identity as `Bearer abc`.
   - No token, or an empty `Bearer `, is missing: it gives the `anon:<ip>` identity with `ip`, and `null` with `skip`.
 - **AC-8 `header`** (`X-Client-Id`):
   - `c1` twice is the same identity, and `c1` and `c2` differ.
@@ -103,13 +107,15 @@ Unless stated otherwise, resolver criteria use `RequestIdentityResolver` on a `R
   - `Plan`, `''` and a 65-character name are rejected at registration with an `InvalidArgumentException`, and so is a class that is not a `ScopeResolver`.
 
 ### Errors, memoization and hashing
-- **AC-12 Resolution errors.** Take a rule `a` that counts, then a rule `b` whose scope fails in each of these ways:
+- **AC-12 Resolution errors.** Take a `global` rule `a` that counts, then a rule `b` whose scope fails in each of these ways:
   - `b`'s custom scope is not registered
   - its resolver throws a `RuntimeException`
-  - its resolver returns `['x']`, `new stdClass` or `true`
+  - its resolver returns `['x']`, `new stdClass` or `true`, or a `Stringable` whose `__toString()` throws
   - `scopes.user.guards` lists an undefined guard
+  - the user's `getAuthIdentifier()` throws, or returns a `Stringable` whose `__toString()` throws
+  - `b` is an `ip` rule, and trusted proxies send conflicting `Forwarded` and `X-Forwarded-For` headers
 
-  In every case, `evaluate()` returns `Failed` for rule `b` with an `IdentityUnavailableException` that names the scope, and keeps the cause as its previous exception when there is one. Rule `a` keeps its count, and `evaluate()` does not throw.
+  In every case, `evaluate()` returns `Failed` for rule `b` with an `IdentityUnavailableException` that names the scope, and keeps the cause as its previous exception when there is one. Rule `a` keeps its count, and `evaluate()` does not throw. With the conflicting headers, `global` and a present user still resolve.
 - **AC-13 Once per request:**
   - Three matched rules with the custom scope `plan` call the resolver once.
   - Two requests call it once each, with their own values.

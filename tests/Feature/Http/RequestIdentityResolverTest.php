@@ -12,9 +12,13 @@ use Afzal\DynamicThrottle\Tests\Support\Auth\TestAdmin;
 use Afzal\DynamicThrottle\Tests\Support\Auth\TestUser;
 use Afzal\DynamicThrottle\Tests\Support\Identities;
 use Afzal\DynamicThrottle\Tests\Support\PlanFromConfig;
+use Illuminate\Auth\GenericUser;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Symfony\Component\HttpFoundation\Exception\ConflictingHeadersException;
 
 /*
 | SPEC-008 AC-1 to AC-13: the identities one request counts under, through the
@@ -25,6 +29,22 @@ beforeEach(function (): void {
     // Hashing is keyed, as in any Laravel app (ADR-0024).
     config()->set('app.key', 'base64:3u4DMqUd5sEWtS4w9UqJ7Qw/qMCRnGFhqRuSN40wNJA=');
 });
+
+afterEach(function (): void {
+    // Trusted proxies are static on Symfony's Request: back to its defaults.
+    Request::setTrustedProxies([], -1);
+});
+
+/**
+ * A request whose IP Symfony cannot read: the app trusts the proxy for both
+ * Forwarded and X-Forwarded-For, and the two disagree.
+ */
+function conflictingForwardedRequest(): Request
+{
+    Request::setTrustedProxies(['203.0.113.7'], Request::HEADER_FORWARDED | Request::HEADER_X_FORWARDED_FOR);
+
+    return Identities::request('203.0.113.7', ['Forwarded' => 'for=198.51.100.1', 'X-Forwarded-For' => '198.51.100.2']);
+}
 
 it('AC-1: gives requests from one IPv4 address one identity, and another address another', function (): void {
     $rule = Identities::rule('ip');
@@ -110,10 +130,6 @@ it('AC-5: by default, never looks a user up, and counts the user once auth has r
     });
     config()->set('auth.guards.counting', ['driver' => 'counting']);
     Auth::shouldUse('counting');
-    $queries = 0;
-    DB::listen(function () use (&$queries): void {
-        $queries++;
-    });
 
     $beforeAuth = Identities::of(Identities::request('203.0.113.7'), $rule);
     $lookupsBeforeAuth = $lookups;
@@ -121,22 +137,69 @@ it('AC-5: by default, never looks a user up, and counts the user once auth has r
     $afterAuth = Identities::of(Identities::request('203.0.113.7'), $rule);
 
     expect([$beforeAuth, $afterAuth])->toBe([$guest, $user42])
-        ->and([$lookupsBeforeAuth, $lookups, $queries])->toBe([0, 1, 0]);
+        ->and([$lookupsBeforeAuth, $lookups])->toBe([0, 1]);
+});
+
+it('AC-5: runs no query of its own when the session holds a user that auth has not loaded yet', function (): void {
+    config()->set('session.driver', 'array');
+    Schema::create('scope_users', function (Blueprint $table): void {
+        $table->id();
+        $table->string('password')->nullable();
+        $table->string('remember_token')->nullable();
+    });
+    DB::table('scope_users')->insert(['id' => 42]);
+    config()->set('auth.providers.scope_users', ['driver' => 'database', 'table' => 'scope_users']);
+    config()->set('auth.guards.web', ['driver' => 'session', 'provider' => 'scope_users']);
+    app('session.store')->put(Auth::guard('web')->getName(), 42);
+    $rule = Identities::rule('user');
+    $queries = 0;
+    DB::listen(function () use (&$queries): void {
+        $queries++;
+    });
+
+    $beforeAuth = Identities::of(Identities::request('203.0.113.7'), $rule);
+    $queriesBeforeAuth = $queries;
+    $user = Auth::guard()->user(); // What auth middleware does: one query.
+    $afterAuth = Identities::of(Identities::request('203.0.113.7'), $rule);
+    $queriesAfterAuth = $queries;
+    $this->actingAs(new GenericUser(['id' => 42]));
+
+    expect([$queriesBeforeAuth, $queriesAfterAuth])->toBe([0, 1])
+        ->and($beforeAuth)->toBe(Identities::hashed('guest:203.0.113.7'))
+        ->and($user?->getAuthIdentifier())->toBe(42)
+        ->and($afterAuth)->toBe(Identities::of(Identities::request('203.0.113.7'), $rule));
 });
 
 it('AC-6: asks each guard in scopes.user.guards in order, and the first user found wins', function (): void {
-    Auth::viaRequest('nobody', fn (): ?TestUser => null);
-    Auth::viaRequest('someone', fn (): TestUser => new TestUser(['id' => 42]));
-    config()->set('auth.guards.api', ['driver' => 'nobody']);
-    config()->set('auth.guards.web', ['driver' => 'someone']);
-    config()->set('dynamic-throttle.scopes.user.guards', ['api', 'web']);
+    $asked = [];
+    Auth::viaRequest('nobody', function () use (&$asked): ?TestUser {
+        $asked[] = 'nobody';
+
+        return null;
+    });
+    Auth::viaRequest('first', function () use (&$asked): TestUser {
+        $asked[] = 'first';
+
+        return new TestUser(['id' => 1]);
+    });
+    Auth::viaRequest('second', function () use (&$asked): TestUser {
+        $asked[] = 'second';
+
+        return new TestUser(['id' => 2]);
+    });
+    config()->set('auth.guards.none', ['driver' => 'nobody']);
+    config()->set('auth.guards.api', ['driver' => 'first']);
+    config()->set('auth.guards.web', ['driver' => 'second']);
+    config()->set('dynamic-throttle.scopes.user.guards', ['none', 'api', 'web']);
     $rule = Identities::rule('user');
 
     $listed = Identities::of(Identities::request('203.0.113.7'), $rule);
+    $askedWhenListed = $asked;
     config()->set('dynamic-throttle.scopes.user.guards');
-    $this->actingAs(new TestUser(['id' => 42]));
+    $this->actingAs(new TestUser(['id' => 1]));
 
-    expect($listed)->toBe(Identities::of(Identities::request('203.0.113.7'), $rule))
+    expect($askedWhenListed)->toBe(['nobody', 'first'])
+        ->and($listed)->toBe(Identities::of(Identities::request('203.0.113.7'), $rule))
         ->not->toBe(Identities::hashed('guest:203.0.113.7'));
 });
 
@@ -147,6 +210,19 @@ it('AC-7: counts a bearer token as one client from any IP', function (): void {
     expect($token('203.0.113.7', 'abc'))->toBe($token('198.51.100.1', 'abc'))
         ->not->toBe($token('203.0.113.7', 'abd'));
 });
+
+it('AC-7: counts one bearer token as one client however the header spaces it', function (string $authorization): void {
+    $rule = Identities::rule('api_token');
+
+    expect(Identities::of(Identities::request('203.0.113.7', ['Authorization' => $authorization]), $rule))
+        ->toBe(Identities::of(Identities::request('203.0.113.7', ['Authorization' => 'Bearer abc']), $rule));
+})->with([
+    // RFC 9110 allows several spaces after the scheme, and Passport and jwt-auth accept all of these.
+    'two spaces' => ['Bearer  abc'],
+    'a tab' => ["Bearer \tabc"],
+    'a trailing space' => ['Bearer abc '],
+    'a space before a comma' => ['Bearer abc ,x'],
+]);
 
 it('AC-7: counts a request without a bearer token under anon:<ip>, or skips the rule', function (array $headers): void {
     $request = Identities::request('203.0.113.7', $headers);
@@ -279,37 +355,75 @@ it('AC-11: rejects a class that is not a ScopeResolver', function (string $class
     'a class that does not exist' => ['App\Scopes\MissingPlan'],
 ]);
 
-it('AC-12: ends evaluation with a Failed outcome for a rule whose identity cannot be resolved', function (string $failure, string $scope, ?string $cause): void {
-    $failing = $failure === 'undefined guard'
-        ? Identities::rule('user', id: 'b')
-        : Identities::rule('custom', parameter: 'plan', id: 'b');
+it('AC-12: ends evaluation with a Failed outcome for a rule whose identity cannot be resolved', function (string $failure, string $scope, ?string $causeClass, string $cause): void {
+    $failing = match ($failure) {
+        'undefined guard', 'unreadable user id', 'user id without a string form' => Identities::rule('user', id: 'b'),
+        'unreadable client IP' => Identities::rule('ip', id: 'b'),
+        default => Identities::rule('custom', parameter: 'plan', id: 'b'),
+    };
+    $unformattable = fn (string $what): Stringable => new class($what) implements Stringable
+    {
+        public function __construct(private readonly string $what) {}
+
+        public function __toString(): string
+        {
+            throw new RuntimeException("The {$this->what} cannot be formatted.");
+        }
+    };
     match ($failure) {
-        'unregistered' => null,
+        'unregistered', 'unreadable client IP' => null,
         'throws' => DynamicThrottle::scope('plan', fn (): never => throw new RuntimeException('The plan service is down.')),
         'returns an array' => DynamicThrottle::scope('plan', fn (): array => ['x']),
         'returns an object' => DynamicThrottle::scope('plan', fn (): stdClass => new stdClass),
         'returns true' => DynamicThrottle::scope('plan', fn (): bool => true),
+        'custom value without a string form' => DynamicThrottle::scope('plan', fn (): Stringable => $unformattable('plan')),
         'undefined guard' => config()->set('dynamic-throttle.scopes.user.guards', ['nope']),
+        'unreadable user id' => $this->actingAs(new class(['id' => 1]) extends GenericUser
+        {
+            public function getAuthIdentifier(): mixed
+            {
+                throw new RuntimeException('The id column is missing.');
+            }
+        }),
+        'user id without a string form' => $this->actingAs(new class(['id' => $unformattable('id')]) extends GenericUser {}),
     };
+    $request = $failure === 'unreadable client IP' ? conflictingForwardedRequest() : Identities::request();
 
+    // Rule a is global, which never reads the client IP.
     $evaluation = (new RuleEvaluator(Identities::store()))
-        ->evaluate([Identities::rule('ip', id: 'a'), $failing], Identities::resolver(Identities::request()));
+        ->evaluate([Identities::rule('global', id: 'a'), $failing], Identities::resolver($request));
+    $previous = $evaluation->failure?->exception->getPrevious();
 
     expect($evaluation->outcome)->toBe(EvaluationOutcome::Failed)
         ->and($evaluation->failure?->rule->id)->toBe('b')
         ->and($evaluation->failure?->exception)->toBeInstanceOf(IdentityUnavailableException::class)
-        ->and($evaluation->failure?->exception->getMessage())->toContain($scope)
-        ->and($evaluation->failure?->exception->getPrevious()?->getMessage())->toBe($cause)
+        ->and($evaluation->failure?->exception->getMessage())->toStartWith("The identity for {$scope} could not be resolved")
+        ->and($previous === null ? null : $previous::class)->toBe($causeClass)
+        ->and($previous?->getMessage() ?? '')->toContain($cause)
         ->and(array_map(fn (RuleAttempt $attempt): array => [$attempt->rule->id, $attempt->released, $attempt->attempt->remaining], $evaluation->attempts))
         ->toBe([['a', false, 59]]);
 })->with([
-    'an unregistered custom scope' => ['unregistered', 'custom:plan', null],
-    'a resolver that throws' => ['throws', 'custom:plan', 'The plan service is down.'],
-    'a resolver that returns an array' => ['returns an array', 'custom:plan', null],
-    'a resolver that returns an object' => ['returns an object', 'custom:plan', null],
-    'a resolver that returns true' => ['returns true', 'custom:plan', null],
-    'an undefined guard' => ['undefined guard', 'user', 'Auth guard [nope] is not defined.'],
+    'an unregistered custom scope' => ['unregistered', 'custom:plan', null, ''],
+    'a resolver that throws' => ['throws', 'custom:plan', RuntimeException::class, 'The plan service is down.'],
+    'a resolver that returns an array' => ['returns an array', 'custom:plan', null, ''],
+    'a resolver that returns an object' => ['returns an object', 'custom:plan', null, ''],
+    'a resolver that returns true' => ['returns true', 'custom:plan', null, ''],
+    'a custom value without a string form' => ['custom value without a string form', 'custom:plan', RuntimeException::class, 'The plan cannot be formatted.'],
+    'an undefined guard' => ['undefined guard', 'user', InvalidArgumentException::class, 'Auth guard [nope] is not defined.'],
+    'a user id that cannot be read' => ['unreadable user id', 'user', RuntimeException::class, 'The id column is missing.'],
+    'a user id without a string form' => ['user id without a string form', 'user', RuntimeException::class, 'The id cannot be formatted.'],
+    'a client IP that cannot be read' => ['unreadable client IP', 'ip', ConflictingHeadersException::class, 'conflicting'],
 ]);
+
+it('AC-12: reads the client IP only for a rule that needs it', function (): void {
+    $resolver = Identities::resolver(conflictingForwardedRequest());
+    $this->actingAs(new TestUser(['id' => 42]));
+
+    expect($resolver->resolve(Identities::rule('global')))->toMatch('/\A[0-9a-f]{64}\z/')
+        ->and($resolver->resolve(Identities::rule('user')))->toMatch('/\A[0-9a-f]{64}\z/')
+        ->and(fn (): ?string => $resolver->resolve(Identities::rule('ip')))
+        ->toThrow(IdentityUnavailableException::class, 'The identity for ip could not be resolved');
+});
 
 it('AC-13: resolves each scope once per request, however many rules use it', function (): void {
     $calls = 0;
