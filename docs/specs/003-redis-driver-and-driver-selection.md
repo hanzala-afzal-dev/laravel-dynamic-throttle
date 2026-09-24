@@ -1,6 +1,6 @@
 # SPEC-003: Redis driver and driver selection
 
-- Status: In progress
+- Status: Done
 - ADRs: ADR-0005, ADR-0006, ADR-0007, ADR-0016
 - Roadmap phase: 1
 

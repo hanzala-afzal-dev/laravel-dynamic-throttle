@@ -1,6 +1,6 @@
 # SPEC-006: Manifest compiler and layered read path
 
-- Status: In progress
+- Status: Done
 - ADRs: ADR-0005, ADR-0006, ADR-0007, ADR-0008, ADR-0010, ADR-0020
 - Roadmap phase: 2
 

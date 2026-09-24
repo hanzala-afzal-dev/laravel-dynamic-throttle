@@ -10,6 +10,7 @@ use Afzal\DynamicThrottle\Console\CompileCommand;
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
 use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
+use Afzal\DynamicThrottle\Engine\Matching\RuleMatcher;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Models\Rule;
 use Afzal\DynamicThrottle\Support\ConfigMerger;
@@ -57,6 +58,8 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
             $app,
             $this->refreshSeconds($app),
         ));
+
+        $this->app->scoped(RuleMatcher::class, fn (Application $app): RuleMatcher => new RuleMatcher($this->maxRulesPerRequest($app)));
     }
 
     /**
@@ -92,6 +95,13 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
         $seconds = $app->make('config')->get('dynamic-throttle.manifest.refresh_seconds');
 
         return is_int($seconds) && $seconds >= 0 ? $seconds : 2;
+    }
+
+    private function maxRulesPerRequest(Application $app): int
+    {
+        $cap = $app->make('config')->get('dynamic-throttle.matching.max_rules_per_request');
+
+        return is_int($cap) && $cap >= 1 ? $cap : 5;
     }
 
     public function boot(): void

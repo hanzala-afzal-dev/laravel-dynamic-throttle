@@ -27,3 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Saving a rule recompiles it after the transaction commits.
   - `php artisan dynamic-throttle:compile` compiles it from deploy scripts, and the scheduler runs it every five minutes, so a cleared cache heals itself (`manifest.schedule`).
   - Octane and queue workers keep it in memory, and check the cache every `manifest.refresh_seconds` (`DYNAMIC_THROTTLE_MANIFEST_REFRESH`, default 2).
+- Rule matching and stacking, not yet applied to requests:
+  - A rule matches by method and by a pattern on the URL-decoded path. `*` matches every method, and `GET` rules also match `HEAD`. In patterns, `*` matches any characters, and a leading slash is ignored.
+  - Every matching rule counts the request, in priority order. The first one that rejects it stops, and the others' counts are released. Dry-run rules never reject.
+  - Config key `matching.max_rules_per_request` (`DYNAMIC_THROTTLE_MAX_RULES`, default 5): matches beyond it are ignored.

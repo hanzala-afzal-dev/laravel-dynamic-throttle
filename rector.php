@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Rector\CodingStyle\Rector\ArrowFunction\ArrowFunctionDelegatingCallToFirstClassCallableRector;
 use Rector\Config\RectorConfig;
 
 return RectorConfig::configure()
@@ -21,4 +22,9 @@ return RectorConfig::configure()
         typeDeclarations: true,
         earlyReturn: true,
     )
-    ->withImportNames(importShortClasses: false, removeUnusedImports: true);
+    ->withImportNames(importShortClasses: false, removeUnusedImports: true)
+    ->withSkip([
+        // Pest binds dataset and test closures to the test case. A first-class
+        // callable such as Manifest::missing(...) cannot be bound: TypeError.
+        ArrowFunctionDelegatingCallToFirstClassCallableRector::class => [__DIR__.'/tests'],
+    ]);

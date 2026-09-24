@@ -1,6 +1,6 @@
 # SPEC-001: Sliding-window counter formula
 
-- Status: In progress
+- Status: Done
 - ADRs: ADR-0006
 - Roadmap phase: 1
 

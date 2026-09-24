@@ -3,6 +3,10 @@
 declare(strict_types=1);
 
 use Afzal\DynamicThrottle\DynamicThrottleServiceProvider;
+use Afzal\DynamicThrottle\Engine\Matching\RuleMatcher;
+use Afzal\DynamicThrottle\Manifest\CompiledRule;
+use Afzal\DynamicThrottle\Manifest\Manifest;
+use Afzal\DynamicThrottle\Tests\Support\ManifestFixtures;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\ServiceProvider;
 
@@ -78,3 +82,32 @@ it('AC-8: publishes the migrations and never loads them', function (): void {
         ->and(array_values($paths))->toBe([database_path('migrations')])
         ->and(array_map(realpath(...), app('migrator')->paths()))->not->toContain(realpath($package));
 });
+
+/*
+| SPEC-007 AC-7: the container's matcher takes its cap from the config, and a
+| published config can hold anything.
+*/
+
+it('AC-7: caps the matched rules at matching.max_rules_per_request', function (): void {
+    config()->set('dynamic-throttle.matching.max_rules_per_request', 2);
+    $manifest = new Manifest(1, array_map(fn (int $id): CompiledRule => CompiledRule::fromArray(ManifestFixtures::rule(['id' => (string) $id])), range(1, 3)));
+
+    $result = app(RuleMatcher::class)->match($manifest, 'GET', 'api/users');
+
+    expect([count($result->rules), $result->ignored])->toBe([2, 1]);
+});
+
+it('AC-7: falls back to 5 rules for a published cap below 1 or not an integer', function (mixed $cap): void {
+    config()->set('dynamic-throttle.matching.max_rules_per_request', $cap);
+    $manifest = new Manifest(1, array_map(fn (int $id): CompiledRule => CompiledRule::fromArray(ManifestFixtures::rule(['id' => (string) $id])), range(1, 7)));
+
+    $result = app(RuleMatcher::class)->match($manifest, 'GET', 'api/users');
+
+    expect([count($result->rules), $result->ignored])->toBe([5, 2]);
+})->with([
+    'zero' => [0],
+    'negative' => [-1],
+    'a fraction' => [2.5],
+    'text' => ['many'],
+    'null' => [null],
+]);

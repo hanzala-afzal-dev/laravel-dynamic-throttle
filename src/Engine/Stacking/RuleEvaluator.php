@@ -1,0 +1,91 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Afzal\DynamicThrottle\Engine\Stacking;
+
+use Afzal\DynamicThrottle\Engine\Contracts\IdentityResolver;
+use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
+use Afzal\DynamicThrottle\Engine\CounterKey;
+use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
+use Afzal\DynamicThrottle\Enums\RuleMode;
+use Afzal\DynamicThrottle\Manifest\CompiledRule;
+
+/**
+ * Counts a request on each of its matched rules, in order (ADR-0008, SPEC-007).
+ * The first enforcing rule that rejects it stops evaluation, and every count
+ * made so far is released, so a rejected request counts nowhere.
+ */
+final readonly class RuleEvaluator
+{
+    public function __construct(
+        private LimiterStore $store,
+    ) {}
+
+    /**
+     * Never throws a StorageUnavailableException: a failed attempt ends with a
+     * Failed outcome, and a failed release is listed (ADR-0021).
+     *
+     * @param  list<CompiledRule>  $rules  the matched rules, in manifest order
+     */
+    public function evaluate(array $rules, IdentityResolver $identities): Evaluation
+    {
+        $attempts = [];
+        $wouldBlock = [];
+        $skipped = [];
+
+        foreach ($rules as $rule) {
+            $identity = $identities->resolve($rule);
+
+            if ($identity === null) {
+                $skipped[] = $rule;
+
+                continue;
+            }
+
+            try {
+                $attempt = $this->store->attempt(new CounterKey($rule->id, $identity), $rule->maxAttempts, $rule->windowSeconds);
+            } catch (StorageUnavailableException $exception) {
+                return Evaluation::failed(new RuleFailure($rule, $exception), $attempts, $wouldBlock, $skipped);
+            }
+
+            if ($attempt->allowed) {
+                $attempts[] = new RuleAttempt($rule, $attempt);
+            } elseif ($rule->mode === RuleMode::DryRun) {
+                // Not counted, and not enforced (ADR-0012).
+                $wouldBlock[] = new RuleAttempt($rule, $attempt);
+            } else {
+                return $this->reject(new RuleAttempt($rule, $attempt), $attempts, $wouldBlock, $skipped);
+            }
+        }
+
+        return Evaluation::allowed($attempts, $wouldBlock, $skipped);
+    }
+
+    /**
+     * Releases every counted attempt, dry-run rules' included (ADR-0021). A count
+     * that cannot be released stays, which is stricter, never looser, and the
+     * request stays rejected.
+     *
+     * @param  list<RuleAttempt>  $attempts
+     * @param  list<RuleAttempt>  $wouldBlock
+     * @param  list<CompiledRule>  $skipped
+     */
+    private function reject(RuleAttempt $rejection, array $attempts, array $wouldBlock, array $skipped): Evaluation
+    {
+        $settled = [];
+        $failures = [];
+
+        foreach ($attempts as $counted) {
+            try {
+                $this->store->release($counted->attempt);
+                $settled[] = new RuleAttempt($counted->rule, $counted->attempt, released: true);
+            } catch (StorageUnavailableException $exception) {
+                $settled[] = $counted;
+                $failures[] = new RuleFailure($counted->rule, $exception);
+            }
+        }
+
+        return Evaluation::rejected($rejection, $settled, $wouldBlock, $skipped, $failures);
+    }
+}
