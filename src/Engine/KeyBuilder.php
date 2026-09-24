@@ -35,4 +35,29 @@ final readonly class KeyBuilder
     {
         return $this->counterBase($key, $windowSeconds).':'.$windowIndex;
     }
+
+    /**
+     * The compiled rules every request reads (ADR-0007, SPEC-006). Counter keys start with
+     * "c:", so the two never collide.
+     */
+    public function manifest(): string
+    {
+        return "{$this->prefix}m";
+    }
+
+    /**
+     * The lock that serializes compiles, so they never overwrite each other out of order.
+     */
+    public function manifestLock(): string
+    {
+        return $this->manifest().':lock';
+    }
+
+    /**
+     * The lock that lets one request rebuild a missing manifest after its response.
+     */
+    public function manifestRebuild(): string
+    {
+        return $this->manifest().':rebuild';
+    }
 }
