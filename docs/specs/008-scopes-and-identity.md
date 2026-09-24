@@ -1,6 +1,6 @@
 # SPEC-008: Scopes, identities and custom resolvers
 
-- Status: In progress (follow-ups: decisions 6 to 8)
+- Status: Done
 - ADRs: ADR-0004, ADR-0009, ADR-0010, ADR-0017, ADR-0020, ADR-0022, ADR-0024, ADR-0025
 - Roadmap phase: 2
 

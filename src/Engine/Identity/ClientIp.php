@@ -16,6 +16,15 @@ final class ClientIp
     /** Every request without an IP shares this identity. */
     public const string UNKNOWN = 'unknown';
 
+    /** ::ffff:0:0/96, an IPv4 client on a dual-stack socket, in the last 4 bytes. */
+    private const string IPV4_MAPPED = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff";
+
+    /**
+     * 64:ff9b::/96, the well-known NAT64 prefix (RFC 6052): an IPv4 client that a
+     * translator in front of an IPv6-only server presents, in the last 4 bytes.
+     */
+    private const string NAT64 = "\x00\x64\xff\x9b\x00\x00\x00\x00\x00\x00\x00\x00";
+
     /**
      * @param  ?string  $ip  as Request::ip() returns it, so the app's trusted proxies decide it
      * @param  int  $ipv6Prefix  scopes.ip.ipv6_prefix, from 1 to 128
@@ -37,8 +46,8 @@ final class ClientIp
             return $ip;
         }
 
-        // ::ffff:203.0.113.7 is an IPv4 client on a dual-stack socket. inet_ntop() cannot fail on 4 bytes.
-        if (str_starts_with($bytes, str_repeat("\0", 10)."\xff\xff")) {
+        // An IPv4 client that reaches the app as IPv6 counts as its IPv4 address. inet_ntop() cannot fail on 4 bytes.
+        if (str_starts_with($bytes, self::IPV4_MAPPED) || str_starts_with($bytes, self::NAT64)) {
             return (string) inet_ntop(substr($bytes, 12)); // @pest-mutate-ignore: RemoveStringCast
         }
 

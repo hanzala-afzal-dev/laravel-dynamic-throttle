@@ -33,7 +33,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Config key `matching.max_rules_per_request` (`DYNAMIC_THROTTLE_MAX_RULES`, default 5): at most this many enforcing rules count a request, and as many dry-run rules. Rules that do not apply to the request take no slot, and adding a dry-run rule never switches off an enforcing one. Rules beyond the cap are ignored.
 - Scopes decide who a rule counts a request for. Like matching, they are not yet applied to requests:
   - `ip`, `user`, `api_token`, `header` and `global`, plus custom scopes that you register with `DynamicThrottle::scope('tenant', fn (Request $request) => ...)` or a `ScopeResolver` class. Per-tenant limits are one rule with a custom scope.
-  - IPv6 clients are grouped by `scopes.ip.ipv6_prefix` (`DYNAMIC_THROTTLE_IPV6_PREFIX`, default 64), so rotating addresses inside a /64 does not escape a limit.
+  - IPv6 clients are grouped by `scopes.ip.ipv6_prefix` (`DYNAMIC_THROTTLE_IPV6_PREFIX`, default 64), so rotating addresses inside a /64 does not escape a limit. IPv4 clients seen as IPv4-mapped (`::ffff:…`) or NAT64 (`64:ff9b::…`) addresses count as their IPv4 address.
   - By default, the `user` scope counts the user the request authenticated as, without a lookup of its own. `scopes.user.guards` lists guards to ask instead.
   - A request without an identity counts under its IP, or skips the rule, as the rule's `on_missing_identity` says.
+  - A scope that cannot be resolved, such as a custom resolver that throws, fails only the rules that use it. The other rules still count the request.
   - Identities are hashed with a key derived from `APP_KEY`, so no raw IP, token or user id reaches a cache key.

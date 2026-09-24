@@ -14,6 +14,7 @@ final readonly class Evaluation
 {
     /**
      * @param  list<RuleAttempt>  $attempts  every attempt that counted, in order; released ones are marked
+     * @param  list<RuleFailure>  $failures  failed rules, in order: identities that could not be resolved (SPEC-008), then the failed attempt that stopped evaluation, if any
      * @param  list<RuleAttempt>  $wouldBlock  dry-run rules that would have rejected (not counted)
      * @param  list<CompiledRule>  $skipped  rules that did not apply to this request
      * @param  list<RuleFailure>  $releaseFailures  counts that could not be released (ADR-0021)
@@ -23,7 +24,7 @@ final readonly class Evaluation
         public EvaluationOutcome $outcome,
         public array $attempts,
         public ?RuleAttempt $rejection,
-        public ?RuleFailure $failure,
+        public array $failures,
         public array $wouldBlock,
         public array $skipped,
         public array $releaseFailures,
@@ -38,29 +39,31 @@ final readonly class Evaluation
      */
     public static function allowed(array $attempts, array $wouldBlock, array $skipped, array $ignored): self
     {
-        return new self(EvaluationOutcome::Allowed, $attempts, null, null, $wouldBlock, $skipped, [], $ignored);
+        return new self(EvaluationOutcome::Allowed, $attempts, null, [], $wouldBlock, $skipped, [], $ignored);
     }
 
     /**
      * @param  list<RuleAttempt>  $attempts
+     * @param  list<RuleFailure>  $failures  identities that could not be resolved before the rejection
      * @param  list<RuleAttempt>  $wouldBlock
      * @param  list<CompiledRule>  $skipped
      * @param  list<RuleFailure>  $releaseFailures
      * @param  list<CompiledRule>  $ignored
      */
-    public static function rejected(RuleAttempt $rejection, array $attempts, array $wouldBlock, array $skipped, array $releaseFailures, array $ignored): self
+    public static function rejected(RuleAttempt $rejection, array $attempts, array $failures, array $wouldBlock, array $skipped, array $releaseFailures, array $ignored): self
     {
-        return new self(EvaluationOutcome::Rejected, $attempts, $rejection, null, $wouldBlock, $skipped, $releaseFailures, $ignored);
+        return new self(EvaluationOutcome::Rejected, $attempts, $rejection, $failures, $wouldBlock, $skipped, $releaseFailures, $ignored);
     }
 
     /**
+     * @param  non-empty-list<RuleFailure>  $failures
      * @param  list<RuleAttempt>  $attempts
      * @param  list<RuleAttempt>  $wouldBlock
      * @param  list<CompiledRule>  $skipped
      * @param  list<CompiledRule>  $ignored
      */
-    public static function failed(RuleFailure $failure, array $attempts, array $wouldBlock, array $skipped, array $ignored): self
+    public static function failed(array $failures, array $attempts, array $wouldBlock, array $skipped, array $ignored): self
     {
-        return new self(EvaluationOutcome::Failed, $attempts, null, $failure, $wouldBlock, $skipped, [], $ignored);
+        return new self(EvaluationOutcome::Failed, $attempts, null, $failures, $wouldBlock, $skipped, [], $ignored);
     }
 }

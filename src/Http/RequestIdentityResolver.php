@@ -28,7 +28,7 @@ use Throwable;
  */
 final class RequestIdentityResolver implements IdentityResolver
 {
-    /** @var array<string, ?string> each scope's value for this request, by scope and parameter */
+    /** @var array<string, string|IdentityUnavailableException|null> each scope's value for this request, or its error, by scope and parameter */
     private array $values = [];
 
     private ?string $ip = null;
@@ -54,6 +54,9 @@ final class RequestIdentityResolver implements IdentityResolver
     }
 
     /**
+     * A scope that fails is not asked again: every rule that uses it fails with
+     * the same exception, so a failing resolver or guard also runs once.
+     *
      * @throws IdentityUnavailableException
      */
     private function value(Scope $scope, string $parameter): ?string
@@ -61,17 +64,23 @@ final class RequestIdentityResolver implements IdentityResolver
         $key = "{$scope->value}:{$parameter}";
 
         if (! array_key_exists($key, $this->values)) {
-            $this->values[$key] = match ($scope) {
-                Scope::User => $this->user(),
-                // Passport and jwt-auth accept "Bearer  abc" as the token abc, so one token must be one client.
-                Scope::ApiToken => trim((string) $this->request->bearerToken(), " \t"),
-                Scope::Header => $this->request->headers->get($parameter),
-                Scope::Custom => $this->custom($parameter),
-                Scope::Ip, Scope::Global => null,
-            };
+            try {
+                $this->values[$key] = match ($scope) {
+                    Scope::User => $this->user(),
+                    // Passport and jwt-auth accept "Bearer  abc" as the token abc, so one token must be one client.
+                    Scope::ApiToken => trim((string) $this->request->bearerToken(), " \t"),
+                    Scope::Header => $this->request->headers->get($parameter),
+                    Scope::Custom => $this->custom($parameter),
+                    Scope::Ip, Scope::Global => null,
+                };
+            } catch (IdentityUnavailableException $exception) {
+                $this->values[$key] = $exception;
+            }
         }
 
-        return $this->values[$key];
+        $value = $this->values[$key];
+
+        return $value instanceof IdentityUnavailableException ? throw $value : $value;
     }
 
     /**
