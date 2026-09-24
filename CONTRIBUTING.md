@@ -65,6 +65,10 @@ These are covered by Semantic Versioning from 1.0 ([ADR-0017](docs/adr/0017-vers
 
 A PR that changes any of them must say so, and a breaking change needs an upgrade note. Published migrations are never edited. Schema changes ship as new migrations.
 
+## What users download
+
+`composer require` installs only the package: `src/`, `config/` (later `database/`, `resources/` and `routes/`), `composer.json`, and the README, LICENSE, CHANGELOG and SECURITY files. Everything else in this repository is for development and stays out through `export-ignore` in `.gitattributes`: tests, docs, scripts, Docker and CI files, and `CLAUDE.md`. A CI check fails when any other file would ship. When you add a new top-level file or folder, add it to `.gitattributes` unless users need it.
+
 ## Claude Code configuration
 
 `.claude/settings.json` registers a Stop hook that runs `.claude/hooks/verify.sh` on the machine of anyone who opens this repository in Claude Code. The hook runs the test suite, so it executes the code in the checked-out branch. Treat changes to `.claude/`, `.github/` and `scripts/` like changes to CI, and review them carefully. Review pull requests from forks in CI or with `gh pr diff` instead of checking them out in a Claude Code session. If you do check one out, set `"disableAllHooks": true` in `.claude/settings.local.json` first.

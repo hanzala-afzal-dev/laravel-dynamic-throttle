@@ -273,6 +273,18 @@ jobs:
       - name: Rector
         run: composer refactor:check
 
+      # What `composer require` downloads is `git archive` of the tag, filtered by the
+      # export-ignore rules in .gitattributes. Users get the package, nothing else.
+      - name: The Composer download contains only package files
+        run: |
+          allowed='^(src|config|database|resources|routes|lang)/|^(composer\.json|LICENSE|README\.md|CHANGELOG\.md|SECURITY\.md)$'
+          unexpected="$(git archive HEAD | tar -t | grep -v '/$' | grep -v -E "$allowed" || true)"
+          if [ -n "$unexpected" ]; then
+            echo "::error::These files would ship to users. Add them to export-ignore in .gitattributes, or to this allowlist if users need them:"
+            echo "$unexpected"
+            exit 1
+          fi
+
       - name: No npm toolchain in the package (ADR-0018)
         run: |
           found="$(git ls-files '*package.json' '*package-lock.json' '*yarn.lock' '*pnpm-lock.yaml')"
