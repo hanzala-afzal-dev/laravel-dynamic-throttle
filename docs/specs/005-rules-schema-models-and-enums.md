@@ -1,7 +1,7 @@
 # SPEC-005: Rules schema, models, backed enums and config merging
 
-- Status: Draft
-- ADRs: ADR-0007, ADR-0008, ADR-0009, ADR-0010, ADR-0012, ADR-0015, ADR-0017, ADR-0020
+- Status: In progress
+- ADRs: ADR-0007, ADR-0008, ADR-0009, ADR-0010, ADR-0012, ADR-0015, ADR-0017, ADR-0020, ADR-0022
 - Roadmap phase: 2
 
 ## Problem
@@ -16,8 +16,8 @@ Rules are data (ADR-0001), stored in the database (ADR-0007). Before anything ca
   - Keys the package does not know are kept.
   - When the config is cached, nothing is merged, as with Laravel's own helpers.
 - **Database connection.** Config `database.connection`, from `DYNAMIC_THROTTLE_DB_CONNECTION`, default `null`: the app's default connection. The migration and the model both use it (ADR-0020 point 7).
-- **One table in this spec: `dynamic_throttle_rules`.** Each other table ships with the spec that first uses it (open question 1): exemptions with SPEC-009, settings with SPEC-013, the audit log with SPEC-019, metrics with SPEC-015.
-- **Published migrations.** The migration is published with `publishesMigrations()` under the tag `dynamic-throttle-migrations`, which gives it a fresh timestamp. It is never loaded automatically: the app owns its schema (ADR-0020 point 7).
+- **One table in this spec: `dynamic_throttle_rules`.** Each other table ships with the spec that first uses it: exemptions with SPEC-009, settings with SPEC-013, the audit log with SPEC-019, metrics with SPEC-015.
+- **Published migrations.** The migration is published with `publishesMigrations()` under the tag `dynamic-throttle-migrations`. That gives it a fresh timestamp when the app's `database.migrations.update_date_on_publish` is on, which Laravel's skeleton sets. It is never loaded automatically: the app owns its schema (ADR-0020 point 7).
 - **Backed enums**, one per string column with a fixed set of values (ADR-0007: string columns validated by enums, never database `enum` columns). They live in `Afzal\DynamicThrottle\Enums`, outside `Models`, because the request path will use them and must never touch the database layer (ADR-0007, arch tests).
 - **The `Rule` model** casts every column to its PHP type, and every enum column to its enum.
 
@@ -62,12 +62,12 @@ Rules are data (ADR-0001), stored in the database (ADR-0007). Before anything ca
   | `priority` | unsigned integer | 100 | Lower runs first. Equal priorities run in id order (ADR-0020 point 6). |
   | `mode` | string(16) | `enforce` | `RuleMode` (ADR-0012) |
   | `on_failure` | string(16) | `open` | `FailurePolicy` (ADR-0010) |
-  | `on_missing_identity` | string(16) | `ip` | `MissingIdentity` (ADR-0009) |
+  | `on_missing_identity` | string(16) | `ip` | `MissingIdentity` (ADR-0009, ADR-0022) |
   | `response_override` | json, nullable | `null` | ≤ 4 KB (validated in SPEC-018) |
   | `enabled` | boolean | `true` | Disabled rules are not compiled. |
   | `created_at`, `updated_at` | timestamps | | |
 - **AC-10** The migration uses `database.connection`. With `secondary` configured (a second SQLite connection), the table exists on `secondary` and not on the default connection.
-- **AC-11 (drivers)** The migration runs up and down on MySQL 8.4 and PostgreSQL 16 (the docker compose services), and on SQLite in the regular suite (ADR-0002).
+- **AC-11 (drivers)** The migration runs up and down on MySQL 8.4 and PostgreSQL 16 (the docker compose services), and on SQLite in the regular suite (ADR-0002). Each drivers test uses its own random table prefix, so parallel runs never share a table.
 
 ### Enums
 - **AC-12** The enums have exactly these cases and values:
@@ -78,7 +78,7 @@ Rules are data (ADR-0001), stored in the database (ADR-0007). Before anything ca
   - `MissingIdentity`: `FallBackToIp` = `ip`, `Skip` = `skip`
 
 ### Model
-- **AC-13** A rule created with only `name`, `pattern`, `scope`, `max_attempts` and `window_seconds` reads back with every default of AC-9: `RequestMethod::Any`, priority 100, `RuleMode::Enforce`, `FailurePolicy::Open`, `MissingIdentity::FallBackToIp`, enabled, no scope parameter, no response override.
+- **AC-13** A rule created with only `name`, `pattern`, `scope`, `max_attempts` and `window_seconds` has every default of AC-9, both on the returned model and when read back: `RequestMethod::Any`, priority 100, `RuleMode::Enforce`, `FailurePolicy::Open`, `MissingIdentity::FallBackToIp`, enabled, no scope parameter, no response override.
 - **AC-14** Types survive a round trip on SQLite, MySQL and PostgreSQL (the MySQL and PostgreSQL runs are drivers tests):
   - enum columns return enum instances
   - `max_attempts`, `window_seconds` and `priority` return integers
@@ -125,7 +125,8 @@ Rules are data (ADR-0001), stored in the database (ADR-0007). Before anything ca
 - `scripts/verify-install.sh 12` and `13`: `vendor:publish --tag=dynamic-throttle-migrations` and `migrate` work in a fresh app.
 
 ## Open questions
-1. **Tables per spec, or all at once?** ADR-0007 lists five tables. This spec creates only the rules table, and each other table ships with the spec that first uses it. Each schema is then decided with its behavior in view, and each PR stays small. Recommended.
-2. **Rule ids: auto-increment or ULID?** Auto-increment is simpler, its insertion order matches ADR-0020's id tie-break, and it is never reused (edge cases). ULIDs would help rules move between environments (the backlog's export and import), but import can create fresh ids. Recommended: auto-increment.
-3. **`on_missing_identity` for built-in scopes.** ADR-0009 offers `skip` only for custom scopes. Allowing it for `user`, `api_token` and `header` would let a rule say "only limit logged-in users", which is common. The column is the same either way, and the behavior is SPEC-008's. Recommended: allow it, and note it in ADR-0009.
-4. **Priority default and range.** Default 100, unsigned, so there is room above and below. Recommended.
+None. The maintainer answered all four on 2026-09-24, accepting each recommendation:
+1. One table per spec. This spec creates only the rules table.
+2. Auto-increment rule ids.
+3. `on_missing_identity: skip` works on every scope that can miss an identity (ADR-0022, which amends ADR-0009).
+4. Priority defaults to 100, unsigned, and lower runs first.
