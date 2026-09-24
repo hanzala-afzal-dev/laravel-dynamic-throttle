@@ -2,7 +2,7 @@
 
 - Status: Done
 - ADRs: ADR-0006, ADR-0008, ADR-0010, ADR-0012, ADR-0020, ADR-0021, ADR-0023
-- Amended by: ADR-0025 (the cap counts attempts, per mode), SPEC-008 (resolution errors)
+- Amended by: ADR-0025 (the cap counts attempts, per mode), SPEC-008 (identity errors fail only their own rule)
 - Roadmap phase: 2
 
 ## Problem
@@ -30,10 +30,11 @@ The manifest (SPEC-006) holds every active rule. A request needs the rules that 
 - **Storage failures:**
   - A failed release keeps the rejection. The remaining releases still run, and the failures are listed in the result (ADR-0021). Reporting them is SPEC-012's.
   - A failed attempt stops evaluation, with a `Failed` outcome that names the rule, the exception and what was counted. SPEC-012 turns it into fail-open or 503.
-  - A rule whose identity cannot be resolved ends evaluation the same way (SPEC-008, which amends this spec).
+  - A rule whose identity cannot be resolved fails on its own, and evaluation goes on to the next rule (SPEC-008, which amends this spec).
 - **The result.** An `Evaluation` holds:
   - the outcome: `Allowed`, `Rejected` or `Failed`
-  - the rejecting or failing rule, with its attempt or exception
+  - the rejecting rule, with its attempt
+  - the failed rules, with their exceptions, in order
   - every counted attempt, in order, each marked if it was released
   - the dry-run rules that would have blocked
   - the skipped rules and the release failures
@@ -126,7 +127,7 @@ Stacking criteria use the cache driver on the array store and a fake clock at T0
 - `src/Engine/Matching/RuleMatcher.php`: `match(Manifest, string $method, string $path): MatchResult`.
 - `src/Engine/Matching/MatchResult.php`: `rules` (`list<CompiledRule>`), every match. Its `ignored` count moved to the evaluation (ADR-0025).
 - `src/Engine/Stacking/RuleEvaluator.php`: `evaluate(list<CompiledRule>, IdentityResolver): Evaluation`. It takes the cap, and `Evaluation::$ignored` lists the rules over it (ADR-0025).
-- `src/Engine/Stacking/Evaluation.php`, `EvaluationOutcome.php` (an enum), `RuleAttempt.php` (a rule's attempt, marked once released) and `RuleFailure.php` (a rule and its `StorageUnavailableException`).
+- `src/Engine/Stacking/Evaluation.php`, `EvaluationOutcome.php` (an enum), `RuleAttempt.php` (a rule's attempt, marked once released) and `RuleFailure.php` (a rule and its `StorageUnavailableException`, or its `IdentityUnavailableException` since SPEC-008).
 - `src/Engine/Contracts/IdentityResolver.php`: `resolve(CompiledRule): ?string`, the SHA-256 identity hash or `null`. SPEC-008 implements it.
 - `src/Manifest/Manifest.php`: gains `index`, built in the constructor (ADR-0023).
 - `config/dynamic-throttle.php`: the `matching` section. The provider binds `RuleEvaluator` with its cap (ADR-0025).
