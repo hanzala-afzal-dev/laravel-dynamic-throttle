@@ -1,6 +1,6 @@
 # SPEC-006: Manifest compiler and layered read path
 
-- Status: Draft
+- Status: In progress
 - ADRs: ADR-0005, ADR-0006, ADR-0007, ADR-0008, ADR-0010, ADR-0020
 - Roadmap phase: 2
 
@@ -14,20 +14,22 @@ Rules live in the database (SPEC-005), but the request path may never query it (
   - sorts the rest by priority, then id (ADR-0008, ADR-0020 point 6)
   - writes one JSON manifest to the cache store, without a TTL (layer L2)
 
-  It runs under a cache lock, so two compiles cannot overwrite each other out of order (ADR-0007). A compile that fails leaves the stored manifest as it was, and never writes an empty manifest because the database could not be read.
+  The manifest carries a `format` number. A manifest in another format, such as one written by another package version, counts as corrupt, so it is rebuilt, never misread.
+
+  It runs under a cache lock, so two compiles cannot overwrite each other out of order (ADR-0007). A store without locks, such as APCu, compiles without one; it is per-server anyway. A compile that fails leaves the stored manifest as it was, and never writes an empty manifest because the database could not be read.
 - **Version.** Each compile's version is an integer greater than every earlier one, even after the cache was flushed: `max(previous + 1, now in milliseconds)`. Readers treat any different version as new.
 - **Triggers:**
   - A rule observer compiles after the database transaction commits (ADR-0007). A rolled-back save changes nothing. A failed compile there is reported, not thrown: the save has already committed, and the scheduled compile heals the manifest.
   - `php artisan dynamic-throttle:compile`, for deploy scripts.
-  - A scheduled compile every five minutes heals a flushed or evicted manifest (open question 2).
+  - A scheduled compile every five minutes heals a flushed or evicted manifest. The package registers it in the app's scheduler, and `manifest.schedule` turns it off.
 - **Read path.** `ManifestRepository::current()` never touches the database:
   - **L0**, in memory: process-wide, and refreshed at most every `manifest.refresh_seconds` (default 2). On Octane and queue workers it spares most reads. On PHP-FPM memory does not outlive the request, so every request reads L2 (documented, ADR-0007).
   - **L2**, the cache store: the store the counters use (`dynamic-throttle.store`, or the default store, ADR-0005 point 6).
-  - **L1 (APCu)** is not in this spec (open question 1).
+  - **L1 (APCu)** is not in this spec. It comes later, only if the Phase 2 benchmark shows that FPM servers need it.
 - **Missing or unreadable manifest** (flushed, evicted, corrupt, or the store is down):
   - The repository serves the last-known manifest from L0 when it has one. Otherwise it serves an empty manifest, so no rule applies (ADR-0010 point 3).
-  - It reports the problem.
-  - One request, the one that wins a short lock, schedules a rebuild after the response is sent. That rebuild is the only database access allowed on a request thread (ADR-0007).
+  - It reports the problem, at most once per 30 seconds per process, so an outage cannot flood the error tracker.
+  - One request, the one that wins a 30-second lock in the store, schedules a rebuild through `terminating()`, which runs after the response is sent. That rebuild is the only database access allowed on a request thread (ADR-0007). It needs no queue worker.
   - The repository never throws.
 - **Keys** come from `KeyBuilder` (CLAUDE.md):
   - `{prefix}m`: the manifest
@@ -75,9 +77,9 @@ Times use Laravel's clock (`travelTo`) for the compiler, and the package `Clock`
   - After a commit, the version grows and the rules match the table.
 - **AC-9** When the observer's compile fails (the store throws), the rule is still saved, and the failure is reported exactly once.
 - **AC-10** `php artisan dynamic-throttle:compile`:
-  - On success, it prints `Compiled manifest version N: M rules, K skipped.` and exits 0.
+  - On success, it prints `Compiled manifest version N: M rules, K skipped.` and exits 0. It writes "1 rule", not "1 rules".
   - When compiling fails, it prints the reason and exits 1.
-- **AC-11** The scheduler runs `dynamic-throttle:compile` every five minutes. With `manifest.schedule` set to `false`, it does not (open question 2).
+- **AC-11** The scheduler runs `dynamic-throttle:compile` every five minutes. With `manifest.schedule` set to `false`, it does not.
 
 ### Reading
 - **AC-12** With an empty L0, `current()` returns the manifest stored in L2, marked `fresh`.
@@ -90,7 +92,7 @@ Times use Laravel's clock (`travelTo`) for the compiler, and the package `Clock`
   - `current()` returns an empty manifest, marked `missing`.
   - Across three calls, exactly one rebuild is scheduled, and it runs only when the app terminates (after the response).
   - After it runs, `current()` returns the rebuilt manifest.
-- **AC-16** A corrupt manifest counts as missing, and is reported. Corrupt means any of: not JSON, a wrong shape, or an unknown enum value.
+- **AC-16** A corrupt manifest counts as missing, and is reported. Corrupt means any of: not JSON, another `format`, a wrong shape, or an unknown enum value.
 - **AC-17** A store that throws while reading also counts as missing. It is reported, and `current()` does not throw.
 - **AC-18** No query runs before the response:
   - With a warm L2 and an empty L0, `current()` runs zero database queries.
@@ -107,7 +109,7 @@ Times use Laravel's clock (`travelTo`) for the compiler, and the package `Clock`
 - `src/Manifest/Manifest.php`: readonly value object: `version`, `rules` (a `list<CompiledRule>`), and `state` (`ManifestState`).
 - `src/Manifest/CompiledRule.php`: readonly value object, with the enums of SPEC-005.
 - `src/Manifest/ManifestState.php`: an enum with `Fresh`, `Stale` and `Missing`.
-- `src/Manifest/ManifestCodec.php`: encodes and decodes the JSON strictly, and throws on any shape error.
+- `src/Manifest/ManifestCodec.php`: encodes and decodes the JSON (`format`, `version`, `rules`) strictly, and throws `InvalidManifest` on any shape error.
 - `src/Manifest/ManifestRepository.php`: `current(): Manifest` and `flushState()`.
 - `src/Manifest/Contracts/ManifestRebuilder.php`: the repository schedules rebuilds through this interface, so it never depends on the compiler or the database.
 - `src/Compiler/ManifestCompiler.php`: `compile(): CompileResult` (version, rule count, skipped rows). It implements `ManifestRebuilder`.
@@ -142,6 +144,7 @@ Times use Laravel's clock (`travelTo`) for the compiler, and the package `Clock`
 - **Propagation delay.** A change reaches Octane workers within `refresh_seconds`, and FPM requests at once (ADR-0007).
 - **Large manifests.** 500 rules is ADR-0015's cap, about 150 KB of JSON. On FPM each limited request decodes it. The Phase 2 benchmark measures this, with 100 rules.
 - **A rebuild on an FPM request** runs after the response is sent (`terminating`). The client never waits for it.
+- **Changes that bypass Eloquent.** Mass updates with the query builder or raw SQL fire no model events, so they reach requests only after the next compile: the scheduled one, or `dynamic-throttle:compile`. The docs say so.
 
 ## End-to-end verification
 - `composer test`, `composer analyse`
@@ -152,11 +155,8 @@ Times use Laravel's clock (`travelTo`) for the compiler, and the package `Clock`
   3. Run `php artisan cache:clear`, then send a request: the rebuild runs after the response.
 
 ## Open questions
-1. **L1 (APCu) now or later?** ADR-0007 makes it optional. Testing it needs `ext-apcu` in CI, and it only helps FPM servers that have APCu. Recommended: later, only if the Phase 2 benchmark shows manifest reads on FPM matter. This spec keeps the read path ready for it.
-2. **Register the five-minute compile in the app's scheduler automatically?** With it, healing works out of the box, and `manifest.schedule` can turn it off. Without it, the docs ask users to add it, as Telescope does for pruning. Recommended: register it, since it changes no request.
-3. **Rebuild after the response in the same process, or through a queued job?**
-   - `terminating()` needs no queue worker, and runs after the response on both FPM and Octane.
-   - A job would need a running worker, and would delay the heal.
-
-   Recommended: `terminating()`.
-4. **Keep `name` in the manifest?** It lets events, logs and `explain` name the rule without a database query, and costs a few bytes per rule. Recommended: keep `name`, and drop `description`.
+None. The maintainer accepted all four recommendations on 2026-09-24:
+1. L1 (APCu) comes later, only if the Phase 2 benchmark shows FPM needs it.
+2. The package registers the five-minute compile in the app's scheduler, and `manifest.schedule` turns it off.
+3. Rebuilds after a missing manifest run through `terminating()`, not a queued job.
+4. The manifest keeps each rule's `name`, and leaves out `description`.
