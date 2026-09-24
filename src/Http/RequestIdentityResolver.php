@@ -28,10 +28,11 @@ use Throwable;
  */
 final class RequestIdentityResolver implements IdentityResolver
 {
-    /** @var array<string, ?string> each scope's value for this request, by scope and parameter */
+    /** @var array<string, string|IdentityUnavailableException|null> each scope's value for this request, or its error, by scope name */
     private array $values = [];
 
-    private ?string $ip = null;
+    /** The grouped client IP, or why it could not be read. */
+    private string|Throwable|null $ip = null;
 
     public function __construct(
         private readonly Request $request,
@@ -46,7 +47,7 @@ final class RequestIdentityResolver implements IdentityResolver
     {
         $value = match ($rule->scope) {
             Scope::Ip, Scope::Global => null,
-            default => $this->value($rule->scope, (string) $rule->scopeParameter),
+            default => $this->value($rule),
         };
         $identity = ScopeIdentity::for($rule, $value, fn (): string => $this->ip($rule));
 
@@ -54,43 +55,64 @@ final class RequestIdentityResolver implements IdentityResolver
     }
 
     /**
+     * Keyed by the scope's name, so a parameter left on a scope that takes none
+     * never asks it twice. A scope that fails is not asked again either: every
+     * rule that uses it fails with the same exception, so a failing resolver or
+     * guard also runs once.
+     *
      * @throws IdentityUnavailableException
      */
-    private function value(Scope $scope, string $parameter): ?string
+    private function value(CompiledRule $rule): ?string
     {
-        $key = "{$scope->value}:{$parameter}";
+        $key = $this->scopeName($rule);
 
         if (! array_key_exists($key, $this->values)) {
-            $this->values[$key] = match ($scope) {
-                Scope::User => $this->user(),
-                // Passport and jwt-auth accept "Bearer  abc" as the token abc, so one token must be one client.
-                Scope::ApiToken => trim((string) $this->request->bearerToken(), " \t"),
-                Scope::Header => $this->request->headers->get($parameter),
-                Scope::Custom => $this->custom($parameter),
-                Scope::Ip, Scope::Global => null,
-            };
+            try {
+                $this->values[$key] = match ($rule->scope) {
+                    Scope::User => $this->user(),
+                    // Passport and jwt-auth accept "Bearer  abc" as the token abc, so one token must be one client.
+                    Scope::ApiToken => trim((string) $this->request->bearerToken(), " \t"),
+                    Scope::Header => $this->request->headers->get((string) $rule->scopeParameter),
+                    Scope::Custom => $this->custom((string) $rule->scopeParameter),
+                    Scope::Ip, Scope::Global => null,
+                };
+            } catch (IdentityUnavailableException $exception) {
+                $this->values[$key] = $exception;
+            }
         }
 
-        return $this->values[$key];
+        $value = $this->values[$key];
+
+        return $value instanceof IdentityUnavailableException ? throw $value : $value;
     }
 
     /**
-     * Read only when a rule needs it: Symfony throws when trusted proxies send
-     * conflicting Forwarded and X-Forwarded-For headers.
+     * Read at most once, and only when a rule needs it. Symfony throws when trusted
+     * proxies send conflicting Forwarded and X-Forwarded-For headers, but only the
+     * first time: later reads answer 0.0.0.0. So the error is kept, and every rule
+     * that needs the IP fails with it. The read goes through a copy of the request,
+     * so the app's own $request->ip() still throws, as it would without the package.
      *
      * @throws IdentityUnavailableException
      */
     private function ip(CompiledRule $rule): string
     {
-        try {
-            return $this->ip ??= ClientIp::group($this->request->ip(), $this->settings->ipv6Prefix);
-        } catch (Throwable $exception) {
-            throw IdentityUnavailableException::because("The identity for {$this->scopeName($rule)} could not be resolved: the client IP could not be read: {$exception->getMessage()}", $exception);
+        if ($this->ip === null) {
+            try {
+                $this->ip = ClientIp::group((clone $this->request)->ip(), $this->settings->ipv6Prefix);
+            } catch (Throwable $exception) {
+                $this->ip = $exception;
+            }
         }
+
+        return is_string($this->ip)
+            ? $this->ip
+            : throw IdentityUnavailableException::because("The identity for {$this->scopeName($rule)} could not be resolved: the client IP could not be read: {$this->ip->getMessage()}", $this->ip);
     }
 
     /**
-     * How errors name a rule's scope: "user", or "custom:plan".
+     * How errors and the memo name a rule's scope: "user", or "custom:plan". Only
+     * header and custom scopes take a parameter.
      */
     private function scopeName(CompiledRule $rule): string
     {

@@ -29,15 +29,16 @@ final readonly class RuleEvaluator
     ) {}
 
     /**
-     * Never throws a StorageUnavailableException or an IdentityUnavailableException:
-     * a failed attempt, or an identity that cannot be resolved, ends with a Failed
-     * outcome (SPEC-008), and a failed release is listed (ADR-0021).
+     * Never throws a StorageUnavailableException or an IdentityUnavailableException.
+     * An identity that cannot be resolved fails only its own rule (SPEC-008), a
+     * failed attempt stops evaluation, and a failed release is listed (ADR-0021).
      *
      * @param  list<CompiledRule>  $rules  the matched rules, in manifest order
      */
     public function evaluate(array $rules, IdentityResolver $identities): Evaluation
     {
         $attempts = [];
+        $failures = [];
         $wouldBlock = [];
         $skipped = [];
         $ignored = [];
@@ -55,7 +56,10 @@ final readonly class RuleEvaluator
             try {
                 $identity = $identities->resolve($rule);
             } catch (IdentityUnavailableException $exception) {
-                return Evaluation::failed(new RuleFailure($rule, $exception), $attempts, $wouldBlock, $skipped, $ignored);
+                // Only this rule fails, so a client that breaks one scope is still counted by the others.
+                $failures[] = new RuleFailure($rule, $exception);
+
+                continue;
             }
 
             if ($identity === null) {
@@ -67,7 +71,8 @@ final readonly class RuleEvaluator
             try {
                 $attempt = $this->store->attempt(new CounterKey($rule->id, $identity), $rule->maxAttempts, $rule->windowSeconds);
             } catch (StorageUnavailableException $exception) {
-                return Evaluation::failed(new RuleFailure($rule, $exception), $attempts, $wouldBlock, $skipped, $ignored);
+                // The later rules count on the same store, so they would fail too.
+                return Evaluation::failed([...$failures, new RuleFailure($rule, $exception)], $attempts, $wouldBlock, $skipped, $ignored);
             }
 
             $slots[$rule->mode->value]--;
@@ -78,11 +83,13 @@ final readonly class RuleEvaluator
                 // Not counted, and not enforced (ADR-0012).
                 $wouldBlock[] = new RuleAttempt($rule, $attempt);
             } else {
-                return $this->reject(new RuleAttempt($rule, $attempt), $attempts, $wouldBlock, $skipped, $ignored);
+                return $this->reject(new RuleAttempt($rule, $attempt), $attempts, $failures, $wouldBlock, $skipped, $ignored);
             }
         }
 
-        return Evaluation::allowed($attempts, $wouldBlock, $skipped, $ignored);
+        return $failures === []
+            ? Evaluation::allowed($attempts, $wouldBlock, $skipped, $ignored)
+            : Evaluation::failed($failures, $attempts, $wouldBlock, $skipped, $ignored);
     }
 
     /**
@@ -91,14 +98,15 @@ final readonly class RuleEvaluator
      * request stays rejected.
      *
      * @param  list<RuleAttempt>  $attempts
+     * @param  list<RuleFailure>  $failures
      * @param  list<RuleAttempt>  $wouldBlock
      * @param  list<CompiledRule>  $skipped
      * @param  list<CompiledRule>  $ignored
      */
-    private function reject(RuleAttempt $rejection, array $attempts, array $wouldBlock, array $skipped, array $ignored): Evaluation
+    private function reject(RuleAttempt $rejection, array $attempts, array $failures, array $wouldBlock, array $skipped, array $ignored): Evaluation
     {
         $settled = [];
-        $failures = [];
+        $releaseFailures = [];
 
         foreach ($attempts as $counted) {
             try {
@@ -106,10 +114,10 @@ final readonly class RuleEvaluator
                 $settled[] = new RuleAttempt($counted->rule, $counted->attempt, released: true);
             } catch (StorageUnavailableException $exception) {
                 $settled[] = $counted;
-                $failures[] = new RuleFailure($counted->rule, $exception);
+                $releaseFailures[] = new RuleFailure($counted->rule, $exception);
             }
         }
 
-        return Evaluation::rejected($rejection, $settled, $wouldBlock, $skipped, $failures, $ignored);
+        return Evaluation::rejected($rejection, $settled, $failures, $wouldBlock, $skipped, $releaseFailures, $ignored);
     }
 }

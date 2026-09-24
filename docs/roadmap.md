@@ -166,7 +166,7 @@ Minimal dashboard: server-rendered Blade plus one hand-written JavaScript file, 
 ## Phase 6 — Hardening and 1.0 (M + 4 weeks dogfooding)
 
 **Deliverables**
-- Full docs: install, scopes, per-driver guarantees table, runbook, comparison page, upgrade guide, `SECURITY.md`.
+- Full docs: install, scopes (with SPEC-008's recipes, such as multi-database tenancy), per-driver guarantees table, runbook, comparison page, upgrade guide, `SECURITY.md`.
 - Load test in a realistic setup (k6 or similar) against the Workbench app with Redis.
 - Dogfood in at least one real app for 4 weeks.
 

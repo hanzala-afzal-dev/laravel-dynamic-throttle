@@ -15,6 +15,9 @@ enum EvaluationOutcome: string
     /** An enforcing rule rejected it, and every earlier count was released. */
     case Rejected = 'rejected';
 
-    /** A rule's counter could not be checked. SPEC-012 decides the response. */
+    /**
+     * A rule's counter could not be checked, or its identity could not be resolved,
+     * and no enforcing rule rejected the request. SPEC-012 decides the response.
+     */
     case Failed = 'failed';
 }
