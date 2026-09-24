@@ -67,6 +67,7 @@ Times use Laravel's clock (`travelTo`) for the compiler, and the package `Clock`
   - `window_seconds` below 1 or above 86,400
   - an empty pattern
   - a `header` or `custom` rule without `scope_parameter`
+  - a `response_override` that is not a JSON object
 - **AC-5** Zero enabled rules compile to a manifest with no rules. That is different from a missing manifest: readers apply no rules, and schedule no rebuild.
 - **AC-6** A compile that fails leaves the stored manifest untouched: first when reading the database throws, then when writing to the store throws. Each time `compile()` throws `ManifestCompileFailed`, with the cause as `previous`.
 - **AC-7** Compiles run under the lock. While another owner holds `{prefix}m:lock`, `compile()` waits up to its lock timeout, then throws `ManifestCompileFailed` without writing.

@@ -38,14 +38,20 @@ arch('no debugging leftovers or dangerous PHP functions')
 arch('no insecure functions such as md5, sha1, rand, eval or unserialize')
     ->preset()->security();
 
+$wallClock = [
+    'time', 'microtime', 'hrtime', 'gettimeofday',
+    'date', 'gmdate', 'idate', 'getdate', 'localtime', 'mktime', 'gmmktime', 'strtotime',
+    'date_create', 'date_create_immutable', 'now', 'today',
+    Carbon::class, CarbonImmutable::class, Illuminate\Support\Carbon::class, Date::class,
+];
+
 arch('engine code never reads the wall clock directly (ADR-0006)')
     ->expect('Afzal\DynamicThrottle\Engine')
-    ->not->toUse([
-        'time', 'microtime', 'hrtime', 'gettimeofday',
-        'date', 'gmdate', 'idate', 'getdate', 'localtime', 'mktime', 'gmmktime', 'strtotime',
-        'date_create', 'date_create_immutable', 'now', 'today',
-        Carbon::class, CarbonImmutable::class, Illuminate\Support\Carbon::class, Date::class,
-    ]);
+    ->not->toUse($wallClock);
+
+arch('the manifest read path never reads the wall clock directly (SPEC-006 AC-19)')
+    ->expect('Afzal\DynamicThrottle\Manifest')
+    ->not->toUse($wallClock);
 
 $databaseAccess = ['Illuminate\Database', DB::class, Schema::class, 'Afzal\DynamicThrottle\Models'];
 
@@ -56,6 +62,14 @@ arch('engine code never touches the database (ADR-0007)')
 arch('the middleware never touches the database (ADR-0007)')
     ->expect('Afzal\DynamicThrottle\Http\Middleware')
     ->not->toUse($databaseAccess);
+
+arch('the manifest read path never touches the database (ADR-0007, SPEC-006 AC-19)')
+    ->expect('Afzal\DynamicThrottle\Manifest')
+    ->not->toUse($databaseAccess);
+
+arch('the manifest read path reaches the compiler only through ManifestRebuilder (SPEC-006 AC-19)')
+    ->expect('Afzal\DynamicThrottle\Manifest')
+    ->not->toUse('Afzal\DynamicThrottle\Compiler');
 
 arch('enums never touch the database, so the request path can use them (SPEC-005 AC-16)')
     ->expect('Afzal\DynamicThrottle\Enums')
