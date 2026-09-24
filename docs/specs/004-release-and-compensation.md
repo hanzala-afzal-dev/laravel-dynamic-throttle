@@ -1,6 +1,6 @@
 # SPEC-004: Compensation (`release`)
 
-- Status: In progress
+- Status: Done
 - ADRs: ADR-0005, ADR-0006, ADR-0008, ADR-0010, ADR-0016, ADR-0021
 - Roadmap phase: 1
 

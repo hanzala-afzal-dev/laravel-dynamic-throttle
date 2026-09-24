@@ -1,6 +1,6 @@
 # SPEC-002: LimiterStore contract and the generic cache driver
 
-- Status: In progress
+- Status: Done
 - ADRs: ADR-0005, ADR-0006, ADR-0009, ADR-0010, ADR-0016
 - Roadmap phase: 1
 
