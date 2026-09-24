@@ -104,7 +104,7 @@ Window 60 s and max 5 unless stated. Times are offsets from T0 = 1,800,000,000 s
   - A failure reading the previous window after the increment succeeded counts the same way.
 
   An increment that already happened then stays in the window: at most one extra count, which is stricter, never looser. A failure while undoing a rejection keeps the rejection (AC-18).
-- **Stores that are not safe under concurrency** (found in review, measured with 50 processes × 20 attempts at max 100). Open decision for the maintainer, because it touches ADR-0005's assumptions:
+- **Stores that are not safe under concurrency** (found in review, measured with 50 processes × 20 attempts at max 100). **Decided by the maintainer on 2026-09-24: keep supporting them and warn loudly.** ADR-0005 stands ("warnings, not exceptions"), so a fresh Laravel app still works out of the box, no worse than Laravel's own throttle on these stores. The per-driver guarantees table in the docs gives the numbers below, and SPEC-016's health check calls these stores unsafe under concurrency:
   - **file:** `FileStore::increment` reads and then writes without a lock, so concurrent requests on one server lose counts. 927 to 1000 of 1000 were allowed.
   - **apc:** `ApcStore` has no `add`, so Laravel falls back to get-then-put, and two requests starting a window can reset each other's count. Not measured.
   - **database on SQLite:** the count stays exact, but 59–82% of attempts failed with "database is locked" under contention. That is Laravel's default setup (SQLite with the database cache store), and fail-open turns those failures into allowed requests.
