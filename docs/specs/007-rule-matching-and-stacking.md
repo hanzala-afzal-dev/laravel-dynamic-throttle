@@ -122,17 +122,18 @@ Stacking criteria use the cache driver on the array store and a fake clock at T0
 - `src/Engine/Matching/RuleMatcher.php`: `match(Manifest, string $method, string $path): MatchResult`.
 - `src/Engine/Matching/MatchResult.php`: `rules` (`list<CompiledRule>`) and `ignored` (int).
 - `src/Engine/Stacking/RuleEvaluator.php`: `evaluate(list<CompiledRule>, IdentityResolver): Evaluation`.
-- `src/Engine/Stacking/Evaluation.php`, `EvaluationOutcome.php` (an enum) and `CountedAttempt.php`.
+- `src/Engine/Stacking/Evaluation.php`, `EvaluationOutcome.php` (an enum), `RuleAttempt.php` (a rule's attempt, marked once released) and `RuleFailure.php` (a rule and its `StorageUnavailableException`).
 - `src/Engine/Contracts/IdentityResolver.php`: `resolve(CompiledRule): ?string`, the SHA-256 identity hash or `null`. SPEC-008 implements it.
 - `src/Manifest/Manifest.php`: gains `index`, built in the constructor (ADR-0023).
-- `config/dynamic-throttle.php`: the `matching` section.
+- `config/dynamic-throttle.php`: the `matching` section. The provider binds `RuleMatcher` with its cap.
 - `benchmarks/Engine/RuleMatcherBench.php`
 - Tests:
   - `tests/Feature/Http/RequestTargetTest.php`: AC-1
   - `tests/Unit/Engine/Matching/RuleMatcherTest.php`: AC-2 to AC-8
   - `tests/Unit/Engine/Matching/RuleIndexModelTest.php`: AC-6
-  - `tests/Feature/Engine/Stacking/RuleEvaluatorTest.php`: AC-9 to AC-16
-  - `tests/Unit/ConfigTest.php`: AC-17
+  - `tests/Unit/Engine/Stacking/RuleEvaluatorTest.php`: AC-9 to AC-16
+  - `tests/Unit/ConfigTest.php`: AC-7 and AC-17 (the env value)
+  - `tests/Feature/ServiceProviderTest.php`: AC-7 (the container's matcher, with a published value)
   - `tests/Arch/ArchTest.php`: AC-18
 
 ## Out of scope

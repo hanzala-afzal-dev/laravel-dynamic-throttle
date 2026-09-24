@@ -23,8 +23,11 @@ use Illuminate\Support\Facades\Schema;
 | - Arch rules never see built-in PHP classes (PDO, DateTime, ...), so
 |   those are covered by the source scans at the bottom of this file.
 |
-| The rules only see direct dependencies. When SPEC-007/008 add more
-| request-path namespaces (matcher, scopes), give each one its own rules.
+| The rules only see direct dependencies, so every request-path namespace
+| gets its own rules. A namespace's rules cover its sub-namespaces (checked
+| with a probe in Engine\Matching), so Engine\Matching and Engine\Stacking
+| fall under the engine's (SPEC-007 AC-18). When SPEC-008 adds scopes
+| outside Engine, give them their own rules.
 |
 */
 
@@ -63,6 +66,10 @@ arch('the middleware never touches the database (ADR-0007)')
     ->expect('Afzal\DynamicThrottle\Http\Middleware')
     ->not->toUse($databaseAccess);
 
+arch('request handling never touches the database (ADR-0007, SPEC-007 AC-18)')
+    ->expect('Afzal\DynamicThrottle\Http')
+    ->not->toUse($databaseAccess);
+
 arch('the manifest read path never touches the database (ADR-0007, SPEC-006 AC-19)')
     ->expect('Afzal\DynamicThrottle\Manifest')
     ->not->toUse($databaseAccess);
@@ -85,6 +92,7 @@ dataset('built-in classes the arch rules cannot see', [
     ],
     'PDO in the engine (ADR-0007)' => ['src/Engine', '/\bPDO\b/'],
     'PDO in the middleware (ADR-0007)' => ['src/Http/Middleware', '/\bPDO\b/'],
+    'PDO in request handling (SPEC-007 AC-18)' => ['src/Http', '/\bPDO\b/'],
 ]);
 
 test('the request path stays free of', function (string $directory, string $pattern): void {

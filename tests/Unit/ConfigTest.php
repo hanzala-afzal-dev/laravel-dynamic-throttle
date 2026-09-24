@@ -81,3 +81,29 @@ it('AC-21: falls back to 2 seconds for a refresh that is not a whole number of s
         unset($_SERVER['DYNAMIC_THROTTLE_MANIFEST_REFRESH']);
     }
 })->with(['-1', 'soon', '1.5']);
+
+/*
+| SPEC-007 AC-7 and AC-17: how many matched rules apply to one request.
+*/
+
+it('AC-17: applies at most 5 matched rules per request unless DYNAMIC_THROTTLE_MAX_RULES says otherwise', function (): void {
+    expect(loadPackageConfig()['matching'])->toBe(['max_rules_per_request' => 5]);
+
+    $_SERVER['DYNAMIC_THROTTLE_MAX_RULES'] = '8';
+
+    try {
+        expect(loadPackageConfig()['matching']['max_rules_per_request'])->toBe(8);
+    } finally {
+        unset($_SERVER['DYNAMIC_THROTTLE_MAX_RULES']);
+    }
+});
+
+it('AC-7: falls back to 5 rules for a cap below 1 or not a whole number', function (string $value): void {
+    $_SERVER['DYNAMIC_THROTTLE_MAX_RULES'] = $value;
+
+    try {
+        expect(loadPackageConfig()['matching']['max_rules_per_request'])->toBe(5);
+    } finally {
+        unset($_SERVER['DYNAMIC_THROTTLE_MAX_RULES']);
+    }
+})->with(['0', '-1', 'many', '1.5']);
