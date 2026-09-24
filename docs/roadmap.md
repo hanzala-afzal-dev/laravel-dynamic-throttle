@@ -182,3 +182,6 @@ These were the open decisions of the original roadmap.
   - branch protection on `main` requiring the `CI passed` check
   - reported content to repository admins (`CODE_OF_CONDUCT.md` relies on it)
 - **Dashboard:** minimal Blade + vanilla JavaScript (ADR-0018).
+- **What is public (2026-09-24):**
+  - The GitHub repository is the development repository. Tests, docs, CI, Docker, scripts, `CLAUDE.md` and `.claude/` stay visible, as contributors need them and Claude Code on the web reads them.
+  - What users install with Composer is only the package: `src/`, `config/` (later `database/`, `resources/` and `routes/`), `composer.json`, README, LICENSE, CHANGELOG and SECURITY. The `export-ignore` rules in `.gitattributes` enforce it, and a CI allowlist check keeps it that way.
