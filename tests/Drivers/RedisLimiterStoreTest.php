@@ -322,7 +322,7 @@ it('SPEC-004 AC-8: releasing changes the attempt\'s field by -1 and writes nothi
 
     expect($fields)->toEqual(['30000000' => '2'])
         ->and($pttl)->toBeGreaterThan(124_000)->toBeLessThanOrEqual(125_000)
-        ->and($redis->connection()->hget($keys->counterBase($single, 60), '30000000'))->toEqual(0)
+        ->and($redis->connection()->hget($keys->counterBase($single, 60), '30000000'))->toBe('0')
         ->and((int) $redis->connection()->exists($keys->counterBase($unused, 60)))->toBe(0);
 })->with('redis clients');
 

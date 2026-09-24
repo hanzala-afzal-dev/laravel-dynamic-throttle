@@ -72,12 +72,14 @@ it('SPEC-004 AC-13: keeps exact counts when half the processes release their att
     }
 
     $kept = 0;
+    $releasedInTotal = 0;
 
     foreach ($processes as $process) {
         $process->wait();
         expect($process->isSuccessful())->toBeTrue($process->getErrorOutput());
         [$allowed, $released] = array_pad(array_map(intval(...), explode(' ', trim($process->getOutput()))), 2, 0);
         $kept += $allowed - $released;
+        $releasedInTotal += $released;
     }
 
     $redis = new Redis;
@@ -85,7 +87,9 @@ it('SPEC-004 AC-13: keeps exact counts when half the processes release their att
     $hashKey = (new KeyBuilder($prefix))->counterBase(new CounterKey('1', hash('sha256', 'concurrency')), 60);
 
     // At most 25 releasing processes hold a count at once, so at least 75 are kept.
-    expect($kept)->toBeLessThanOrEqual(100)
+    // Without a release, this test would prove nothing about release.
+    expect($releasedInTotal)->toBeGreaterThan(0)
+        ->and($kept)->toBeLessThanOrEqual(100)
         ->and($kept)->toBeGreaterThanOrEqual(75)
         ->and((int) $redis->hGet($hashKey, '30000000'))->toBe($kept);
 })->group('concurrency');

@@ -88,18 +88,22 @@ it('SPEC-004 AC-13: keeps exact counts when half the processes release their att
     }
 
     $kept = 0;
+    $releasedInTotal = 0;
 
     foreach ($processes as $process) {
         $process->wait();
         expect($process->isSuccessful())->toBeTrue($process->getErrorOutput());
         [$allowed, $released] = array_pad(array_map(intval(...), explode(' ', trim($process->getOutput()))), 2, 0);
         $kept += $allowed - $released;
+        $releasedInTotal += $released;
     }
 
     $windowKey = (new KeyBuilder($prefix))->counter(new CounterKey('1', hash('sha256', 'concurrency')), 60, 30_000_000);
 
     // In-flight increments inflate the count too: at least max - workers (ADR-0016).
-    expect($kept)->toBeLessThanOrEqual(100)
+    // Without a release, this test would prove nothing about release.
+    expect($releasedInTotal)->toBeGreaterThan(0)
+        ->and($kept)->toBeLessThanOrEqual(100)
         ->and($kept)->toBeGreaterThanOrEqual(50)
         ->and((int) concurrencyCache($backend, $host, $port)->get($windowKey))->toBe($kept);
 })->with('shared cache stores')->group('concurrency');

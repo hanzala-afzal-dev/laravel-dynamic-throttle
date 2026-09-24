@@ -124,15 +124,19 @@ it('SPEC-004 AC-14: still decides exactly like the reference when attempts are r
     }
 
     $clock = new FakeClock;
-    $prefix = 'dt-model-'.bin2hex(random_bytes(4)).':';
-    $redis = new RedisLimiterStore(new RedisManager(new Container, $client, [
+    $keys = new KeyBuilder('dt-model-'.bin2hex(random_bytes(4)).':');
+    $manager = new RedisManager(new Container, $client, [
         'default' => ['host' => (string) env('REDIS_HOST', '127.0.0.1'), 'port' => (int) env('REDIS_PORT', 6379), 'database' => 0],
-    ]), 'default', new KeyBuilder($prefix), $clock);
-    $reference = new CacheLimiterStore(new Repository(new ArrayStore), new KeyBuilder($prefix), $clock);
+    ]);
+    $redis = new RedisLimiterStore($manager, 'default', $keys, $clock);
+    $referenceStore = new ArrayStore;
+    $reference = new CacheLimiterStore(new Repository($referenceStore), $keys, $clock);
     $releases = new Randomizer(new Mt19937(20_260_924));
 
     $mismatches = [];
     $overLimit = [];
+    $storedMismatches = [];
+    $storedChecks = ['reference' => 0, 'redis' => 0];
     /** @var array<string, int> $kept allowed minus released, per aligned window of each counter */
     $kept = [];
     /** @var list<array{Attempt, Attempt, string, string}> $held allowed and not released yet */
@@ -177,12 +181,37 @@ it('SPEC-004 AC-14: still decides exactly like the reference when attempts are r
             $kept[$bucket]--;
             $released++;
             $releasedFromEarlierWindow += $heldActual->windowIndex < $lastWindow[$heldCounter] ? 1 : 0;
+
+            // The stored count must match too, not just later decisions. Checked while the
+            // count exists: the array store expires keys in real time, and an allowed attempt
+            // deletes Redis fields older than the previous window.
+            $stored = [
+                'reference' => $referenceStore->get($keys->counter($heldExpected->key, $heldExpected->windowSeconds, $heldExpected->windowIndex)),
+                'redis' => $manager->connection()->hget($keys->counterBase($heldActual->key, $heldActual->windowSeconds), (string) $heldActual->windowIndex),
+            ];
+
+            foreach ($stored as $driver => $count) {
+                if ($count === null || $count === false) {
+                    continue;
+                }
+
+                $storedChecks[$driver]++;
+
+                if ((int) $count !== $kept[$bucket]) {
+                    $storedMismatches[] = "step {$step}: {$driver} stores {$count} for window {$bucket}, which keeps {$kept[$bucket]}";
+                }
+            }
         }
     }
 
     expect($mismatches)->toHaveCount(0, implode("\n", array_slice($mismatches, 0, 5)))
         ->and($overLimit)->toHaveCount(0, implode("\n", array_slice($overLimit, 0, 5)))
+        ->and($storedMismatches)->toHaveCount(0, implode("\n", array_slice($storedMismatches, 0, 5)))
         // The releases must exercise both cases, or matching decisions would prove little.
+        // With this seed there are 483 releases, 212 from an earlier window, and the
+        // Redis field still exists for 277 of them.
         ->and($released)->toBeGreaterThanOrEqual(300)
-        ->and($releasedFromEarlierWindow)->toBeGreaterThanOrEqual(30);
+        ->and($releasedFromEarlierWindow)->toBeGreaterThanOrEqual(30)
+        ->and($storedChecks['reference'])->toBeGreaterThanOrEqual(300)
+        ->and($storedChecks['redis'])->toBeGreaterThanOrEqual(200);
 })->with(['phpredis', 'predis']);
