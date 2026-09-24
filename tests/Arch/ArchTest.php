@@ -57,6 +57,14 @@ arch('the middleware never touches the database (ADR-0007)')
     ->expect('Afzal\DynamicThrottle\Http\Middleware')
     ->not->toUse($databaseAccess);
 
+arch('enums never touch the database, so the request path can use them (SPEC-005 AC-16)')
+    ->expect('Afzal\DynamicThrottle\Enums')
+    ->not->toUse($databaseAccess);
+
+arch('enums are string-backed, because their values are stored (SPEC-005 AC-16)')
+    ->expect('Afzal\DynamicThrottle\Enums')
+    ->toBeStringBackedEnums();
+
 dataset('built-in classes the arch rules cannot see', [
     'a "now" date in the engine bypasses travel() (ADR-0006)' => [
         'src/Engine', '/new\s+\\\\?DateTime(?:Immutable)?\s*\(\s*(?:[\'"]now[\'"]\s*)?\)/i',

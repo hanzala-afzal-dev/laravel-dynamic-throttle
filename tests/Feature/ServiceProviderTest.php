@@ -68,3 +68,13 @@ it('AC-6: fills an empty section with its defaults, which mergeConfigFrom would 
     expect(config()->has('dynamic-throttle.database.connection'))->toBeTrue()
         ->and(config('dynamic-throttle.prefix'))->toBe('dt:');
 });
+
+it('AC-8: publishes the migrations and never loads them', function (): void {
+    $package = __DIR__.'/../../database/migrations';
+    $paths = ServiceProvider::pathsToPublish(DynamicThrottleServiceProvider::class, 'dynamic-throttle-migrations');
+
+    expect($paths)->toHaveCount(1)
+        ->and(realpath((string) array_key_first($paths)))->toBe(realpath($package))
+        ->and(array_values($paths))->toBe([database_path('migrations')])
+        ->and(array_map(realpath(...), app('migrator')->paths()))->not->toContain(realpath($package));
+});
