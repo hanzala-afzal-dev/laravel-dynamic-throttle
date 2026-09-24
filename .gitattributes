@@ -11,6 +11,7 @@
 # Users only receive the package code, its config, migrations, views and assets.
 /.claude export-ignore
 /.github export-ignore
+/benchmarks export-ignore
 /docker export-ignore
 /docs export-ignore
 /scripts export-ignore
@@ -23,6 +24,7 @@
 /CODE_OF_CONDUCT.md export-ignore
 /CONTRIBUTING.md export-ignore
 /docker-compose.yml export-ignore
+/phpbench.json export-ignore
 /phpstan.neon.dist export-ignore
 /phpunit.xml.dist export-ignore
 /pint.json export-ignore

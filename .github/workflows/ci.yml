@@ -340,8 +340,14 @@ jobs:
       - name: Install dependencies
         run: composer update --prefer-dist --no-interaction --no-progress
 
+      # Abandoned packages fail the build only among the runtime dependencies users
+      # install. Dev tools are listed without failing: PHPBench (ADR-0016) still
+      # needs the abandoned doctrine/annotations.
       - name: Known vulnerabilities in dependencies
-        run: composer audit
+        run: composer audit --abandoned=report
+
+      - name: No abandoned runtime dependencies
+        run: composer audit --no-dev --abandoned=fail
 
       - name: Runtime dependency licenses are permissive
         run: composer licenses --no-dev --format=json | php scripts/check-licenses.php
