@@ -113,4 +113,22 @@ return [
         'schedule' => true,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Matching
+    |--------------------------------------------------------------------------
+    |
+    | Every rule that matches a request counts it, in priority order, until
+    | one rejects it (docs/adr/0008). Only the first max_rules_per_request
+    | matches apply, and the rest are ignored. Each one that applies costs a
+    | trip to the cache store.
+    |
+    */
+
+    'matching' => [
+        'max_rules_per_request' => filter_var(env('DYNAMIC_THROTTLE_MAX_RULES', 5), FILTER_VALIDATE_INT, [
+            'options' => ['min_range' => 1, 'default' => 5],
+        ]),
+    ],
+
 ];
