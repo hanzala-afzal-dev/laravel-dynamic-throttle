@@ -57,12 +57,12 @@ function stackStore(): object
  */
 function oneClient(array $notApplying = []): IdentityResolver
 {
-    return new class($notApplying) implements IdentityResolver
+    return new readonly class($notApplying) implements IdentityResolver
     {
         /**
          * @param  list<string>  $notApplying
          */
-        public function __construct(private readonly array $notApplying) {}
+        public function __construct(private array $notApplying) {}
 
         public function resolve(CompiledRule $rule): ?string
         {
@@ -86,12 +86,12 @@ function stackCount(Repository $cache, string $ruleId): int
  */
 function failingFor(LimiterStore $inner, ?string $attemptsOf = null, ?string $releasesOf = null): LimiterStore
 {
-    return new class($inner, $attemptsOf, $releasesOf) implements LimiterStore
+    return new readonly class($inner, $attemptsOf, $releasesOf) implements LimiterStore
     {
         public function __construct(
-            private readonly LimiterStore $inner,
-            private readonly ?string $attemptsOf,
-            private readonly ?string $releasesOf,
+            private LimiterStore $inner,
+            private ?string $attemptsOf,
+            private ?string $releasesOf,
         ) {}
 
         public function attempt(CounterKey $key, int $maxAttempts, int $windowSeconds): Attempt
