@@ -5,14 +5,16 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle\Benchmarks\Engine;
 
 use Afzal\DynamicThrottle\Benchmarks\Services;
+use Afzal\DynamicThrottle\Engine\Attempt;
 use Afzal\DynamicThrottle\Engine\CounterKey;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Stores\RedisLimiterStore;
 use PhpBench\Attributes as Bench;
 
 /**
- * SPEC-003: one attempt with the Redis driver, a single EVALSHA of the Lua
- * script, per client and server. Time comes from Redis TIME, as in production.
+ * SPEC-003 and SPEC-004: one attempt or release with the Redis driver, each a
+ * single EVALSHA of a Lua script, per client and server. Time comes from Redis
+ * TIME, as in production.
  */
 #[Bench\Revs(500)]
 #[Bench\Iterations(10)]
@@ -33,6 +35,8 @@ final class RedisLimiterStoreBench
 
     private CounterKey $rejected;
 
+    private Attempt $held;
+
     /**
      * @return iterable<string, array{client: string, server: 'redis'|'valkey'}>
      */
@@ -50,12 +54,19 @@ final class RedisLimiterStoreBench
      */
     public function setUp(array $params): void
     {
-        $this->store = new RedisLimiterStore(Services::redis($params['client'], $params['server']), 'default', new KeyBuilder(Services::prefix()));
+        $redis = Services::redis($params['client'], $params['server']);
+        $keys = new KeyBuilder(Services::prefix());
+        $this->store = new RedisLimiterStore($redis, 'default', $keys);
         $this->allowed = new CounterKey('1', hash('sha256', 'allowed'));
         $this->rejected = new CounterKey('1', hash('sha256', 'rejected'));
 
         // Max 1 is used up, so every benchmarked attempt on this counter is rejected.
         $this->store->attempt($this->rejected, 1, self::WINDOW);
+
+        // A count no run uses up, so every benchmarked release reads and decrements.
+        $releasing = new CounterKey('1', hash('sha256', 'released'));
+        $this->held = $this->store->attempt($releasing, self::UNREACHABLE, self::WINDOW);
+        $redis->connection()->hincrby($keys->counterBase($releasing, self::WINDOW), (string) $this->held->windowIndex, 1_000_000);
     }
 
     public function benchAllowed(): void
@@ -66,5 +77,10 @@ final class RedisLimiterStoreBench
     public function benchRejected(): void
     {
         $this->store->attempt($this->rejected, 1, self::WINDOW);
+    }
+
+    public function benchRelease(): void
+    {
+        $this->store->release($this->held);
     }
 }
