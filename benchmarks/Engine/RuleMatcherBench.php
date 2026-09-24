@@ -54,7 +54,7 @@ final class RuleMatcherBench
      */
     public function setUp(array $params): void
     {
-        $this->rules = self::rules($params['rules']);
+        $this->rules = $this->rules($params['rules']);
         $this->manifest = new Manifest(1, $this->rules);
         $this->json = ManifestCodec::encode(1, $this->rules);
         $this->matcher = new RuleMatcher;
@@ -87,7 +87,7 @@ final class RuleMatcherBench
      *
      * @return list<CompiledRule>
      */
-    private static function rules(int $count): array
+    private function rules(int $count): array
     {
         $rules = [
             ['*', 'api/*'],
