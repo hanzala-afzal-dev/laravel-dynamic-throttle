@@ -71,10 +71,19 @@ final class Rule extends Model
     ];
 
     /**
-     * The connection from config('dynamic-throttle.database.connection'), or the app's default.
+     * The connection from config('dynamic-throttle.database.connection'), or the app's
+     * default. A connection set explicitly, by Rule::on() or by Eloquent when it loads
+     * models from a query, wins.
      */
     public function getConnectionName(): ?string
     {
+        // The parent turns an enum connection name into its value.
+        $explicit = parent::getConnectionName();
+
+        if ($explicit !== null) {
+            return $explicit;
+        }
+
         $connection = config('dynamic-throttle.database.connection');
 
         return is_string($connection) && $connection !== '' ? $connection : null;
