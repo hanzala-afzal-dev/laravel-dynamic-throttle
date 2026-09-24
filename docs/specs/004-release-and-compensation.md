@@ -1,7 +1,7 @@
 # SPEC-004: Compensation (`release`)
 
 - Status: In progress
-- ADRs: ADR-0005, ADR-0006, ADR-0008, ADR-0010, ADR-0016
+- ADRs: ADR-0005, ADR-0006, ADR-0008, ADR-0010, ADR-0016, ADR-0021
 - Roadmap phase: 1
 
 ## Problem
@@ -18,7 +18,7 @@ When several rules match one request, they are evaluated in priority order, and 
   - Two releases racing on a count of 1 can both decrement it. That needs two releases for one counted request, or a count that lost requests to eviction.
 
   When the decrement returns a count below 0, release adds the count back (AC-15). A recreated key then holds 0, with no expiry.
-- **Storage failures** raise `StorageUnavailableException`, like `attempt()`, and the attempt stays counted: stricter, never looser. Memcached reports a failed decrement only through its result code, as it does for reads (AC-12). What the middleware does with the request after a failed release is open question 2.
+- **Storage failures** raise `StorageUnavailableException`, like `attempt()`, and the attempt stays counted: stricter, never looser. Memcached reports a failed decrement only through its result code, as it does for reads (AC-12). After a failed release, the request stays rejected (ADR-0021).
 - Release each allowed attempt at most once. A second release takes another request's count.
 
 ## Acceptance criteria
@@ -84,7 +84,7 @@ Window 60 s and max 5 unless stated. Times are offsets from T0 = 1,800,000,000 s
   - `tests/Drivers/RedisModelTest.php`: AC-14
 
 ## Out of scope
-- Which attempts to release, and in which order: the middleware's rule loop (SPEC-007, SPEC-010). Whether dry-run rules are released is open question 1.
+- Which attempts to release, and in which order: the middleware's rule loop (SPEC-007, SPEC-010). Dry-run rules are released like enforcing rules (ADR-0021, SPEC-011).
 - Logging and events when a release fails (SPEC-012).
 - Store guarantees: `release()` has the same per-store guarantees as `attempt()`, including SPEC-002's decision on the file, APCu and SQLite stores.
 
@@ -92,7 +92,7 @@ Window 60 s and max 5 unless stated. Times are offsets from T0 = 1,800,000,000 s
 - **Window changes between the attempt and the release.** The attempt's window index decides, so the release lands where the count is (AC-3). A release from a window older than the previous one changes nothing any decision reads. The Redis script may already have deleted that field, and then the release does nothing.
 - **Expired or evicted keys.** The release does nothing (AC-5, AC-10). If the key was evicted and recreated by later attempts, the release takes one of their counts instead: one request looser, once. Evictions are rare on a store sized for the workload.
 - **Concurrency.** Between an attempt and its release, the counter holds one extra count, so a request at the exact limit can be rejected early. ADR-0008 accepts this, and AC-13 bounds it.
-- **Store down during release.** `StorageUnavailableException`, and the extra count stays until the window expires (AC-12). What happens to the request is open question 2.
+- **Store down during release.** `StorageUnavailableException`, and the extra count stays until the window expires (AC-12). The request stays rejected (ADR-0021).
 - **Retried commands.** With `command_retries` (Laravel 13), a release whose script reached Redis before the connection dropped runs twice. It then takes another request's count: one request looser, once. As SPEC-003 says, the limiter's connection should not set `command_retries`.
 - **Double release** takes another request's count, unless the count is already 0 (AC-4). Callers release each attempt once.
 - **Cost.** Only rejected requests with earlier matched rules pay for release: one round trip per released rule with the Redis driver, two with the cache driver.
@@ -103,17 +103,10 @@ Window 60 s and max 5 unless stated. Times are offsets from T0 = 1,800,000,000 s
 - `composer test:mutate` ≥ 85%
 
 ## Open questions
-Both are for the maintainer, and neither changes `release()`. They must be settled before SPEC-010 and SPEC-011.
-
-1. **Are dry-run rules released?** The ADRs disagree when a dry-run rule matched before an enforcing rule that rejects:
-   - ADR-0012 says dry-run rules "take no part in compensation", which reads as "never released".
-   - ADR-0012 also says a dry-run rule's counters "match an enforcing rule fed the same traffic", and ADR-0008 releases every rule evaluated before the rejecting one. An enforcing twin would be released, so a dry-run rule that keeps the count would disagree with it.
-
-   Proposal: release them like enforcing rules. "No part in compensation" then means that a dry-run rule never triggers one, because it never rejects.
-2. **Does a failed release fail open?** ADR-0010 says "if a counter operation fails, allow the request". Read literally, a failed release turns a rejection into an allowed request, though the rejecting rule's own counter worked.
-
-   Proposal: the rejection stands. The middleware still logs the failure, dispatches `StorageUnavailable` and starts the ADR-0010 cooldown, as for any storage failure.
+None. The maintainer settled both on 2026-09-24, in ADR-0021:
+1. Dry-run rules are released like enforcing rules when a later enforcing rule rejects the request. They never trigger a release, because they never reject.
+2. A failed release keeps the rejection. The middleware reports the failure, dispatches `StorageUnavailable` and starts the ADR-0010 cooldown.
 
 Choices made while drafting from the ADRs, open to change at review:
 - **Read before decrementing in the cache driver.** One more round trip per release, but no counts below 0, and no stray keys without a TTL unless a key vanishes between the two calls (AC-15). A plain `decrement` would be one round trip, and would leave both whenever the key is missing.
-- **Release throws on storage failure** instead of swallowing it, so SPEC-012 can log it and dispatch its event. `attempt()` swallows a failed undo (SPEC-002 AC-18), because a throw there would turn a rejection into fail-open. Under proposal 2, a failed release does not change the decision.
+- **Release throws on storage failure** instead of swallowing it, so SPEC-012 can log it and dispatch its event. `attempt()` swallows a failed undo (SPEC-002 AC-18), because a throw there would turn a rejection into fail-open. A failed release does not change the decision (ADR-0021).
