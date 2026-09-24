@@ -74,7 +74,8 @@ final readonly class ManifestRepository
     }
 
     /**
-     * Clears what this process remembers. For tests, and for Octane's flush hooks.
+     * Clears what this process remembers. For tests only: clearing it between Octane
+     * requests would make every request read the store.
      */
     public static function flushState(): void
     {

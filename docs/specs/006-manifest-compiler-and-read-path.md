@@ -111,11 +111,12 @@ Times use Laravel's clock (`travelTo`) for the compiler, and the package `Clock`
 - `src/Manifest/CompiledRule.php`: readonly value object, with the enums of SPEC-005.
 - `src/Manifest/ManifestState.php`: an enum with `Fresh`, `Stale` and `Missing`.
 - `src/Manifest/ManifestCodec.php`: encodes and decodes the JSON (`format`, `version`, `rules`) strictly, and throws `InvalidManifest` on any shape error.
-- `src/Manifest/ManifestRepository.php`: `current(): Manifest` and `flushState()`.
+- `src/Manifest/ManifestRepository.php`: `current(): Manifest` and `flushState()`. Its process memory (L0) lives in `src/Manifest/ManifestMemory.php`, because a readonly class cannot hold static state.
+- `src/Manifest/InvalidManifest.php` (corrupt) and `src/Manifest/ManifestUnavailable.php` (missing or unreadable): reported, never thrown to the request.
 - `src/Manifest/Contracts/ManifestRebuilder.php`: the repository schedules rebuilds through this interface, so it never depends on the compiler or the database.
 - `src/Compiler/ManifestCompiler.php`: `compile(): CompileResult` (version, rule count, skipped rows). It implements `ManifestRebuilder`.
 - `src/Compiler/RuleObserver.php`: after-commit (`ShouldHandleEventsAfterCommit`).
-- `src/Compiler/ManifestCompileFailed.php`
+- `src/Compiler/ManifestCompileFailed.php`, `src/Compiler/InvalidRuleSkipped.php` and `src/Compiler/CompileResult.php`
 - `src/Console/CompileCommand.php`: `dynamic-throttle:compile`.
 - `src/Engine/KeyBuilder.php`: `manifest()`, `manifestLock()` and `manifestRebuild()`.
 - `config/dynamic-throttle.php`: the `manifest` section.
