@@ -34,6 +34,33 @@ if grep -q '^Could not install' /tmp/dynamic-throttle-setup.log; then
     status+=("PHP extensions missing, see /tmp/dynamic-throttle-setup.log")
 fi
 
+# GitHub archive downloads are blocked for repositories not attached to the session,
+# so Composer falls back to git clones. A package without a git source, such as
+# phpstan/phpstan, has no fallback. This fetches the commit composer.lock names with
+# git, and zips it where Composer's download cache expects the archive (approved by
+# the maintainer on 2026-09-24). git archive honors export-ignore like GitHub does.
+seed_dist_only_packages() {
+    local cache name repository reference url work
+    cache="$(composer config --global cache-files-dir 2>/dev/null)" || return 1
+
+    php -r '
+        $lock = json_decode((string) file_get_contents("composer.lock"), true);
+        foreach ([...$lock["packages"] ?? [], ...$lock["packages-dev"] ?? []] as $package) {
+            $url = $package["dist"]["url"] ?? "";
+            if (empty($package["source"]) && preg_match("#^https://api\.github\.com/repos/([\w.-]+/[\w.-]+)/zipball/([0-9a-f]{40})$#", $url, $match)) {
+                echo "{$package["name"]} {$match[1]} {$match[2]} {$url}\n";
+            }
+        }' | while read -r name repository reference url; do
+        work="$(mktemp -d)"
+        echo "Seeding $name from git at $reference"
+        git -C "$work" init -q \
+            && git -C "$work" fetch -q --depth 1 "https://github.com/$repository.git" "$reference" \
+            && mkdir -p "$cache/$name" \
+            && git -C "$work" archive --format=zip -o "$cache/$name/$(printf '%s' "$url" | sha1sum | cut -d' ' -f1).zip" FETCH_HEAD
+        rm -rf "$work"
+    done
+}
+
 if [ ! -f vendor/autoload.php ]; then
     # The cloud runs as root, and Composer skips plugins for root unless allowed.
     # Pest's plugin writes the manifest that loads --parallel, --mutate and the rest.
@@ -43,18 +70,17 @@ if [ ! -f vendor/autoload.php ]; then
     # The proxy sometimes drops a connection to Packagist, so try up to three times.
     for attempt in 1 2 3; do
         composer update --prefer-dist --no-interaction --no-progress >"$log" 2>&1 && break
-        # Not a network hiccup: see below.
-        grep -q 'Could not authenticate against github.com' "$log" && break
+        if grep -q 'Could not authenticate against github.com' "$log"; then
+            # composer.lock is written before the downloads, so it names the exact commits.
+            seed_dist_only_packages >>"$log" 2>&1
+            composer install --no-interaction --no-progress >>"$log" 2>&1
+            break
+        fi
         sleep $((attempt * 5))
     done
 
     if [ -f vendor/autoload.php ]; then
         status+=("dependencies installed")
-    elif grep -q 'Could not authenticate against github.com' "$log"; then
-        # GitHub archive downloads are blocked for repositories not attached to the
-        # session. Composer falls back to git clones, except for packages without a
-        # git source, such as phpstan/phpstan.
-        status+=("composer update FAILED: this environment blocks GitHub archive downloads, and phpstan/phpstan has no git source to fall back to (see $log)")
     else
         status+=("composer update FAILED, see $log")
     fi
