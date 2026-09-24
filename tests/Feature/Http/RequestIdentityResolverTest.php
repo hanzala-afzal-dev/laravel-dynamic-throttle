@@ -361,9 +361,9 @@ it('AC-12: ends evaluation with a Failed outcome for a rule whose identity canno
         'unreadable client IP' => Identities::rule('ip', id: 'b'),
         default => Identities::rule('custom', parameter: 'plan', id: 'b'),
     };
-    $unformattable = fn (string $what): Stringable => new class($what) implements Stringable
+    $unformattable = fn (string $what): Stringable => new readonly class($what) implements Stringable
     {
-        public function __construct(private readonly string $what) {}
+        public function __construct(private string $what) {}
 
         public function __toString(): string
         {
@@ -398,7 +398,7 @@ it('AC-12: ends evaluation with a Failed outcome for a rule whose identity canno
         ->and($evaluation->failure?->rule->id)->toBe('b')
         ->and($evaluation->failure?->exception)->toBeInstanceOf(IdentityUnavailableException::class)
         ->and($evaluation->failure?->exception->getMessage())->toStartWith("The identity for {$scope} could not be resolved")
-        ->and($previous === null ? null : $previous::class)->toBe($causeClass)
+        ->and($previous instanceof Throwable ? $previous::class : null)->toBe($causeClass)
         ->and($previous?->getMessage() ?? '')->toContain($cause)
         ->and(array_map(fn (RuleAttempt $attempt): array => [$attempt->rule->id, $attempt->released, $attempt->attempt->remaining], $evaluation->attempts))
         ->toBe([['a', false, 59]]);
