@@ -9,12 +9,14 @@ use Afzal\DynamicThrottle\Engine\Attempt;
 use Afzal\DynamicThrottle\Engine\CounterKey;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Stores\RedisLimiterStore;
+use Illuminate\Redis\Connections\Connection;
 use PhpBench\Attributes as Bench;
 
 /**
  * SPEC-003 and SPEC-004: one attempt or release with the Redis driver, each a
  * single EVALSHA of a Lua script, per client and server. Time comes from Redis
- * TIME, as in production.
+ * TIME, as in production. benchRoundTrip is a PING on the same connection: the
+ * part of each call that is the network, not the package.
  */
 #[Bench\Revs(500)]
 #[Bench\Iterations(10)]
@@ -37,6 +39,8 @@ final class RedisLimiterStoreBench
 
     private Attempt $held;
 
+    private Connection $connection;
+
     /**
      * @return iterable<string, array{client: string, server: 'redis'|'valkey'}>
      */
@@ -55,6 +59,7 @@ final class RedisLimiterStoreBench
     public function setUp(array $params): void
     {
         $redis = Services::redis($params['client'], $params['server']);
+        $this->connection = $redis->connection();
         $keys = new KeyBuilder(Services::prefix());
         $this->store = new RedisLimiterStore($redis, 'default', $keys);
         $this->allowed = new CounterKey('1', hash('sha256', 'allowed'));
@@ -82,5 +87,10 @@ final class RedisLimiterStoreBench
     public function benchRelease(): void
     {
         $this->store->release($this->held);
+    }
+
+    public function benchRoundTrip(): void
+    {
+        $this->connection->command('ping');
     }
 }

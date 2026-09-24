@@ -10,12 +10,14 @@ use Afzal\DynamicThrottle\Engine\CounterKey;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Stores\CacheLimiterStore;
 use Afzal\DynamicThrottle\Tests\Support\FakeClock;
+use Illuminate\Contracts\Cache\Repository;
 use PhpBench\Attributes as Bench;
 
 /**
  * SPEC-002 and SPEC-004: one attempt or release with the cache driver, per store.
  * Allowed attempts take add, increment and get; rejected ones also undo their
- * increment. A release takes get and decrement.
+ * increment. A release takes get and decrement. benchRoundTrip is one read of a
+ * missing key: the cost of each of those calls that is the store, not the package.
  */
 #[Bench\Revs(500)]
 #[Bench\Iterations(10)]
@@ -34,6 +36,10 @@ final class CacheLimiterStoreBench
     private CounterKey $rejected;
 
     private Attempt $held;
+
+    private Repository $cache;
+
+    private string $missing;
 
     /**
      * @return iterable<string, array{store: string}>
@@ -55,6 +61,8 @@ final class CacheLimiterStoreBench
 
         $cache = Services::cache($params['store']);
         $keys = new KeyBuilder(Services::prefix());
+        $this->cache = $cache;
+        $this->missing = $keys->counter(new CounterKey('1', hash('sha256', 'missing')), 60, 0);
         $this->store = new CacheLimiterStore($cache, $keys, $clock);
         $this->allowed = new CounterKey('1', hash('sha256', 'allowed'));
         $this->rejected = new CounterKey('1', hash('sha256', 'rejected'));
@@ -81,5 +89,10 @@ final class CacheLimiterStoreBench
     public function benchRelease(): void
     {
         $this->store->release($this->held);
+    }
+
+    public function benchRoundTrip(): void
+    {
+        $this->cache->get($this->missing);
     }
 }
