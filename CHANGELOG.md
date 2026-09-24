@@ -13,3 +13,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - a publishable config file (`dynamic-throttle-config` tag)
   - the `DYNAMIC_THROTTLE_ENABLED` kill switch
   - a "Dynamic Throttle" section in `php artisan about`
+- The counter engine, with no rules or HTTP yet:
+  - a sliding-window counter, with an exact `Retry-After`
+  - the `LimiterStore` contract: `attempt()` counts a request, `release()` uncounts it when a later rule rejects it
+  - a Redis and Valkey driver (one Lua script per call, time from Redis `TIME`) and a driver for any Laravel cache store
+  - config keys `driver` (`auto`, `redis`, `cache`), `store`, `redis_connection` and `prefix`
+  - `StorageUnavailableException` for every storage failure
