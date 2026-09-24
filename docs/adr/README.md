@@ -39,6 +39,7 @@ This folder records the important decisions for `laravel-dynamic-throttle`: what
 | [0019](0019-tested-laravel-floors.md) | Declare only the Laravel versions CI tests | Accepted | 0 |
 | [0020](0020-laravel-ecosystem-coexistence.md) | Coexistence with the Laravel ecosystem | Accepted | 2–3 |
 | [0021](0021-compensation-dry-run-and-failed-release.md) | Compensation for dry-run rules and failed releases | Accepted | 2 |
+| [0022](0022-skip-rules-without-identity.md) | Rules can skip requests without an identity, on every scope | Accepted | 2 |
 
 ## Template
 

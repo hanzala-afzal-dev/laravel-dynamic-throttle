@@ -46,4 +46,11 @@ php artisan vendor:publish --tag=dynamic-throttle-config --ansi
 test -f config/dynamic-throttle.php
 php artisan config:show dynamic-throttle
 
-step "OK: ${PACKAGE} installs into Laravel ${LARAVEL_MAJOR} and boots"
+step "Publishing and running the migrations (SPEC-005)"
+php artisan vendor:publish --tag=dynamic-throttle-migrations --ansi
+ls database/migrations/*_create_dynamic_throttle_rules_table.php
+php artisan migrate --force --no-interaction
+php artisan migrate:status | grep -q 'create_dynamic_throttle_rules_table.*Ran'
+php artisan db:table dynamic_throttle_rules
+
+step "OK: ${PACKAGE} installs into Laravel ${LARAVEL_MAJOR}, boots and migrates"

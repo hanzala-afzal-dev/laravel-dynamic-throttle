@@ -36,3 +36,22 @@ it('reads the kill switch from DYNAMIC_THROTTLE_ENABLED', function (string $valu
 it('is enabled when DYNAMIC_THROTTLE_ENABLED is not set', function (): void {
     expect(loadPackageConfig()['enabled'])->toBeTrue();
 });
+
+/*
+| SPEC-005 AC-7: the database connection for the package's tables.
+*/
+
+it('AC-7: reads the database connection from DYNAMIC_THROTTLE_DB_CONNECTION', function (): void {
+    $_SERVER['DYNAMIC_THROTTLE_DB_CONNECTION'] = 'secondary';
+
+    try {
+        expect(loadPackageConfig()['database']['connection'])->toBe('secondary');
+    } finally {
+        unset($_SERVER['DYNAMIC_THROTTLE_DB_CONNECTION']);
+    }
+});
+
+it('AC-7: uses the default connection when DYNAMIC_THROTTLE_DB_CONNECTION is not set', function (): void {
+    expect(loadPackageConfig())->toHaveKey('database')
+        ->and(loadPackageConfig()['database']['connection'])->toBeNull();
+});

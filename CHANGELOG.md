@@ -19,3 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - a Redis and Valkey driver (one Lua script per call, time from Redis `TIME`) and a driver for any Laravel cache store
   - config keys `driver` (`auto`, `redis`, `cache`), `store`, `redis_connection` and `prefix`
   - `StorageUnavailableException` for every storage failure
+- Config key `database.connection` (`DYNAMIC_THROTTLE_DB_CONNECTION`): the connection for the package's tables.
+- A published config keeps working across upgrades: new nested defaults are added, and lists stay as you wrote them.
+- The rules table, `dynamic_throttle_rules`: publish it with `php artisan vendor:publish --tag=dynamic-throttle-migrations`, then run `php artisan migrate`.
+- The `Rule` model, and the backed enums `RequestMethod`, `Scope`, `RuleMode`, `FailurePolicy` and `MissingIdentity`.
