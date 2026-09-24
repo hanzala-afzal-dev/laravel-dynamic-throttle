@@ -128,3 +128,53 @@ it('SPEC-004 AC-12: reports a failed read of the window as unavailable when rele
             expect($exception->getMessage())->toMatch('/\AMemcached could not read the window: \S/');
         });
 });
+
+it('SPEC-004 AC-12: reports a failed decrement of the window as unavailable when releasing', function (): void {
+    if (! extension_loaded('memcached')) {
+        $this->markTestSkipped('ext-memcached is not installed.');
+    }
+
+    // The read succeeded before the server went down, so decrement() returns false with an error result code.
+    $down = new Memcached;
+    $down->addServer('127.0.0.1', 1);
+    $cache = new Repository(new class($down) extends MemcachedStore
+    {
+        public function get($key): mixed
+        {
+            return 3;
+        }
+    });
+    $store = new CacheLimiterStore($cache, new KeyBuilder('dt-memcached-'.bin2hex(random_bytes(4)).':'), new FakeClock);
+    $allowed = new Attempt(new CounterKey('1', hash('sha256', 'A')), 5, 60, 30_000_000, true, 2, 0);
+
+    // The message names Memcached's own error, such as "SERVER IS MARKED DEAD".
+    expect(fn () => $store->release($allowed))
+        ->toThrow(function (StorageUnavailableException $exception): void {
+            expect($exception->getMessage())->toMatch('/\AMemcached could not decrement the window: \S/');
+        });
+});
+
+it('SPEC-004 AC-12: releases nothing when the window key expires between the read and the decrement on Memcached', function (): void {
+    if (! extension_loaded('memcached')) {
+        $this->markTestSkipped('ext-memcached is not installed.');
+    }
+
+    // The read saw a count, but the key is gone by the decrement: false with "NOT FOUND".
+    $memcached = new Memcached;
+    $memcached->addServer((string) env('MEMCACHED_HOST', '127.0.0.1'), (int) env('MEMCACHED_PORT', 11211));
+    $keys = new KeyBuilder('dt-memcached-'.bin2hex(random_bytes(4)).':');
+    $cache = new Repository(new class($memcached) extends MemcachedStore
+    {
+        public function get($key): mixed
+        {
+            return 3;
+        }
+    });
+    $store = new CacheLimiterStore($cache, $keys, new FakeClock);
+    $key = new CounterKey('1', hash('sha256', 'A'));
+
+    $store->release(new Attempt($key, 5, 60, 30_000_000, true, 2, 0));
+
+    expect($memcached->get($keys->counter($key, 60, 30_000_000)))->toBeFalse()
+        ->and($memcached->getResultCode())->toBe(Memcached::RES_NOTFOUND);
+});

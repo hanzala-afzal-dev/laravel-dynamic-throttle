@@ -254,3 +254,36 @@ it('SPEC-004 AC-12: reports a store that throws while releasing as unavailable',
                 ->and($exception->getMessage())->toBe('The limiter store could not release the request.');
         });
 })->with(['get', 'decrement']);
+
+it('SPEC-004 AC-15: never leaves a count below 0 when the window key vanishes before the decrement', function (): void {
+    $arrayStore = new class extends ArrayStore
+    {
+        /** The key to evict right after its next read, as an expiry or eviction would. */
+        public ?string $evictAfterReading = null;
+
+        public function get($key): mixed
+        {
+            $value = parent::get($key);
+
+            if ($key === $this->evictAfterReading) {
+                $this->evictAfterReading = null;
+                $this->forget($key);
+            }
+
+            return $value;
+        }
+    };
+    $clock = new FakeClock;
+    $clock->setSeconds(FakeClock::T0 + 10);
+    $store = new CacheLimiterStore(new Repository($arrayStore), new KeyBuilder('dt:'), $clock);
+    $hash = hash('sha256', 'A');
+    $key = new CounterKey('1', $hash);
+    $allowed = $store->attempt($key, 1, 60);
+
+    $arrayStore->evictAfterReading = "dt:c:1:60:{$hash}:30000000";
+    $store->release($allowed);
+    $decisions = array_map(fn (): bool => $store->attempt($key, 1, 60)->allowed, range(1, 2));
+
+    expect([$allowed->allowed, ...$decisions])->toBe([true, true, false])
+        ->and($arrayStore->get("dt:c:1:60:{$hash}:30000000"))->toBe(1);
+});
