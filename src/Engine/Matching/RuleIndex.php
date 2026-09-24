@@ -87,7 +87,8 @@ final readonly class RuleIndex
 
     /**
      * The rule methods that match a request method: itself and "*", and GET
-     * for HEAD, because Route::get() registers HEAD too.
+     * for HEAD, because Route::get() registers HEAD too. Each one once, or a
+     * request whose method is "*" would be offered each rule twice.
      *
      * @return list<string>
      */
@@ -97,6 +98,7 @@ final readonly class RuleIndex
 
         return match ($method) {
             RequestMethod::Head->value => [$method, RequestMethod::Get->value, $any],
+            $any => [$any],
             default => [$method, $any],
         };
     }
