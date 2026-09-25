@@ -13,6 +13,7 @@ use Afzal\DynamicThrottle\Engine\Identity\IdentityHasher;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
 use Afzal\DynamicThrottle\Http\IdentitySettings;
+use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Models\Exemption;
 use Afzal\DynamicThrottle\Models\Rule;
@@ -21,10 +22,14 @@ use Afzal\DynamicThrottle\Support\LaravelClock;
 use Afzal\DynamicThrottle\Support\LimiterStoreFactory;
 use Composer\InstalledVersions;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Foundation\CachesConfiguration;
+use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Foundation\Console\AboutCommand;
+use Illuminate\Foundation\Http\Kernel;
+use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
 
 final class DynamicThrottleServiceProvider extends ServiceProvider
@@ -159,6 +164,24 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
         Rule::observe(ManifestObserver::class);
         Exemption::observe(ManifestObserver::class);
 
+        // A route middleware, attached nowhere until the app says so (ADR-0004, ADR-0020 point 11).
+        $this->callAfterResolving(Router::class, function (Router $router): void {
+            $router->aliasMiddleware(DynamicThrottleMiddleware::ALIAS, DynamicThrottleMiddleware::class);
+        });
+
+        // Once every provider has booted, so middleware.after can name aliases that other
+        // packages register. Through the kernel, which copies its lists to the router each
+        // time they change, so a later change there keeps these.
+        $this->app->booted(function (): void {
+            $this->callAfterResolving(HttpKernel::class, function (HttpKernel $kernel): void {
+                // Another kernel gets neither: the docs show the manual setup (ADR-0004's fallback).
+                if ($kernel instanceof Kernel) {
+                    $this->attachToGroups($kernel);
+                    $this->sortAfterAuthentication($kernel);
+                }
+            });
+        });
+
         if (! $this->app->runningInConsole()) {
             return;
         }
@@ -193,5 +216,78 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
                     : '<fg=yellow;options=bold>DISABLED</>',
             ),
         ]);
+    }
+
+    /**
+     * middleware.auto_attach. A group the app has not defined is skipped, never thrown
+     * on, so a config mistake cannot take the app down (ADR-0020 point 1).
+     */
+    private function attachToGroups(Kernel $kernel): void
+    {
+        $groups = $kernel->getMiddlewareGroups();
+
+        foreach ($this->configList('dynamic-throttle.middleware.auto_attach') as $group) {
+            if (isset($groups[$group])) {
+                $kernel->appendMiddlewareToGroup($group, DynamicThrottleMiddleware::class);
+            }
+        }
+    }
+
+    /**
+     * Sorts the middleware after Laravel's authentication and after middleware.after,
+     * wherever a group lists it, so user rules see the user (ADR-0004 point 2, ADR-0020
+     * point 4). A middleware the priority list lacks goes right before it. An app that
+     * placed the middleware in the list itself keeps that place.
+     */
+    private function sortAfterAuthentication(Kernel $kernel): void
+    {
+        $after = [AuthenticatesRequests::class, ...$this->middlewareClasses($this->configList('dynamic-throttle.middleware.after'))];
+        $priority = $kernel->getMiddlewarePriority();
+
+        $kernel->addToMiddlewarePriorityAfter($after, DynamicThrottleMiddleware::class);
+
+        foreach ($after as $middleware) {
+            if (! in_array($middleware, $priority, true)) {
+                $kernel->addToMiddlewarePriorityBefore(DynamicThrottleMiddleware::class, $middleware);
+            }
+        }
+    }
+
+    /**
+     * Middleware as the priority list names them: aliases as their classes, without
+     * parameters such as the ":api" of "auth:api".
+     *
+     * @param  list<string>  $names
+     * @return list<string>
+     */
+    private function middlewareClasses(array $names): array
+    {
+        $aliases = $this->app->make(Router::class)->getMiddleware();
+        $classes = [];
+
+        foreach ($names as $name) {
+            $name = explode(':', $name, 2)[0];
+            $class = $aliases[$name] ?? $name;
+
+            if (is_string($class)) {
+                $classes[] = $class;
+            }
+        }
+
+        return $classes;
+    }
+
+    /**
+     * A config list's non-empty strings. Anything else in it is skipped.
+     *
+     * @return list<string>
+     */
+    private function configList(string $key): array
+    {
+        $values = $this->app->make('config')->get($key);
+
+        return is_array($values)
+            ? array_values(array_filter($values, fn (mixed $value): bool => is_string($value) && $value !== ''))
+            : [];
     }
 }
