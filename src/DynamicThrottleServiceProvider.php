@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle;
 
 use Afzal\DynamicThrottle\Compiler\ManifestCompiler;
-use Afzal\DynamicThrottle\Compiler\RuleObserver;
+use Afzal\DynamicThrottle\Compiler\ManifestObserver;
 use Afzal\DynamicThrottle\Console\CompileCommand;
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
 use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
@@ -14,6 +14,7 @@ use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
 use Afzal\DynamicThrottle\Http\IdentitySettings;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
+use Afzal\DynamicThrottle\Models\Exemption;
 use Afzal\DynamicThrottle\Models\Rule;
 use Afzal\DynamicThrottle\Support\ConfigMerger;
 use Afzal\DynamicThrottle\Support\LaravelClock;
@@ -45,9 +46,11 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
         // Scoped: Octane builds it once per request, so config changes apply on the next request.
         $this->app->scoped(LimiterStore::class, fn (Application $app): LimiterStore => $app->make(LimiterStoreFactory::class)->make());
 
+        // Exemption values are hashed as requests hash them (ADR-0024).
         $this->app->bind(ManifestCompiler::class, fn (Application $app): ManifestCompiler => new ManifestCompiler(
             $this->manifestCache($app),
             $app->make(KeyBuilder::class),
+            hasher: $app->make(IdentityHasher::class),
         ));
 
         // Scoped, so each Octane request registers its rebuild on its own app. The rules
@@ -152,8 +155,9 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        // Admins edit rules from the dashboard too, so this is not console-only.
-        Rule::observe(RuleObserver::class);
+        // Admins edit rules and exemptions from the dashboard too, so this is not console-only.
+        Rule::observe(ManifestObserver::class);
+        Exemption::observe(ManifestObserver::class);
 
         if (! $this->app->runningInConsole()) {
             return;

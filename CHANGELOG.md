@@ -38,3 +38,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - A request without an identity counts under its IP, or skips the rule, as the rule's `on_missing_identity` says.
   - A scope that cannot be resolved, such as a custom resolver that throws, fails only the rules that use it. The other rules still count the request.
   - Identities are hashed with a key derived from `APP_KEY`, so no raw IP, token or user id reaches a cache key.
+- Exemptions free a client from one rule, or from every rule, until an optional expiry. Like rules, they are not yet applied to requests:
+  - The table `dynamic_throttle_exemptions`: publish its migration with `php artisan vendor:publish --tag=dynamic-throttle-migrations`, then run `php artisan migrate`. Until you do, the rules compile without exemptions, and the missing table is reported.
+  - The `Exemption` model: `Exemption::forIp('10.0.0.0/8')`, `Exemption::forUser($user)` or `Exemption::forCustom('tenant', 'acme')`, then `->forRule($rule)`, `->until($time)` and `->because('reason')`. Deleting a rule deletes its exemptions.
+  - An IP exemption names an address or a CIDR range, IPv4 or IPv6, and checks the client IP your trusted proxies give. A user exemption names the user the `user` scope finds, and a custom one a custom scope's value, exactly.
+  - Saving or deleting an exemption recompiles the manifest after the transaction commits. The manifest holds user and custom values only as hashes.
+  - A failed check, such as a custom resolver that throws, exempts nothing, so it can never switch a limit off.
+  - `php artisan dynamic-throttle:compile` also prints the exemptions it compiled and skipped.

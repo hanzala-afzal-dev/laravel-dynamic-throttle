@@ -6,8 +6,11 @@ namespace Afzal\DynamicThrottle\Http;
 
 use Afzal\DynamicThrottle\Contracts\ScopeResolver;
 use Afzal\DynamicThrottle\DynamicThrottle;
+use Afzal\DynamicThrottle\Engine\Contracts\Clock;
+use Afzal\DynamicThrottle\Engine\Contracts\ExemptionSubjects;
 use Afzal\DynamicThrottle\Engine\Contracts\IdentityResolver;
 use Afzal\DynamicThrottle\Engine\Exceptions\IdentityUnavailableException;
+use Afzal\DynamicThrottle\Engine\Exemptions\ExemptionSet;
 use Afzal\DynamicThrottle\Engine\Identity\ClientIp;
 use Afzal\DynamicThrottle\Engine\Identity\IdentityHasher;
 use Afzal\DynamicThrottle\Engine\Identity\ScopeIdentity;
@@ -22,17 +25,36 @@ use Stringable;
 use Throwable;
 
 /**
- * The identities one request counts under (ADR-0009, SPEC-008). Build one per
- * request: make(RequestIdentityResolver::class, ['request' => $request]). Each
- * scope is resolved at most once, however many rules use it.
+ * The identities one request counts under (ADR-0009, SPEC-008), and the
+ * exemptions that free it from rules (SPEC-009). Build one per request:
+ * make(RequestIdentityResolver::class, ['request' => $request, 'exemptions' => $manifest->exemptions]).
+ * Each scope is resolved at most once, however many rules and exemptions use it.
  */
-final class RequestIdentityResolver implements IdentityResolver
+final class RequestIdentityResolver implements ExemptionSubjects, IdentityResolver
 {
     /** @var array<string, string|IdentityUnavailableException|null> each scope's value for this request, or its error, by scope name */
     private array $values = [];
 
-    /** The grouped client IP, or why it could not be read. */
-    private string|Throwable|null $ip = null;
+    /** @var array<string, string> the hashes of the scope values exemptions were checked against, by scope name */
+    private array $hashes = [];
+
+    /** Whether the client IP was read: it is read at most once, and only when needed. */
+    private bool $ipRead = false;
+
+    /** The client IP as the app's trusted proxies give it, or null when the request has none. */
+    private ?string $ipAddress = null;
+
+    /** Why the client IP could not be read. */
+    private ?Throwable $ipFailure = null;
+
+    /** The client IP as rules count it, grouped (SPEC-008). */
+    private ?string $groupedIp = null;
+
+    /** The one error every exemption check that needs the unreadable client IP fails with. */
+    private ?IdentityUnavailableException $exemptionIpError = null;
+
+    /** The time exemptions expire against, read once per request: Unix microseconds. */
+    private ?int $now = null;
 
     public function __construct(
         private readonly Request $request,
@@ -41,39 +63,100 @@ final class RequestIdentityResolver implements IdentityResolver
         private readonly Container $container,
         private readonly IdentityHasher $hasher,
         private readonly IdentitySettings $settings,
+        private readonly Clock $clock,
+        private readonly ExemptionSet $exemptions = new ExemptionSet,
     ) {}
+
+    public function exemption(CompiledRule $rule): ?string
+    {
+        // Most apps have no exemptions: they pay nothing, not even a clock read.
+        if ($this->exemptions->all() === []) {
+            return null;
+        }
+
+        return $this->exemptions->match($rule->id, $this->now ??= $this->clock->microseconds(), $this);
+    }
 
     public function resolve(CompiledRule $rule): ?string
     {
         $value = match ($rule->scope) {
             Scope::Ip, Scope::Global => null,
-            default => $this->value($rule),
+            default => $this->value($rule->scope, $rule->scopeParameter),
         };
-        $identity = ScopeIdentity::for($rule, $value, fn (): string => $this->ip($rule));
+        $identity = ScopeIdentity::for($rule, $value, fn (): string => $this->groupedIp($rule));
 
         return $identity === null ? null : $this->hasher->hash($identity);
     }
 
     /**
-     * Keyed by the scope's name, so a parameter left on a scope that takes none
-     * never asks it twice. A scope that fails is not asked again either: every
-     * rule that uses it fails with the same exception, so a failing resolver or
-     * guard also runs once.
+     * For exemptions: the whole address, before IPv6 grouping (SPEC-009).
      *
      * @throws IdentityUnavailableException
      */
-    private function value(CompiledRule $rule): ?string
+    public function ip(): ?string
     {
-        $key = $this->scopeName($rule);
+        try {
+            return $this->clientIp();
+        } catch (Throwable $exception) {
+            // One exception for every rule's check, as a failing scope gives, so it is reported once.
+            throw $this->exemptionIpError ??= IdentityUnavailableException::because('The exemptions could not be checked: the client IP could not be read: '.$exception->getMessage(), $exception);
+        }
+    }
+
+    /**
+     * For exemptions: the same user the user scope counts, with the same guards.
+     *
+     * @throws IdentityUnavailableException
+     */
+    public function user(): ?string
+    {
+        return $this->hashed(Scope::User, null);
+    }
+
+    /**
+     * For exemptions: the value the custom scope's resolver returns, asked once for
+     * exemptions and rules together.
+     *
+     * @throws IdentityUnavailableException
+     */
+    public function custom(string $scope): ?string
+    {
+        return $this->hashed(Scope::Custom, $scope);
+    }
+
+    /**
+     * A scope's value, hashed as the compiler hashes exemptions (ADR-0024), or null
+     * when the request has none.
+     *
+     * @throws IdentityUnavailableException
+     */
+    private function hashed(Scope $scope, ?string $parameter): ?string
+    {
+        $value = $this->value($scope, $parameter);
+
+        return $value === null ? null : $this->hashes[$this->scopeName($scope, $parameter)] ??= $this->hasher->hash($value);
+    }
+
+    /**
+     * Keyed by the scope's name, so a parameter left on a scope that takes none
+     * never asks it twice. A scope that fails is not asked again either: every
+     * rule and exemption that uses it fails with the same exception, so a failing
+     * resolver or guard also runs once.
+     *
+     * @throws IdentityUnavailableException
+     */
+    private function value(Scope $scope, ?string $parameter): ?string
+    {
+        $key = $this->scopeName($scope, $parameter);
 
         if (! array_key_exists($key, $this->values)) {
             try {
-                $this->values[$key] = match ($rule->scope) {
-                    Scope::User => $this->user(),
+                $this->values[$key] = match ($scope) {
+                    Scope::User => $this->userValue(),
                     // Passport and jwt-auth accept "Bearer  abc" as the token abc, so one token must be one client.
                     Scope::ApiToken => trim((string) $this->request->bearerToken(), " \t"),
-                    Scope::Header => $this->request->headers->get((string) $rule->scopeParameter),
-                    Scope::Custom => $this->custom((string) $rule->scopeParameter),
+                    Scope::Header => $this->request->headers->get((string) $parameter),
+                    Scope::Custom => $this->customValue((string) $parameter),
                     Scope::Ip, Scope::Global => null,
                 };
             } catch (IdentityUnavailableException $exception) {
@@ -87,38 +170,53 @@ final class RequestIdentityResolver implements IdentityResolver
     }
 
     /**
-     * Read at most once, and only when a rule needs it. Symfony throws when trusted
-     * proxies send conflicting Forwarded and X-Forwarded-For headers, but only the
-     * first time: later reads answer 0.0.0.0. So the error is kept, and every rule
-     * that needs the IP fails with it. The read goes through a copy of the request,
-     * so the app's own $request->ip() still throws, as it would without the package.
+     * Read at most once, and only when a rule or an exemption needs it. Symfony
+     * throws when trusted proxies send conflicting Forwarded and X-Forwarded-For
+     * headers, but only the first time: later reads answer 0.0.0.0. So the error is
+     * kept, and everything that needs the IP fails with it. The read goes through a
+     * copy of the request, so the app's own $request->ip() still throws, as it would
+     * without the package.
      *
-     * @throws IdentityUnavailableException
+     * @throws Throwable why the client IP could not be read
      */
-    private function ip(CompiledRule $rule): string
+    private function clientIp(): ?string
     {
-        if ($this->ip === null) {
+        if (! $this->ipRead) {
+            $this->ipRead = true;
+
             try {
-                $this->ip = ClientIp::group((clone $this->request)->ip(), $this->settings->ipv6Prefix);
+                $this->ipAddress = (clone $this->request)->ip();
             } catch (Throwable $exception) {
-                $this->ip = $exception;
+                $this->ipFailure = $exception;
             }
         }
 
-        return is_string($this->ip)
-            ? $this->ip
-            : throw IdentityUnavailableException::because("The identity for {$this->scopeName($rule)} could not be resolved: the client IP could not be read: {$this->ip->getMessage()}", $this->ip);
+        return $this->ipFailure instanceof Throwable ? throw $this->ipFailure : $this->ipAddress;
     }
 
     /**
-     * How errors and the memo name a rule's scope: "user", or "custom:plan". Only
-     * header and custom scopes take a parameter.
+     * The client IP as a rule counts it, grouped (SPEC-008).
+     *
+     * @throws IdentityUnavailableException
      */
-    private function scopeName(CompiledRule $rule): string
+    private function groupedIp(CompiledRule $rule): string
     {
-        return in_array($rule->scope, [Scope::Header, Scope::Custom], true)
-            ? "{$rule->scope->value}:{$rule->scopeParameter}"
-            : $rule->scope->value;
+        try {
+            return $this->groupedIp ??= ClientIp::group($this->clientIp(), $this->settings->ipv6Prefix);
+        } catch (Throwable $exception) {
+            throw IdentityUnavailableException::because("The identity for {$this->scopeName($rule->scope, $rule->scopeParameter)} could not be resolved: the client IP could not be read: {$exception->getMessage()}", $exception);
+        }
+    }
+
+    /**
+     * How errors and the memo name a scope: "user", or "custom:plan". Only header and
+     * custom scopes take a parameter.
+     */
+    private function scopeName(Scope $scope, ?string $parameter): string
+    {
+        return in_array($scope, [Scope::Header, Scope::Custom], true)
+            ? "{$scope->value}:{$parameter}"
+            : $scope->value;
     }
 
     /**
@@ -126,7 +224,7 @@ final class RequestIdentityResolver implements IdentityResolver
      *
      * @throws IdentityUnavailableException
      */
-    private function user(): ?string
+    private function userValue(): ?string
     {
         try {
             $user = $this->settings->guards === null ? $this->authenticatedUser() : $this->firstUser($this->settings->guards);
@@ -180,7 +278,7 @@ final class RequestIdentityResolver implements IdentityResolver
     /**
      * @throws IdentityUnavailableException
      */
-    private function custom(string $name): ?string
+    private function customValue(string $name): ?string
     {
         $resolver = $this->scopes->scopeResolver($name);
 

@@ -39,7 +39,8 @@ final class ClientIp
             return self::UNKNOWN;
         }
 
-        $bytes = inet_pton($ip);
+        // inet_pton() throws a ValueError for a NUL byte, which no address holds.
+        $bytes = str_contains($ip, "\0") ? false : inet_pton($ip);
 
         // An IPv4 address, or something that is not an IP at all, is used as it is: it is hashed anyway.
         if ($bytes === false || strlen($bytes) === 4) {
@@ -47,8 +48,10 @@ final class ClientIp
         }
 
         // An IPv4 client that reaches the app as IPv6 counts as its IPv4 address. inet_ntop() cannot fail on 4 bytes.
-        if (str_starts_with($bytes, self::IPV4_MAPPED) || str_starts_with($bytes, self::NAT64)) {
-            return (string) inet_ntop(substr($bytes, 12)); // @pest-mutate-ignore: RemoveStringCast
+        $unwrapped = self::unwrap($bytes);
+
+        if ($unwrapped !== $bytes) {
+            return (string) inet_ntop($unwrapped); // @pest-mutate-ignore: RemoveStringCast
         }
 
         $wholeBytes = intdiv($ipv6Prefix, 8);
@@ -60,5 +63,14 @@ final class ClientIp
         }
 
         return inet_ntop(str_pad($network, 16, "\0")).'/'.$ipv6Prefix;
+    }
+
+    /**
+     * An address's bytes, as inet_pton() gives them, with an IPv4 client that reaches
+     * the app as IPv6 (IPv4-mapped, or through NAT64) as its 4 IPv4 bytes.
+     */
+    public static function unwrap(string $bytes): string
+    {
+        return str_starts_with($bytes, self::IPV4_MAPPED) || str_starts_with($bytes, self::NAT64) ? substr($bytes, 12) : $bytes;
     }
 }
