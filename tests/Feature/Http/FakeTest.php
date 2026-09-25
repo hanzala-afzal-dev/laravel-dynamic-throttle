@@ -67,6 +67,30 @@ it('AC-17: forgets the manifest the process kept, so a test never sees the rules
         ->and(Throttling::headers($response))->toBe([]);
 });
 
+it('AC-17: applies a rule saved after a request, as tests with a frozen clock save them', function (): void {
+    RuleSchema::migrate();
+    DynamicThrottle::fake();
+    Throttling::route('api/x');
+    $this->get('api/x');
+
+    Throttling::rule(['max_attempts' => 1]);
+
+    expect([$this->get('api/x')->status(), $this->get('api/x')->status()])->toBe([200, 429]);
+});
+
+it('AC-17: starts from zero again at each fake()', function (): void {
+    RuleSchema::migrate();
+    DynamicThrottle::fake();
+    Throttling::rule(['max_attempts' => 1]);
+    Throttling::route('api/x');
+    $first = [$this->get('api/x')->status(), $this->get('api/x')->status()];
+
+    DynamicThrottle::fake();
+    $second = [$this->get('api/x')->status(), $this->get('api/x')->status()];
+
+    expect([$first, $second])->toBe([[200, 429], [200, 429]]);
+});
+
 it('AC-17: works without the package\'s tables: no rule applies, and nothing is reported', function (): void {
     Exceptions::fake();
     DynamicThrottle::fake();

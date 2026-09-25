@@ -10,8 +10,11 @@ use Afzal\DynamicThrottle\Tests\Support\FakeClock;
 use Afzal\DynamicThrottle\Tests\Support\Http\HeaderAuthenticate;
 use Afzal\DynamicThrottle\Tests\Support\Throttling;
 use Afzal\DynamicThrottle\Tests\TestCase;
+use Illuminate\Auth\Middleware\AuthenticateWithBasicAuth;
+use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 
@@ -123,4 +126,44 @@ it('AC-4: runs an authentication middleware Laravel cannot see after the middlew
     // Both users count as the same guest: the client IP (ADR-0020 point 4).
     expect(statusesWithFreshGuards($this, 'api/x', [['X-User' => '1'], ['X-User' => '2']]))
         ->toBe([200, 429]);
+});
+
+it('AC-4: sorts the middleware after Laravel\'s basic authentication too', function (): void {
+    // As in a web request, where the HTTP kernel exists before the providers boot.
+    app(Kernel::class);
+    $route = Throttling::route('api/x', ['dynamic.throttle', 'auth.basic']);
+
+    expect(app('router')->gatherRouteMiddleware($route))->toBe([AuthenticateWithBasicAuth::class, DynamicThrottleMiddleware::class]);
+});
+
+it('AC-4: sorts the middleware after a middleware of middleware.after that the priority list holds right after authentication', function (): void {
+    app('router')->aliasMiddleware(HeaderAuthenticate::ALIAS, HeaderAuthenticate::class);
+    // As appendToPriorityList(AuthenticatesRequests::class, ...) in bootstrap/app.php leaves it, before the package boots.
+    $kernel = app(Kernel::class);
+    $priority = array_values(array_diff($kernel->getMiddlewarePriority(), [DynamicThrottleMiddleware::class]));
+    array_splice($priority, (int) array_search(AuthenticatesRequests::class, $priority, true) + 1, 0, [HeaderAuthenticate::class]);
+    $kernel->setMiddlewarePriority($priority);
+
+    Throttling::bootWith(['dynamic-throttle.middleware.after' => [HeaderAuthenticate::ALIAS]]);
+    $route = Throttling::route('api/x', ['dynamic.throttle', HeaderAuthenticate::ALIAS]);
+
+    expect(app('router')->gatherRouteMiddleware($route))->toBe([HeaderAuthenticate::class, DynamicThrottleMiddleware::class]);
+});
+
+it('AC-21: keeps what other providers changed on the router while booting, and attaches to a group defined there', function (): void {
+    // As in a web request, where the HTTP kernel exists before the providers boot.
+    app(Kernel::class);
+    $router = app('router');
+    // What another provider's boot() may do, before the package wires its middleware.
+    $router->pushMiddlewareToGroup('web', 'App\\Http\\Middleware\\SecurityHeaders');
+    $router->aliasMiddleware('auth', 'App\\Http\\Middleware\\Authenticate');
+    $router->middlewareGroup('partner', [SubstituteBindings::class]);
+    $router->middlewarePriority[] = 'App\\Http\\Middleware\\InitializeTenancy';
+
+    Throttling::bootWith(['dynamic-throttle.middleware.auto_attach' => ['partner']]);
+
+    expect($router->getMiddlewareGroups()['web'])->toContain('App\\Http\\Middleware\\SecurityHeaders')
+        ->and($router->getMiddleware()['auth'])->toBe('App\\Http\\Middleware\\Authenticate')
+        ->and($router->middlewarePriority)->toContain('App\\Http\\Middleware\\InitializeTenancy')
+        ->and($router->getMiddlewareGroups()['partner'])->toBe([SubstituteBindings::class, DynamicThrottleMiddleware::class]);
 });

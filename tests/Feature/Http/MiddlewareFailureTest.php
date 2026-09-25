@@ -14,6 +14,8 @@ use Afzal\DynamicThrottle\Models\Exemption;
 use Afzal\DynamicThrottle\Tests\Support\FailingStore;
 use Afzal\DynamicThrottle\Tests\Support\FakeClock;
 use Afzal\DynamicThrottle\Tests\Support\Throttling;
+use Illuminate\Http\Middleware\TrustProxies;
+use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Exceptions;
@@ -32,6 +34,9 @@ beforeEach(function (): void {
 
 afterEach(function (): void {
     ManifestRepository::flushState();
+    // Trusted proxies are static on Symfony's Request: back to its defaults.
+    TrustProxies::flushState();
+    Request::setTrustedProxies([], -1);
 });
 
 /**
@@ -101,6 +106,50 @@ it('AC-15: reports a failing custom scope once, for two rules and an exemption, 
     expect($response->status())->toBe(200)
         ->and(Throttling::headers($response))->toBe([])
         ->and(reportedErrors())->toBe([[IdentityUnavailableException::class, 'The identity for custom:tenant could not be resolved: The tenant lookup failed.']]);
+});
+
+it('AC-15: reports a failed exemption check, and counts the request under the rule as usual (SPEC-009)', function (): void {
+    DynamicThrottle::scope('tenant', fn (): string => throw new RuntimeException('The tenant lookup failed.'));
+    Throttling::rule(['max_attempts' => 5]);
+    Exemption::forCustom('tenant', 'acme')->save();
+    Throttling::route('api/x');
+    Exceptions::fake();
+
+    $response = $this->get('api/x');
+
+    expect($response->status())->toBe(200)
+        ->and(Throttling::headers($response))->toBe(['X-RateLimit-Limit' => '5', 'X-RateLimit-Remaining' => '4'])
+        ->and(reportedErrors())->toBe([[IdentityUnavailableException::class, 'The identity for custom:tenant could not be resolved: The tenant lookup failed.']]);
+});
+
+it('AC-15: keeps the headers of the enforcing rule that counted a request another rule failed on', function (): void {
+    DynamicThrottle::scope('tenant', fn (): string => throw new RuntimeException('The tenant lookup failed.'));
+    Throttling::rule(['max_attempts' => 5]);
+    Throttling::rule(['scope' => Scope::Custom, 'scope_parameter' => 'tenant', 'max_attempts' => 1]);
+    Throttling::route('api/x');
+    Exceptions::fake();
+
+    $response = $this->get('api/x');
+
+    expect($response->status())->toBe(200)
+        ->and(Throttling::headers($response))->toBe(['X-RateLimit-Limit' => '5', 'X-RateLimit-Remaining' => '4'])
+        ->and(reportedErrors())->toBe([[IdentityUnavailableException::class, 'The identity for custom:tenant could not be resolved: The tenant lookup failed.']]);
+});
+
+it('AC-15: reports a client IP it cannot read once, however many rules count by IP', function (): void {
+    // The app trusts the proxy for both headers, and the two disagree.
+    TrustProxies::at('*');
+    TrustProxies::withHeaders(Request::HEADER_FORWARDED | Request::HEADER_X_FORWARDED_FOR);
+    Throttling::rule(['max_attempts' => 1]);
+    Throttling::rule(['max_attempts' => 5]);
+    Throttling::route('api/x');
+    Exceptions::fake();
+
+    $response = $this->get('api/x', ['Forwarded' => 'for=198.51.100.1', 'X-Forwarded-For' => '198.51.100.2']);
+
+    expect($response->status())->toBe(200)
+        ->and(Throttling::headers($response))->toBe([])
+        ->and(array_map(fn (Throwable $exception): string => $exception::class, Exceptions::reported()))->toBe([IdentityUnavailableException::class]);
 });
 
 it('AC-15: keeps the 429 when a release fails, and reports that failure once (ADR-0021)', function (): void {
