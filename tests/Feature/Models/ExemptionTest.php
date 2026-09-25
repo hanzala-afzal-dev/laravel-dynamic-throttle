@@ -156,6 +156,11 @@ it('AC-6: sets the rule, the expiry and the reason', function (): void {
         ->and([$exemption->rule_id, $exemption->expires_at?->getTimestamp(), $exemption->reason])->toBe([$rule->id, FakeClock::T0 + 60, 'The office network']);
 });
 
+it('AC-6: refuses a rule that is not saved, whose missing id would exempt from every rule', function (): void {
+    expect(fn (): Exemption => Exemption::forIp('10.0.0.0/8')->forRule(new Rule(RuleSchema::attributes())))
+        ->toThrow(InvalidArgumentException::class);
+});
+
 it('AC-6: saves what the helpers build', function (): void {
     RuleSchema::migrate();
     $rule = Exemptions::rule();

@@ -161,6 +161,32 @@ it('AC-16: applies a global exemption to every rule, and a rule\'s exemption to 
         ->and($set->match('b', EXEMPTION_NOW, requestSubjects(ip: '203.0.113.1')))->toBe('2');
 });
 
+it('AC-16: applies a rule\'s own user exemption to that rule only', function (): void {
+    $set = exemptionSet([['rule' => 'a', 'subject' => 'user', 'match' => exemptionHash('User:42')]]);
+
+    expect($set->match('a', EXEMPTION_NOW, requestSubjects(user: exemptionHash('User:42'))))->toBe('1')
+        ->and($set->match('b', EXEMPTION_NOW, requestSubjects(user: exemptionHash('User:42'))))->toBeNull();
+});
+
+it('AC-16: applies a global custom exemption to a rule that has exemptions of its own', function (): void {
+    $set = exemptionSet([
+        ['rule' => 'a', 'match' => '198.51.100.0/24'],
+        ['rule' => null, 'subject' => 'custom', 'parameter' => 'tenant', 'match' => exemptionHash('acme')],
+    ]);
+    $subjects = requestSubjects(ip: '203.0.113.7', custom: ['tenant' => exemptionHash('acme')]);
+
+    expect($set->match('a', EXEMPTION_NOW, $subjects))->toBe('2')
+        ->and($subjects->asked)->toBe(['ip', 'custom:tenant']);
+});
+
+it('AC-15: asks a custom scope whose name is digits by that name, as a string', function (): void {
+    $set = exemptionSet([['subject' => 'custom', 'parameter' => '123', 'match' => exemptionHash('acme')]]);
+    $subjects = requestSubjects(custom: ['123' => exemptionHash('acme')]);
+
+    expect($set->match('1', EXEMPTION_NOW, $subjects))->toBe('1')
+        ->and($subjects->asked)->toBe(['custom:123']);
+});
+
 it('AC-16: names the lowest id when several exemptions of one subject match, the rule\'s or global ones', function (array $exemptions, string $ip): void {
     expect(exemptionSet($exemptions)->match('a', EXEMPTION_NOW, requestSubjects(ip: $ip)))->toBe('1');
 })->with([
@@ -259,6 +285,25 @@ it('AC-20: throws the first failed check\'s exception when no check matched', fu
 
     expect(fn (): ?string => $set->match('1', EXEMPTION_NOW, $subjects))->toThrow(IdentityUnavailableException::class, 'The ip check failed.')
         ->and($subjects->asked)->toBe(['ip', 'user', 'custom:plan']);
+});
+
+it('AC-20: throws the IP check\'s exception when the user check fails after it', function (): void {
+    $set = exemptionSet([['match' => '203.0.113.0/24'], ['subject' => 'user', 'match' => exemptionHash('User:42')]]);
+    $subjects = requestSubjects(failing: ['ip', 'user']);
+
+    expect(fn (): ?string => $set->match('1', EXEMPTION_NOW, $subjects))->toThrow(IdentityUnavailableException::class, 'The ip check failed.')
+        ->and($subjects->asked)->toBe(['ip', 'user']);
+});
+
+it('AC-20: exempts the client when a later custom scope matches after an earlier one failed', function (): void {
+    $set = exemptionSet([
+        ['subject' => 'custom', 'parameter' => 'plan', 'match' => exemptionHash('gold')],
+        ['subject' => 'custom', 'parameter' => 'tenant', 'match' => exemptionHash('acme')],
+    ]);
+    $subjects = requestSubjects(custom: ['tenant' => exemptionHash('acme')], failing: ['custom:plan']);
+
+    expect($set->match('1', EXEMPTION_NOW, $subjects))->toBe('2')
+        ->and($subjects->asked)->toBe(['custom:plan', 'custom:tenant']);
 });
 
 it('lists the exemptions it was built from', function (): void {

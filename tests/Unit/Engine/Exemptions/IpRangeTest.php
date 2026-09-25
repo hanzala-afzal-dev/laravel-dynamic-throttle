@@ -34,6 +34,10 @@ it('AC-11: counts an IPv4-mapped or NAT64 address or range as the IPv4 one, as c
     'an IPv4-mapped range' => ['::ffff:203.0.113.0/120', '203.0.113.0/24'],
     'a NAT64 address' => ['64:ff9b::203.0.113.7', '203.0.113.7/32'],
     'a NAT64 range' => ['64:ff9b::203.0.113.0/120', '203.0.113.0/24'],
+    'an IPv4-mapped range with host bits set' => ['::ffff:203.0.113.9/120', '203.0.113.0/24'],
+    'every IPv4-mapped address' => ['::ffff:0:0/96', '0.0.0.0/0'],
+    'every NAT64 address' => ['64:ff9b::/96', '0.0.0.0/0'],
+    'a range wider than the IPv4-mapped block, which stays IPv6' => ['::ffff:0:0/95', '::fffe:0:0/95'],
 ]);
 
 it('keeps a range as its network\'s bytes and its prefix length', function (): void {
@@ -60,6 +64,8 @@ it('AC-10: rejects what is not an address or a range', function (string $written
     'a space' => [' 10.0.0.0/8'],
     'an IPv6 zone' => ['fe80::1%eth0'],
     'a host name' => ['localhost'],
+    'a NUL byte in the address' => ["10.0.0.1\0/8"],
+    'a NUL byte after the address' => ["10.0.0.1\0"],
 ]);
 
 it('AC-13: reads a client address as its bytes, and an IPv4 client that reaches the app as IPv6 as its IPv4 bytes', function (?string $ip, ?string $bytes): void {
@@ -73,6 +79,7 @@ it('AC-13: reads a client address as its bytes, and an IPv4 client that reaches 
     'an empty IP' => ['', null],
     'not an IP' => ['unknown', null],
     'a range' => ['203.0.113.0/24', null],
+    'a NUL byte' => ["203.0.113.7\0", null],
 ]);
 
 it('AC-13: cuts an address to a prefix length', function (string $ip, int $prefixLength, string $cut): void {

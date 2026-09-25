@@ -3,12 +3,14 @@
 declare(strict_types=1);
 
 use Afzal\DynamicThrottle\Compiler\ManifestCompiler;
+use Afzal\DynamicThrottle\Engine\Contracts\Clock;
 use Afzal\DynamicThrottle\Engine\Exceptions\IdentityUnavailableException;
 use Afzal\DynamicThrottle\Engine\Stacking\Evaluation;
 use Afzal\DynamicThrottle\Engine\Stacking\EvaluationOutcome;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleAttempt;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleExemption;
+use Afzal\DynamicThrottle\Engine\Stacking\RuleFailure;
 use Afzal\DynamicThrottle\Enums\Scope;
 use Afzal\DynamicThrottle\Facades\DynamicThrottle;
 use Afzal\DynamicThrottle\Manifest\CompiledRule;
@@ -318,24 +320,83 @@ it('AC-20: counts the request on a rule whose custom exemption cannot be checked
         ->and($failure?->exception->getPrevious()?->getMessage())->toBe('The plan service is down.');
 });
 
-it('AC-20: exempts the client when another exemption of the rule matches, whichever check failed', function (): void {
-    DynamicThrottle::scope('plan', fn (): string => 'gold');
-    DynamicThrottle::scope('tenant', fn (): never => throw new RuntimeException('The tenant service is down.'));
+it('AC-20: exempts the client when an ip exemption matches, and never asks the failing custom:plan resolver', function (): void {
+    $calls = 0;
+    DynamicThrottle::scope('plan', function () use (&$calls): never {
+        $calls++;
+
+        throw new RuntimeException('The plan service is down.');
+    });
     Exemptions::rule(['scope' => Scope::Global]);
     $ip = Exemption::forIp('203.0.113.7');
     $ip->save();
-    Exemption::forCustom('tenant', 'acme')->save();
-    $plan = Exemption::forCustom('plan', 'gold');
-    $plan->save();
+    Exemption::forCustom('plan', 'gold')->save();
     $manifest = Exemptions::manifest();
-    $evaluator = new RuleEvaluator(Identities::store());
 
-    $byIp = $evaluator->evaluate($manifest->rules, Identities::resolver(Identities::request('203.0.113.7'), $manifest->exemptions));
-    $afterUnreadableIp = $evaluator->evaluate($manifest->rules, Identities::resolver(Identities::unreadableIpRequest(), $manifest->exemptions));
+    $evaluation = (new RuleEvaluator(Identities::store()))->evaluate($manifest->rules, Identities::resolver(Identities::request('203.0.113.7'), $manifest->exemptions));
 
-    expect([exemptedIds($byIp), exemptedIds($afterUnreadableIp)])->toBe([[(string) $ip->id], [(string) $plan->id]])
-        ->and([$byIp->exemptionFailures, $afterUnreadableIp->exemptionFailures])->toBe([[], []])
-        ->and([$byIp->attempts, $afterUnreadableIp->attempts])->toBe([[], []]);
+    expect(exemptedIds($evaluation))->toBe([(string) $ip->id])
+        ->and([$evaluation->exemptionFailures, $evaluation->attempts, $calls])->toBe([[], [], 0]);
+});
+
+it('AC-20: exempts the client when a later check matches after the IP and custom:plan checks failed', function (): void {
+    DynamicThrottle::scope('plan', fn (): never => throw new RuntimeException('The plan service is down.'));
+    DynamicThrottle::scope('tenant', fn (): string => 'acme');
+    Exemptions::rule(['scope' => Scope::Global]);
+    Exemption::forIp('203.0.113.7')->save();
+    Exemption::forCustom('plan', 'gold')->save();
+    $tenant = Exemption::forCustom('tenant', 'acme');
+    $tenant->save();
+    $manifest = Exemptions::manifest();
+
+    $evaluation = (new RuleEvaluator(Identities::store()))->evaluate($manifest->rules, Identities::resolver(Identities::unreadableIpRequest(), $manifest->exemptions));
+
+    expect(exemptedIds($evaluation))->toBe([(string) $tenant->id])
+        ->and([$evaluation->exemptionFailures, $evaluation->attempts])->toBe([[], []]);
+});
+
+it('AC-20: lists one exception for every rule whose ip exemption the unreadable client IP stops', function (): void {
+    Exemptions::rule(['scope' => Scope::Global]);
+    Exemptions::rule(['scope' => Scope::Global]);
+    Exemption::forIp('203.0.113.0/24')->save();
+    $manifest = Exemptions::manifest();
+
+    $evaluation = (new RuleEvaluator(Identities::store()))->evaluate($manifest->rules, Identities::resolver(Identities::unreadableIpRequest(), $manifest->exemptions));
+    $exceptions = array_map(fn (RuleFailure $failure): Throwable => $failure->exception, $evaluation->exemptionFailures);
+
+    expect($exceptions)->toHaveCount(2)
+        ->and($exceptions[1])->toBe($exceptions[0])
+        ->and($exceptions[0]->getPrevious())->toBeInstanceOf(ConflictingHeadersException::class);
+});
+
+it('reads the clock once per request for exemptions, and not at all when there are none', function (): void {
+    $clock = new class implements Clock
+    {
+        public int $reads = 0;
+
+        public function microseconds(): int
+        {
+            $this->reads++;
+
+            return FakeClock::T0 * 1_000_000;
+        }
+    };
+    app()->instance(Clock::class, $clock);
+    Exemptions::rule();
+    Exemptions::rule();
+    Exemptions::rule();
+    $withoutExemptions = Exemptions::manifest();
+    $resolver = Identities::resolver(Identities::request(), $withoutExemptions->exemptions);
+    array_map($resolver->exemption(...), $withoutExemptions->rules);
+    $readsWithout = $clock->reads;
+
+    Exemption::forIp('198.51.100.0/24')->save();
+    $withExemptions = Exemptions::manifest();
+    $resolver = Identities::resolver(Identities::request(), $withExemptions->exemptions);
+    $exempted = array_map($resolver->exemption(...), $withExemptions->rules);
+
+    expect($exempted)->toBe([null, null, null])
+        ->and([$readsWithout, $clock->reads])->toBe([0, 1]);
 });
 
 it('AC-22: checks a request against 100 exemptions from a warm manifest with no database query', function (): void {

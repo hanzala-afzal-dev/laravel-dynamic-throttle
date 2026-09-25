@@ -134,6 +134,7 @@ it('AC-10: skips and reports an invalid row, and still compiles the others', fun
     'a prefix longer than IPv6 has' => [['value' => '2001:db8::/129'], '2001:db8::/129'],
     'a value that is not an IP' => [['value' => 'not-an-ip'], 'not-an-ip'],
     'a negative prefix' => [['value' => '10.0.0.1/-1'], '10.0.0.1/-1'],
+    'a NUL byte in an address' => [['value' => "10.0.0.1\0/8"], 'value'],
     'an empty IP' => [['value' => ''], 'value'],
     'an empty user' => [['subject' => 'user', 'value' => ''], 'value'],
     'a user without a class' => [['subject' => 'user', 'value' => '42'], 'value'],
@@ -158,6 +159,26 @@ it('AC-10: compiles the rules alone, and reports the missing table, before the e
         ->and([$result->rules, $result->exemptions, $result->skippedExemptions])->toBe([1, 0, 0]);
     Exceptions::assertReportedCount(1);
     Exceptions::assertReported(fn (ExemptionsTableMissing $exception): bool => str_contains($exception->getMessage(), 'dynamic_throttle_exemptions'));
+});
+
+it('AC-17: keeps the instant of an expiry written in another time zone than the app\'s', function (): void {
+    // The app runs in New York; one expiry comes from Tokyo, the other as text with an offset.
+    config()->set('app.timezone', 'America/New_York');
+    date_default_timezone_set('America/New_York');
+    Exemption::forIp('10.0.0.1')->until(Carbon::createFromTimestamp(FakeClock::T0 + 60, 'Asia/Tokyo'))->save();
+    $text = Exemption::forIp('10.0.0.2');
+    $text->expires_at = '2027-01-15T17:01:00+09:00';
+    $text->save();
+
+    try {
+        $stored = array_column(Exemptions::stored()['exemptions'], 'expires_at');
+        $readBack = Exemption::query()->orderBy('id')->get()->map(fn (Exemption $exemption): ?int => $exemption->expires_at?->getTimestamp())->all();
+    } finally {
+        date_default_timezone_set('UTC');
+    }
+
+    expect($stored)->toBe([FakeClock::T0 + 60, FakeClock::T0 + 60])
+        ->and($readBack)->toBe([FakeClock::T0 + 60, FakeClock::T0 + 60]);
 });
 
 it('AC-11: writes no raw user id or custom value, only their hashes', function (): void {
