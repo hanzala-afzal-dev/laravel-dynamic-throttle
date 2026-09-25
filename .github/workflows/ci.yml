@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+    # ready_for_review too: mutation testing waits until a pull request leaves draft (ADR-0016).
+    types: [opened, synchronize, reopened, ready_for_review]
   schedule:
     # Nightly full matrix (ADR-0016).
     - cron: '17 3 * * *'
@@ -24,10 +26,20 @@ jobs:
     outputs:
       run: ${{ steps.pick.outputs.run }}
       tests: ${{ steps.pick.outputs.tests }}
+      mutation: ${{ steps.pick.outputs.mutation }}
     steps:
+      # Only pull requests need the code here, to see whether they touch the engine. Their
+      # checkout is their merge into the base branch, so HEAD^1 is the base.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
       - id: pick
         env:
           EVENT: ${{ github.event_name }}
+          DRAFT: ${{ github.event.pull_request.draft }}
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
@@ -47,6 +59,20 @@ jobs:
             tests='{"php":["8.3","8.4","8.5"],"laravel":["12","13"],"stability":["prefer-lowest","prefer-stable"]}'
           fi
           echo "tests=$tests" >> "$GITHUB_OUTPUT"
+
+          # ADR-0016: mutation testing runs on pull requests that touch the engine, once they
+          # leave draft, and nightly. Pushes to main skip it: the merged pull request passed it.
+          mutation=false
+          if [ "$EVENT" = "pull_request" ]; then
+            if [ "$DRAFT" = "true" ]; then
+              echo "A draft: mutation testing waits until it is ready for review."
+            elif scripts/touches-engine.sh HEAD^1 HEAD; then
+              mutation=true
+            fi
+          elif [ "$EVENT" != "push" ]; then
+            mutation=$run
+          fi
+          echo "mutation=$mutation" >> "$GITHUB_OUTPUT"
 
   tests:
     name: PHP ${{ matrix.php }} · Laravel ${{ matrix.laravel }} · ${{ matrix.stability }}
@@ -161,16 +187,23 @@ jobs:
       - name: Run driver tests
         run: composer test:drivers
 
-  mutation:
-    name: Mutation testing
+  # ADR-0016: mutation testing of src/Engine, in three parts that run at once, so the
+  # slowest one sets the wait. Each part must reach 85% on its own, which is stricter
+  # than one score for the whole engine.
+  mutation-stores:
+    name: Mutation testing · ${{ matrix.store }}
     needs: matrix
-    # ADR-0016: on pull requests and nightly. Skipped on pushes to main, where the
-    # merged pull request already passed it.
-    if: needs.matrix.outputs.run == 'true' && github.event_name != 'push'
+    if: needs.matrix.outputs.mutation == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # The Redis driver is only exercised against a real Redis, so mutation testing
-    # needs the same services as the driver job.
+    strategy:
+      fail-fast: false
+      matrix:
+        # Keep in step with the --ignore list of mutation-engine, so every file is tested once.
+        include:
+          - { store: Redis store, path: src/Engine/Stores/RedisLimiterStore.php }
+          - { store: cache store, path: src/Engine/Stores/CacheLimiterStore.php }
+    # The stores are only exercised against real services, as in the driver job.
     services:
       redis:
         image: redis:7.4-alpine
@@ -221,8 +254,37 @@ jobs:
       - name: Install dependencies
         run: composer update --prefer-dist --no-interaction --no-progress
 
-      - name: Mutation score of at least 85% for src/Engine
-        run: composer test:mutate
+      - name: Mutation score of at least 85% for the ${{ matrix.store }}
+        env:
+          DYNAMIC_THROTTLE_DRIVERS: '1'
+          MUTATE_PATH: ${{ matrix.path }}
+        run: vendor/bin/pest --exclude-group=concurrency --mutate --everything --path="$MUTATE_PATH" --min=85 --parallel
+
+  # Everything but the two stores. None of it needs the services: without them, the
+  # driver tests are skipped, and the score is the same.
+  mutation-engine:
+    name: Mutation testing · the rest of the engine
+    needs: matrix
+    if: needs.matrix.outputs.mutation == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.3'
+          extensions: bcmath, intl, memcached, pcntl, pdo_mysql, pdo_pgsql, pdo_sqlite, redis
+          coverage: pcov
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Mutation score of at least 85% for the rest of src/Engine
+        run: vendor/bin/pest --exclude-group=concurrency --mutate --everything --path=src/Engine --ignore=src/Engine/Stores/RedisLimiterStore.php,src/Engine/Stores/CacheLimiterStore.php --min=85 --parallel
 
   static-analysis:
     name: Larastan
@@ -358,7 +420,7 @@ jobs:
   ci-passed:
     name: CI passed
     if: always()
-    needs: [matrix, tests, drivers, mutation, static-analysis, code-style, install, security]
+    needs: [matrix, tests, drivers, mutation-stores, mutation-engine, static-analysis, code-style, install, security]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any job failed or was cancelled
