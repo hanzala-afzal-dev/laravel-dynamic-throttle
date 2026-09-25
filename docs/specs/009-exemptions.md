@@ -1,6 +1,6 @@
 # SPEC-009: Exemptions
 
-- Status: Draft
+- Status: In progress
 - ADRs: ADR-0007, ADR-0008, ADR-0009, ADR-0010, ADR-0012, ADR-0017, ADR-0020, ADR-0024, ADR-0025
 - Roadmap phase: 2
 
@@ -15,7 +15,7 @@ Nothing implements them yet.
 
 ## Behavior
 - **An exemption** says that a client is not limited by one rule, or by any rule, until it expires. It has:
-  - **a subject**, the client it exempts (open question 1):
+  - **a subject**, the client it exempts (decision 1):
     - `ip`: an address or a CIDR range, IPv4 or IPv6, such as `203.0.113.7`, `10.0.0.0/8` or `2001:db8::/32`.
       - It matches the client IP as `$request->ip()` returns it, so the app's trusted proxies decide it (ADR-0009).
       - The address is taken whole, before IPv6 grouping.
@@ -189,7 +189,7 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
 - Validating exemptions when they are saved, which is SPEC-018. Until then the compiler skips invalid rows, as it does for rules.
 - The middleware that passes the manifest's exemptions to the resolver (SPEC-010).
 - The emergency switch that bypasses every rule (SPEC-013).
-- `api_token` and `header` subjects (open question 1).
+- `api_token` and `header` subjects (decision 1).
 
 ## Edge cases and failure modes
 - **Deploying the new format.**
@@ -211,12 +211,11 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
 - `composer bench` (AC-23)
 
 ## Open questions
-1. **Which clients can be exempted.** Recommendation: `ip` (addresses and ranges), `user` and `custom`.
+None. The maintainer answered all five on 2026-09-25, and left 3 and 4 to the best option:
+1. The subjects are `ip` (addresses and ranges), `user` and `custom`.
    - Laravel's own `throttle` middleware has no exemption list: a named limiter's closure returns `Limit::none()` for the clients it exempts, in code. A `custom` scope keeps that freedom: the app's developers write the resolver, and admins exempt its values.
    - Not `api_token`: the table would have to keep a secret, or a hash an admin cannot recognize. A token's user can be exempted instead.
    - Not `header`: a client can send any header value, so a header exemption is a way around every limit (ADR-0009). An app that wants one, such as a secret header for its own services, can read it in a custom scope, deliberately.
-
-The maintainer answered questions 2 to 5 on 2026-09-25, and left 3 and 4 to the best option:
 2. A failed exemption check counts as no match, and the first failed check's error is listed for reporting. Failing the rule instead would, with the default fail-open policy, let one broken resolver switch off every rule that has an exemption.
 3. User and custom values are hashed with the identity key (ADR-0024). IP addresses and ranges are kept, normalized:
    - Matching needs ranges as they are, and a single address is a range of one, so one code path serves both.
