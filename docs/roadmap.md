@@ -88,7 +88,7 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 
 **Added by the SPEC-007 review (2026-09-24)**
 - Right after SPEC-008, in its own PR: ADR-0025, amending ADR-0008 so the cap counts only rules that count the request. Skipped rules never use a slot, and dry-run rules get slots of their own, so adding a dry-run rule never switches off an enforcing one.
-- A `perf:` PR that makes decoding the manifest cheaper without changing what it accepts, measured with `RuleMatcherBench`. The APCu cache (ADR-0007's L1) is decided with the exit benchmark.
+- A `perf:` PR that makes decoding the manifest cheaper without changing what it accepts, measured with `RuleMatcherBench` (`benchmarks/results/phase-2-manifest-decoding.md`). The APCu cache (ADR-0007's L1) is decided with the exit benchmark.
 - SPEC-018 (Phase 4): saving a rule whose pattern ends with a slash is rejected, because it can never match.
 
 **Exit criteria**

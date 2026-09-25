@@ -25,6 +25,12 @@ final readonly class CompiledRule
         'window_seconds', 'priority', 'mode', 'on_failure', 'on_missing_identity', 'response_override',
     ];
 
+    /** FIELDS as sort() orders them, to check a rule whose fields come in another order. */
+    private const array SORTED_FIELDS = [
+        'id', 'max_attempts', 'method', 'mode', 'name', 'on_failure', 'on_missing_identity',
+        'pattern', 'priority', 'response_override', 'scope', 'scope_parameter', 'window_seconds',
+    ];
+
     /**
      * @param  array<array-key, mixed>|null  $responseOverride  a JSON object
      */
@@ -74,7 +80,9 @@ final readonly class CompiledRule
     }
 
     /**
-     * From the manifest's JSON: exactly FIELDS, with exact types.
+     * From the manifest's JSON: exactly FIELDS, with exact types. Every manifest
+     * load runs this for every rule, so the checks are inline, and the helpers only
+     * build the errors.
      *
      * @param  array<array-key, mixed>  $data
      *
@@ -82,29 +90,39 @@ final readonly class CompiledRule
      */
     public static function fromArray(array $data): self
     {
+        // The manifest writes the fields in FIELDS order, so that is compared first:
+        // sorting every rule's keys cost more than all its other checks together.
         $keys = array_keys($data);
-        sort($keys);
-        $expected = self::FIELDS;
-        sort($expected);
 
-        if ($keys !== $expected) {
-            throw new InvalidArgumentException('A rule must have exactly the fields '.implode(', ', self::FIELDS).'.');
+        if ($keys !== self::FIELDS) {
+            sort($keys);
+
+            if ($keys !== self::SORTED_FIELDS) {
+                throw new InvalidArgumentException('A rule must have exactly the fields '.implode(', ', self::FIELDS).'.');
+            }
         }
 
+        [
+            'id' => $id, 'name' => $name, 'method' => $method, 'pattern' => $pattern, 'scope' => $scope,
+            'scope_parameter' => $scopeParameter, 'max_attempts' => $maxAttempts, 'window_seconds' => $windowSeconds,
+            'priority' => $priority, 'mode' => $mode, 'on_failure' => $onFailure,
+            'on_missing_identity' => $onMissingIdentity, 'response_override' => $responseOverride,
+        ] = $data;
+
         return new self(
-            id: self::string($data, 'id'),
-            name: self::string($data, 'name'),
-            method: self::enum($data, 'method', RequestMethod::class),
-            pattern: self::string($data, 'pattern'),
-            scope: self::enum($data, 'scope', Scope::class),
-            scopeParameter: $data['scope_parameter'] === null ? null : self::string($data, 'scope_parameter'),
-            maxAttempts: self::integer($data, 'max_attempts'),
-            windowSeconds: self::integer($data, 'window_seconds'),
-            priority: self::integer($data, 'priority'),
-            mode: self::enum($data, 'mode', RuleMode::class),
-            onFailure: self::enum($data, 'on_failure', FailurePolicy::class),
-            onMissingIdentity: self::enum($data, 'on_missing_identity', MissingIdentity::class),
-            responseOverride: self::responseOverride($data),
+            id: is_string($id) ? $id : throw self::wrongType('id', 'a string', $id),
+            name: is_string($name) ? $name : throw self::wrongType('name', 'a string', $name),
+            method: (is_string($method) ? RequestMethod::tryFrom($method) : null) ?? throw self::unknown('method', RequestMethod::class, $method),
+            pattern: is_string($pattern) ? $pattern : throw self::wrongType('pattern', 'a string', $pattern),
+            scope: (is_string($scope) ? Scope::tryFrom($scope) : null) ?? throw self::unknown('scope', Scope::class, $scope),
+            scopeParameter: $scopeParameter === null || is_string($scopeParameter) ? $scopeParameter : throw self::wrongType('scope_parameter', 'a string', $scopeParameter),
+            maxAttempts: is_int($maxAttempts) ? $maxAttempts : throw self::wrongType('max_attempts', 'an integer', $maxAttempts),
+            windowSeconds: is_int($windowSeconds) ? $windowSeconds : throw self::wrongType('window_seconds', 'an integer', $windowSeconds),
+            priority: is_int($priority) ? $priority : throw self::wrongType('priority', 'an integer', $priority),
+            mode: (is_string($mode) ? RuleMode::tryFrom($mode) : null) ?? throw self::unknown('mode', RuleMode::class, $mode),
+            onFailure: (is_string($onFailure) ? FailurePolicy::tryFrom($onFailure) : null) ?? throw self::unknown('on_failure', FailurePolicy::class, $onFailure),
+            onMissingIdentity: (is_string($onMissingIdentity) ? MissingIdentity::tryFrom($onMissingIdentity) : null) ?? throw self::unknown('on_missing_identity', MissingIdentity::class, $onMissingIdentity),
+            responseOverride: $responseOverride === null || is_array($responseOverride) ? $responseOverride : throw new InvalidArgumentException('response_override must be a JSON object.'),
         );
     }
 
@@ -132,57 +150,18 @@ final readonly class CompiledRule
         ];
     }
 
-    /**
-     * @param  array<array-key, mixed>  $data
-     */
-    private static function string(array $data, string $field): string
+    private static function wrongType(string $field, string $type, mixed $value): InvalidArgumentException
     {
-        return is_string($data[$field])
-            ? $data[$field]
-            : throw new InvalidArgumentException("{$field} must be a string, got ".get_debug_type($data[$field]).'.');
+        return new InvalidArgumentException("{$field} must be {$type}, got ".get_debug_type($value).'.');
     }
 
     /**
-     * @param  array<array-key, mixed>  $data
+     * @param  class-string<BackedEnum>  $enum
      */
-    private static function integer(array $data, string $field): int
+    private static function unknown(string $field, string $enum, mixed $value): InvalidArgumentException
     {
-        return is_int($data[$field])
-            ? $data[$field]
-            : throw new InvalidArgumentException("{$field} must be an integer, got ".get_debug_type($data[$field]).'.');
-    }
+        $allowed = implode(', ', array_map(fn (BackedEnum $case): string => (string) $case->value, $enum::cases()));
 
-    /**
-     * @template T of BackedEnum
-     *
-     * @param  array<array-key, mixed>  $data
-     * @param  class-string<T>  $enum
-     * @return T
-     */
-    private static function enum(array $data, string $field, string $enum): BackedEnum
-    {
-        $value = $data[$field];
-        $case = is_string($value) ? $enum::tryFrom($value) : null;
-
-        if ($case === null) {
-            $allowed = implode(', ', array_map(fn (BackedEnum $case): string => (string) $case->value, $enum::cases()));
-
-            throw new InvalidArgumentException("{$field} must be one of {$allowed}, got ".(is_string($value) ? "\"{$value}\"" : get_debug_type($value)).'.');
-        }
-
-        return $case;
-    }
-
-    /**
-     * @param  array<array-key, mixed>  $data
-     * @return array<array-key, mixed>|null
-     */
-    private static function responseOverride(array $data): ?array
-    {
-        $value = $data['response_override'];
-
-        return $value === null || is_array($value)
-            ? $value
-            : throw new InvalidArgumentException('response_override must be a JSON object.');
+        return new InvalidArgumentException("{$field} must be one of {$allowed}, got ".(is_string($value) ? "\"{$value}\"" : get_debug_type($value)).'.');
     }
 }
