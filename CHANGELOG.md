@@ -47,7 +47,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - `php artisan dynamic-throttle:compile` also prints the exemptions it compiled and skipped.
 - The `dynamic.throttle` route middleware applies the rules to requests:
   - It is attached nowhere until you add it to your route groups, or list them in `middleware.auto_attach`.
-  - It runs after Laravel's authentication middleware, and after the middleware you list in `middleware.after`, wherever a group lists it.
+  - It runs after Laravel's authentication middleware, `auth` and `auth.basic`, and after the middleware you list in `middleware.after`, wherever a group lists it.
   - It lets through, untouched, the paths in `except` (by default Horizon, Telescope, Pulse, Nova, Livewire, `broadcasting/auth`, `sanctum/csrf-cookie` and `up`), the package's own routes, and every request while `enabled` is off.
   - A limited request gets Laravel's 429 through your exception handler, or the rule's `response_override` as its JSON body, with `Retry-After`, `X-RateLimit-Reset`, `X-RateLimit-Limit` and `X-RateLimit-Remaining`. An allowed request gets `X-RateLimit-Limit` and `X-RateLimit-Remaining` from its most restrictive enforcing rule. Dry-run rules set no headers.
   - When something fails while deciding, such as the counter store, a config value or one of your scope resolvers, the request goes through, and the error is reported.

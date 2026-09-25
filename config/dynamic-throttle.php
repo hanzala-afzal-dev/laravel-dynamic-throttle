@@ -39,9 +39,10 @@ return [
     | group that runs the middleware is never limited.
     |
     | The middleware always runs after Laravel's authentication middleware,
-    | so user rules see the user. List any other middleware that logs users
-    | in, such as a JWT package's or your own API key check, in "after", by
-    | alias or class: until you do, user rules count those users as guests.
+    | auth and auth.basic, so user rules see the user. List any other
+    | middleware that logs users in, such as a JWT package's or your own
+    | API key check, in "after", by alias or class: until you do, user
+    | rules count those users as guests.
     |
     */
 

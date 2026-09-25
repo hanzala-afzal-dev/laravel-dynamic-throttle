@@ -82,7 +82,7 @@ Rules apply only to routes that run the `dynamic.throttle` middleware, and insta
 
 Or list the groups in the `middleware.auto_attach` config key, such as `['api']`. **A route outside those groups is never limited.**
 
-- **After authentication.** The middleware runs after Laravel's authentication middleware, even in a group that lists it first, so user rules see the user. If users log in through middleware that Laravel cannot recognize, such as a JWT package's or your own API key check, list it in `middleware.after`, by alias or class. Until you do, user rules count those users as guests.
+- **After authentication.** The middleware runs after Laravel's authentication middleware, `auth` and `auth.basic`, even in a group that lists it first, so user rules see the user. If users log in through middleware that Laravel cannot recognize, such as a JWT package's or your own API key check, list it in `middleware.after`, by alias or class. Until you do, user rules count those users as guests.
 - **Excluded paths.** No rule ever applies to the paths in the `except` config key, not even a `*` rule. By default, they are Horizon, Telescope, Pulse, Nova, Livewire, `broadcasting/auth`, `sanctum/csrf-cookie` and `up`. Remove an entry to limit its path.
 - **Responses.** A limited request gets Laravel's own 429 (`ThrottleRequestsException`), rendered by your exception handler, with `Retry-After`, `X-RateLimit-Reset`, `X-RateLimit-Limit` and `X-RateLimit-Remaining: 0`. A rule's `response_override` replaces the body with its JSON. An allowed request gets `X-RateLimit-Limit` and `X-RateLimit-Remaining` from its most restrictive enforcing rule. Dry-run rules never set headers.
 - **Laravel's `throttle` on the same route.** Both limit the request, and whichever runs last writes the `X-RateLimit-*` headers. Pick one per route.
@@ -90,7 +90,7 @@ Or list the groups in the `middleware.auto_attach` config key, such as `['api']`
 
 ### In your tests
 
-Call `DynamicThrottle::fake()` in every test that sends requests through the middleware, for example in your base test case's `setUp()`. The counters and the manifest then live in memory: tests need no Redis, and each one starts from zero. Save rules with the `Rule` model, and assert on the response:
+Call `DynamicThrottle::fake()` in every test that sends requests through the middleware, for example in your base test case's `setUp()`. The counters and the manifest then live in memory: tests need no Redis, and each one starts from zero. Save rules with the `Rule` model, before or after `fake()`, and assert on the response:
 
 ```php
 use Afzal\DynamicThrottle\Facades\DynamicThrottle;

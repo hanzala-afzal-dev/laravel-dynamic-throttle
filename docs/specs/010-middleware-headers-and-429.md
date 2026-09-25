@@ -20,11 +20,13 @@ This spec builds it.
   - `middleware.auto_attach` (default `[]`) lists route groups, such as `['api']`, to append the middleware to at boot.
   - A group the app has not defined is skipped, never thrown on, because a config mistake must not take the app down (ADR-0020 point 1). SPEC-016's config check reports it.
 - **It runs after authentication** (ADR-0004 point 2, ADR-0020 point 4). At boot, the package places the middleware in Laravel's middleware priority list right after:
-  - Laravel's authentication middleware (`AuthenticatesRequests`);
+  - Laravel's authentication middleware: `AuthenticatesRequests`, which `auth` implements, and `AuthenticateWithBasicAuth`, behind `auth.basic`;
   - every middleware in `middleware.after` (default `[]`), as aliases or classes, such as a JWT package's.
 
   So a group that lists `dynamic.throttle` before `auth` still runs it after `auth`. In detail:
   - The package does this once every provider has booted, through Laravel's HTTP kernel. So `middleware.after` can name aliases that other packages register, and later changes to the kernel keep it.
+  - The kernel copies all its lists over the router's whenever one changes, so the package first reads the router's groups, aliases and priority list. What other providers changed on the router while booting stays, and `auto_attach` reaches groups defined there (AC-21).
+  - The package computes the place itself: Laravel 12.61.1's `addToMiddlewarePriorityAfter()` puts a middleware before an entry that sits right after another.
   - An alias's parameters, such as `:api` in `auth:api`, are ignored.
   - A middleware of `middleware.after` that the priority list does not hold is added to it, right before this one.
   - An app that already placed the middleware in its priority list, as ADR-0004's fallback shows, keeps that place.
@@ -50,12 +52,14 @@ This spec builds it.
   - releases that failed, which keep the 429 (ADR-0021);
   - exemption checks that failed (SPEC-009).
 
-  An exception that several rules share, such as a failing custom scope's, is reported once. Until SPEC-012 adds the cooldown, an outage reports once per request (decision 2).
+  A cause that several rules share is reported once: a failing custom scope's exception, or a client IP that cannot be read, which each rule that counts by IP wraps. Until SPEC-012 adds the cooldown, an outage reports once per request (decision 2).
 - **Only the 429 leaves the middleware** (ADR-0020 point 1). Anything else the package throws while deciding, such as an invalid `driver`, `store` or `prefix`, is reported, and the request goes through without headers. The app's own exceptions, thrown after the middleware passed the request on, are never touched.
 - **`DynamicThrottle::fake()`** is for the app's own tests (ADR-0020 point 12, decision 4). It moves the counters and the manifest into a fresh in-memory store, so tests need no Redis and share no counts:
   - The counters read the time from Laravel's clock, so `travel()` moves their windows.
   - Rules still come from the rules table. `fake()` compiles the ones already saved, such as a seeder's, so they apply from the first request. Rules saved later compile as usual.
+  - Each request reads the manifest from the fake store, so a rule saved during a test applies to the next request, even with the clock frozen.
   - It clears the manifest the process keeps in memory (SPEC-006), so a test never sees the rules of the test before it.
+  - Each call starts from a fresh store.
   - Without the package's tables, no rule applies, and nothing is reported.
   - A test asserts a limit through the response's status and headers.
 - **Cost.** A request whose path matches no rule costs a manifest read and one index lookup. The database is never queried (ADR-0007).
@@ -73,6 +77,9 @@ Feature tests on real routes through Testbench, with rules saved through the mod
   - A group that lists `dynamic.throttle` before `auth` counts an authenticated user under a `user` rule as that user, not as a guest.
   - A custom authentication middleware listed in `middleware.after`, by alias and by class, and placed after `dynamic.throttle` in the group, still runs before it.
   - Without `middleware.after`, that middleware runs after, and its users count as guests (ADR-0020 point 4).
+  - `auth.basic` runs before it too.
+  - A middleware of `middleware.after` that the priority list already holds right after authentication, as `appendToPriorityList()` leaves it, runs before it, on Laravel 12.61.1 too.
+- **AC-21** What other providers changed on the router while booting stays after the package wires its middleware: a middleware pushed onto `web`, an alias redefined, an entry added to the priority list. `auto_attach` reaches a group defined on the router.
 
 ### Skipping
 - **AC-5** With `enabled` off, a limited route is never limited, sets no headers, and reads nothing from the cache: no manifest and no counter.
@@ -105,9 +112,10 @@ Feature tests on real routes through Testbench, with rules saved through the mod
   - a counter store that throws;
   - an invalid `driver`, an undefined `store` and an invalid `prefix`;
   - a corrupt manifest;
-  - a custom scope whose resolver throws, used by two rules and by an exemption.
+  - a custom scope whose resolver throws, used by two rules and by an exemption;
+  - a client IP that cannot be read, with two rules that count by IP.
 
-  A release that fails keeps the 429, and reports its error once (ADR-0021).
+  A release that fails keeps the 429, and reports its error once (ADR-0021). A failed exemption check is reported, and the rule still counts the request. A request that another rule failed on keeps the headers of the enforcing rule that counted it.
 - **AC-16** An exception the route itself throws reaches the app's handler unchanged, and the middleware reports nothing. The request still counted.
 
 ### Test helper and cost
@@ -115,6 +123,8 @@ Feature tests on real routes through Testbench, with rules saved through the mod
   - With `driver` set to `redis` and no Redis to reach, a route over its limit answers 429. Run twice, the test starts from zero both times.
   - Rules saved before `fake()` apply from the first request.
   - Without the package's tables, `fake()` works: no rule applies, and nothing is reported.
+  - A rule saved after a request applies to the next one, with the clock frozen.
+  - Each `fake()` starts from zero.
 - **AC-18** An allowed and a rejected request, with the manifest compiled in the cache and read from it as on PHP-FPM, run no database query (query-count assertion, the Phase 2 exit criterion).
 - **AC-19 (arch)** `Http`, with `Http\Middleware`, touches no database (existing rules) and reads the time only through `Clock`.
 - **AC-20 (benchmark)** A middleware benchmark: a request through the middleware with 100 rules, 3 of them matched, on local Redis and on the array store, with the manifest in memory (Octane, queue workers) and read from the cache on every request (PHP-FPM). The results record, with the hardware, the p95 it adds, against the roadmap's 1 ms target.
@@ -127,7 +137,7 @@ Feature tests on real routes through Testbench, with rules saved through the mod
 - `config/dynamic-throttle.php`: `middleware.auto_attach`, `middleware.after` and `except`, with comments.
 - `README.md`: attaching the middleware, `except`, `middleware.after`, and `fake()`.
 - Tests:
-  - `tests/Feature/Http/MiddlewareWiringTest.php`: AC-1 to AC-4
+  - `tests/Feature/Http/MiddlewareWiringTest.php`: AC-1 to AC-4, AC-21
   - `tests/Feature/Http/MiddlewareSkippingTest.php`: AC-5 to AC-7
   - `tests/Feature/Http/MiddlewareResponseTest.php`: AC-8 to AC-14
   - `tests/Feature/Http/MiddlewareFailureTest.php`: AC-15, AC-16
@@ -166,8 +176,15 @@ Feature tests on real routes through Testbench, with rules saved through the mod
 - `composer bench` (AC-20)
 
 ## Open questions
-None. The maintainer accepted all four recommendations on 2026-09-25:
+The maintainer accepted the recommendations of the first four on 2026-09-25:
 1. The class is `DynamicThrottleMiddleware`, behind the alias `dynamic.throttle` that ADR-0004 fixed. `ThrottleRequests` reads well, but it shares its short name with Laravel's, which makes imports in `bootstrap/app.php` collide.
 2. Until SPEC-012, a failure lets the request through, and each one is reported with `report()`. Until SPEC-012 adds the cooldown, an outage reports once per request, and SPEC-012 lands before any release, in the same phase. Letting the request through silently would hide an outage.
 3. An allowed request gets only `X-RateLimit-Limit` and `X-RateLimit-Remaining`, as ADR-0008 and Laravel's `throttle` send. `X-RateLimit-Reset` comes only with the 429, as in Laravel. Among rules with the same remaining, the first in evaluation order gives them, so the headers are stable.
 4. `DynamicThrottle::fake()` covers in-memory counters and the manifest's cache, and nothing more. Rules still come from the rules table, as in production, so a test saves them with the model, and asserts with the response: `assertStatus(429)` and its headers. Assertions such as `DynamicThrottle::assertThrottled()` can come later, if users ask.
+
+Open, from the review:
+5. **The `except` defaults.** ADR-0020 point 3 lists them, and a published config keeps its list whole (ADR-0020 point 10), so they have to be right before 0.1.0. They miss:
+   - the root pages `horizon`, `telescope` and `nova`: `horizon/*` does not match `horizon`;
+   - Livewire 4, which serves `livewire-{hash}/update`, and its scripts and uploads under the same prefix.
+
+   Recommendation: add `horizon`, `telescope`, `nova` and `livewire-*`, and note it in ADR-0020 point 3. `livewire/*` stays, for Livewire 3.
