@@ -34,7 +34,7 @@ final readonly class IpRange implements Stringable
     {
         $parts = explode('/', $range, 2);
         $prefix = $parts[1] ?? null;
-        $bytes = inet_pton($parts[0]);
+        $bytes = self::bytes($parts[0]);
 
         if ($bytes === false) {
             throw self::invalid($range);
@@ -69,7 +69,7 @@ final readonly class IpRange implements Stringable
      */
     public static function address(?string $ip): ?string
     {
-        $bytes = $ip === null ? false : inet_pton($ip);
+        $bytes = $ip === null ? false : self::bytes($ip);
 
         return $bytes === false ? null : ClientIp::unwrap($bytes);
     }
@@ -98,8 +98,18 @@ final readonly class IpRange implements Stringable
         return inet_ntop($this->network).'/'.$this->prefixLength;
     }
 
+    /**
+     * inet_pton() throws a ValueError for a NUL byte, which no address holds.
+     */
+    private static function bytes(string $address): string|false
+    {
+        return str_contains($address, "\0") ? false : inet_pton($address);
+    }
+
     private static function invalid(string $range): InvalidArgumentException
     {
-        return new InvalidArgumentException("\"{$range}\" is not an IP address or a CIDR range.");
+        $printable = addcslashes($range, "\0..\37");
+
+        return new InvalidArgumentException("\"{$printable}\" is not an IP address or a CIDR range.");
     }
 }

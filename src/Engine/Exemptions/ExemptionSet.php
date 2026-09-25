@@ -6,7 +6,6 @@ namespace Afzal\DynamicThrottle\Engine\Exemptions;
 
 use Afzal\DynamicThrottle\Engine\Contracts\ExemptionSubjects;
 use Afzal\DynamicThrottle\Engine\Exceptions\IdentityUnavailableException;
-use Afzal\DynamicThrottle\Enums\ExemptionSubject;
 use Afzal\DynamicThrottle\Manifest\CompiledExemption;
 
 /**
@@ -16,8 +15,8 @@ use Afzal\DynamicThrottle\Manifest\CompiledExemption;
  */
 final readonly class ExemptionSet
 {
-    /** What global exemptions are grouped under: no rule id is empty. */
-    private const string EVERY_RULE = '';
+    /** What global exemptions are grouped under: no rule id is empty, and any other string that is no rule id would do. */
+    private const string EVERY_RULE = ''; // @pest-mutate-ignore: EmptyStringToNotEmpty
 
     /**
      * Each rule's exemptions, and the global ones under EVERY_RULE, as positions in
@@ -45,12 +44,13 @@ final readonly class ExemptionSet
         foreach ($exemptions as $position => $exemption) {
             $rule = $exemption->rule ?? self::EVERY_RULE;
 
+            // Only ip exemptions have a range, and only custom ones name a scope (CompiledExemption).
             if ($exemption->range instanceof IpRange) {
                 $groups[$rule]['ip'][strlen($exemption->range->network)][$exemption->range->prefixLength][$exemption->range->network][] = $position;
-            } elseif ($exemption->subject === ExemptionSubject::User) {
+            } elseif ($exemption->parameter === null) {
                 $groups[$rule]['user'][$exemption->match][] = $position;
             } else {
-                $groups[$rule]['custom'][(string) $exemption->parameter][$exemption->match][] = $position;
+                $groups[$rule]['custom'][$exemption->parameter][$exemption->match][] = $position;
             }
         }
 
@@ -88,8 +88,9 @@ final readonly class ExemptionSet
         $own = $this->groups[$ruleId] ?? [];
         $everyRule = $this->groups[self::EVERY_RULE] ?? [];
 
+        // A fast path: without it, no check would run, and null would come back anyway.
         if ($own === [] && $everyRule === []) {
-            return null;
+            return null; // @pest-mutate-ignore: RemoveEarlyReturn
         }
 
         $failure = null;
@@ -147,7 +148,8 @@ final readonly class ExemptionSet
         foreach ([$own[strlen($address)] ?? [], $everyRule[strlen($address)] ?? []] as $byPrefixLength) {
             foreach ($byPrefixLength as $prefixLength => $networks) {
                 $position = $this->active($networks[IpRange::cut($address, $prefixLength)] ?? [], $now);
-                $lowest = $position === null || ($lowest !== null && $lowest < $position) ? $lowest : $position;
+                // Positions are unique, so < and <= agree.
+                $lowest = $position === null || ($lowest !== null && $lowest < $position) ? $lowest : $position; // @pest-mutate-ignore: SmallerToSmallerOrEqual
             }
         }
 
@@ -162,14 +164,16 @@ final readonly class ExemptionSet
      */
     private function matchHash(array $own, array $everyRule, ?string $hash, int $now): ?int
     {
+        // A fast path: no hash is empty, so looking one up would find nothing anyway.
         if ($hash === null) {
-            return null;
+            return null; // @pest-mutate-ignore: RemoveEarlyReturn
         }
 
         $mine = $this->active($own[$hash] ?? [], $now);
         $global = $this->active($everyRule[$hash] ?? [], $now);
 
-        return $mine === null || ($global !== null && $global < $mine) ? $global : $mine;
+        // A position is the rule's or global, never both, so < and <= agree.
+        return $mine === null || ($global !== null && $global < $mine) ? $global : $mine; // @pest-mutate-ignore: SmallerToSmallerOrEqual
     }
 
     /**

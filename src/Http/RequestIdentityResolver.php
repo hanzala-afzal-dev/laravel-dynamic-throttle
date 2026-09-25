@@ -47,6 +47,15 @@ final class RequestIdentityResolver implements ExemptionSubjects, IdentityResolv
     /** Why the client IP could not be read. */
     private ?Throwable $ipFailure = null;
 
+    /** The client IP as rules count it, grouped (SPEC-008). */
+    private ?string $groupedIp = null;
+
+    /** The one error every exemption check that needs the unreadable client IP fails with. */
+    private ?IdentityUnavailableException $exemptionIpError = null;
+
+    /** The time exemptions expire against, read once per request: Unix microseconds. */
+    private ?int $now = null;
+
     public function __construct(
         private readonly Request $request,
         private readonly AuthFactory $auth,
@@ -60,7 +69,12 @@ final class RequestIdentityResolver implements ExemptionSubjects, IdentityResolv
 
     public function exemption(CompiledRule $rule): ?string
     {
-        return $this->exemptions->match($rule->id, $this->clock->microseconds(), $this);
+        // Most apps have no exemptions: they pay nothing, not even a clock read.
+        if ($this->exemptions->all() === []) {
+            return null;
+        }
+
+        return $this->exemptions->match($rule->id, $this->now ??= $this->clock->microseconds(), $this);
     }
 
     public function resolve(CompiledRule $rule): ?string
@@ -84,7 +98,8 @@ final class RequestIdentityResolver implements ExemptionSubjects, IdentityResolv
         try {
             return $this->clientIp();
         } catch (Throwable $exception) {
-            throw IdentityUnavailableException::because('The exemptions could not be checked: the client IP could not be read: '.$exception->getMessage(), $exception);
+            // One exception for every rule's check, as a failing scope gives, so it is reported once.
+            throw $this->exemptionIpError ??= IdentityUnavailableException::because('The exemptions could not be checked: the client IP could not be read: '.$exception->getMessage(), $exception);
         }
     }
 
@@ -192,7 +207,7 @@ final class RequestIdentityResolver implements ExemptionSubjects, IdentityResolv
             throw IdentityUnavailableException::because("The identity for {$this->scopeName($rule->scope, $rule->scopeParameter)} could not be resolved: the client IP could not be read: {$exception->getMessage()}", $exception);
         }
 
-        return ClientIp::group($ip, $this->settings->ipv6Prefix);
+        return $this->groupedIp ??= ClientIp::group($ip, $this->settings->ipv6Prefix);
     }
 
     /**

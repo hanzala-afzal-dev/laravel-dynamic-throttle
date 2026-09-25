@@ -114,7 +114,8 @@ final readonly class ManifestCompiler implements ManifestRebuilder
 
         // Limits keep working before the app runs the migration that adds exemptions.
         if (! $model->getConnection()->getSchemaBuilder()->hasTable($model->getTable())) {
-            report(new ExemptionsTableMissing("The {$model->getTable()} table does not exist, so the manifest has no exemptions. Publish the package's migrations with php artisan vendor:publish --tag=dynamic-throttle-migrations, then run php artisan migrate."));
+            // Publishing again copies every migration again, with new dates, so the message says to drop the copies.
+            report(new ExemptionsTableMissing("The {$model->getTable()} table does not exist, so the manifest has no exemptions. Publish the package's migrations with php artisan vendor:publish --tag=dynamic-throttle-migrations, delete the new copies of those you had already run, then run php artisan migrate."));
 
             return [[], 0];
         }

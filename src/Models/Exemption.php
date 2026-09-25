@@ -85,22 +85,39 @@ final class Exemption extends Model
 
     /**
      * Only for this rule. Without it, the exemption covers every rule.
+     *
+     * @throws InvalidArgumentException for a rule that is not saved: its missing id would mean every rule
      */
     public function forRule(Rule|int $rule): self
     {
+        if ($rule instanceof Rule && ! $rule->exists) {
+            throw new InvalidArgumentException('Save the rule before exempting a client from it: an exemption without a rule covers every rule.');
+        }
+
         $this->rule_id = $rule instanceof Rule ? $rule->id : $rule;
 
         return $this;
     }
 
     /**
-     * Ignored from this time on, even before the next compile.
+     * Ignored from this time on, even before the next compile, whatever its time zone.
      */
     public function until(DateTimeInterface $expiresAt): self
     {
-        $this->expires_at = Carbon::instance($expiresAt);
+        $this->setAttribute('expires_at', $expiresAt);
 
         return $this;
+    }
+
+    /**
+     * Eloquent stores a date's wall-clock time in the date's own zone, and reads it
+     * back in the app's: a date from another zone would move by their difference,
+     * and an exemption could outlive its expiry by hours. So every date is moved to
+     * the app's zone first, and keeps its instant (SPEC-009 AC-17).
+     */
+    public function fromDateTime(mixed $value): mixed
+    {
+        return $value === null || $value === '' ? $value : parent::fromDateTime($this->asDateTime($value)->setTimezone(date_default_timezone_get()));
     }
 
     /**
