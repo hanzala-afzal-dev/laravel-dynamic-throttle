@@ -21,6 +21,7 @@ use Afzal\DynamicThrottle\Support\ConfigMerger;
 use Afzal\DynamicThrottle\Support\LaravelClock;
 use Afzal\DynamicThrottle\Support\LimiterStoreFactory;
 use Composer\InstalledVersions;
+use Illuminate\Auth\Middleware\AuthenticateWithBasicAuth;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
@@ -176,8 +177,7 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
             $this->callAfterResolving(HttpKernel::class, function (HttpKernel $kernel): void {
                 // Another kernel gets neither: the docs show the manual setup (ADR-0004's fallback).
                 if ($kernel instanceof Kernel) {
-                    $this->attachToGroups($kernel);
-                    $this->sortAfterAuthentication($kernel);
+                    $this->wireMiddleware($kernel, $this->app->make(Router::class));
                 }
             });
         });
@@ -219,38 +219,63 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
     }
 
     /**
-     * middleware.auto_attach. A group the app has not defined is skipped, never thrown
-     * on, so a config mistake cannot take the app down (ADR-0020 point 1).
+     * middleware.auto_attach, and the middleware's place in the priority list.
+     *
+     * The kernel writes all its lists over the router's each time one of them changes,
+     * so it first takes the router's, all read before the first write: what other
+     * providers changed there while booting, a group, an alias or the priority list,
+     * stays as they left it (SPEC-010 AC-21).
      */
-    private function attachToGroups(Kernel $kernel): void
+    private function wireMiddleware(Kernel $kernel, Router $router): void
     {
-        $groups = $kernel->getMiddlewareGroups();
+        $aliases = $router->getMiddleware();
+        $groups = $router->getMiddlewareGroups();
+        $priority = $this->prioritized($router->middlewarePriority, $aliases);
 
+        // A group the app has not defined is skipped, never thrown on, so a config mistake
+        // cannot take the app down (ADR-0020 point 1).
         foreach ($this->configList('dynamic-throttle.middleware.auto_attach') as $group) {
-            if (isset($groups[$group])) {
-                $kernel->appendMiddlewareToGroup($group, DynamicThrottleMiddleware::class);
+            if (isset($groups[$group]) && is_array($groups[$group]) && ! in_array(DynamicThrottleMiddleware::class, $groups[$group], true)) {
+                $groups[$group][] = DynamicThrottleMiddleware::class;
             }
         }
+
+        $kernel->setMiddlewareAliases($aliases);
+        $kernel->setMiddlewareGroups($groups);
+        $kernel->setMiddlewarePriority($priority);
     }
 
     /**
-     * Sorts the middleware after Laravel's authentication and after middleware.after,
-     * wherever a group lists it, so user rules see the user (ADR-0004 point 2, ADR-0020
-     * point 4). A middleware the priority list lacks goes right before it. An app that
-     * placed the middleware in the list itself keeps that place.
+     * The priority list, with the middleware after Laravel's authentication, its basic
+     * authentication included, and after middleware.after, so user rules see the user
+     * wherever a group lists it (ADR-0004 point 2, ADR-0020 point 4). A middleware the
+     * list lacks goes right before it. An app that placed the middleware in the list
+     * itself keeps that place.
+     *
+     * Computed here: the kernel's addToMiddlewarePriorityAfter() places it before an
+     * entry that sits right after another on Laravel 12.61.1.
+     *
+     * @param  array<array-key, mixed>  $priority
+     * @param  array<array-key, mixed>  $aliases
+     * @return list<string>
      */
-    private function sortAfterAuthentication(Kernel $kernel): void
+    private function prioritized(array $priority, array $aliases): array
     {
-        $after = [AuthenticatesRequests::class, ...$this->middlewareClasses($this->configList('dynamic-throttle.middleware.after'))];
-        $priority = $kernel->getMiddlewarePriority();
+        $priority = array_values(array_filter($priority, is_string(...)));
+        $after = array_values(array_unique([
+            AuthenticatesRequests::class,
+            AuthenticateWithBasicAuth::class,
+            ...$this->middlewareClasses($this->configList('dynamic-throttle.middleware.after'), $aliases),
+        ]));
 
-        $kernel->addToMiddlewarePriorityAfter($after, DynamicThrottleMiddleware::class);
-
-        foreach ($after as $middleware) {
-            if (! in_array($middleware, $priority, true)) {
-                $kernel->addToMiddlewarePriorityBefore(DynamicThrottleMiddleware::class, $middleware);
-            }
+        if (! in_array(DynamicThrottleMiddleware::class, $priority, true)) {
+            $present = array_keys(array_intersect($priority, $after));
+            array_splice($priority, $present === [] ? count($priority) : max($present) + 1, 0, [DynamicThrottleMiddleware::class]);
         }
+
+        array_splice($priority, (int) array_search(DynamicThrottleMiddleware::class, $priority, true), 0, array_values(array_diff($after, $priority)));
+
+        return $priority;
     }
 
     /**
@@ -258,11 +283,11 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
      * parameters such as the ":api" of "auth:api".
      *
      * @param  list<string>  $names
+     * @param  array<array-key, mixed>  $aliases  the router's
      * @return list<string>
      */
-    private function middlewareClasses(array $names): array
+    private function middlewareClasses(array $names, array $aliases): array
     {
-        $aliases = $this->app->make(Router::class)->getMiddleware();
         $classes = [];
 
         foreach ($names as $name) {

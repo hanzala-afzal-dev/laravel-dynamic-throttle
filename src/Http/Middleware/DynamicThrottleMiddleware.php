@@ -153,15 +153,16 @@ final readonly class DynamicThrottleMiddleware
     }
 
     /**
-     * Every failure the evaluation lists, once: rules that use a scope that failed
-     * share its exception (SPEC-008). A failed release keeps the 429 (ADR-0021).
+     * Every failure the evaluation lists, once per cause: rules that use a scope that
+     * failed share its exception, and those that count by an unreadable client IP each
+     * wrap the same one (SPEC-008). A failed release keeps the 429 (ADR-0021).
      */
     private function reportFailures(Evaluation $evaluation): void
     {
         $reported = [];
 
         foreach ([...$evaluation->failures, ...$evaluation->releaseFailures, ...$evaluation->exemptionFailures] as $failure) {
-            $id = spl_object_id($failure->exception);
+            $id = spl_object_id($failure->exception->getPrevious() ?? $failure->exception);
 
             if (! isset($reported[$id])) {
                 $reported[$id] = true;

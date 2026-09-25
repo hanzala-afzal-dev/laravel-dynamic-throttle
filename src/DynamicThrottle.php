@@ -13,6 +13,7 @@ use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
 use Afzal\DynamicThrottle\Manifest\ManifestCodec;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Closure;
+use Illuminate\Cache\CacheManager;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Cache\Factory as CacheFactory;
 use Illuminate\Contracts\Config\Repository as Config;
@@ -73,9 +74,10 @@ final class DynamicThrottle
      * no counts. The counters read Laravel's clock, so travel() moves their windows.
      *
      * Rules still come from the rules table. The ones already saved are compiled
-     * now, so they apply from the first request, and the manifest this process
-     * kept is forgotten, so a test never sees the rules of the test before it.
-     * Without the package's tables, no rule applies.
+     * now, so they apply from the first request, and each request reads the
+     * manifest again, so a rule saved later applies to the next request. The
+     * manifest this process kept is forgotten, so a test never sees the rules of
+     * the test before it. Without the package's tables, no rule applies.
      */
     public function fake(): void
     {
@@ -85,6 +87,12 @@ final class DynamicThrottle
         $config->set('cache.stores.'.self::FAKE_STORE, ['driver' => 'array', 'serialize' => false]);
         $config->set('dynamic-throttle.store', self::FAKE_STORE);
         $config->set('dynamic-throttle.driver', 'cache');
+        // Each request reads the manifest from the fake store, so a rule the test saves
+        // applies to its next request, even with the clock frozen.
+        $config->set('dynamic-throttle.manifest.refresh_seconds', 0);
+
+        // A store of its own each time: an earlier fake()'s counts are gone.
+        $app->make(CacheManager::class)->forgetDriver(self::FAKE_STORE);
 
         // Built on the store the fake replaces, so they are built again on the fake one.
         $app->forgetInstance(LimiterStore::class);
