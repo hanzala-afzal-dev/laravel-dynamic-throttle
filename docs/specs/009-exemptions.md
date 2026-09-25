@@ -34,9 +34,11 @@ Nothing implements them yet.
   - Dry-run rules are exempted like enforcing ones (ADR-0012).
   - An exemption only removes rules from this request. It never rejects, releases or changes a count.
   - SPEC-007 sketched an exemption as `resolve()` returning `null`. A check of its own lets the evaluation name the exemption, and keeps the rule's identity unresolved.
-- **When an exemption check fails**, for example because the client IP cannot be read or a custom resolver throws (open question 2):
-  - The failed check counts as no match. If another exemption of the rule matches, the rule is exempt.
-  - Otherwise the rule counts the request as usual, and the error is listed in the evaluation. SPEC-012 reports it.
+- **The checks run in a fixed order**: IP, then user, then custom scopes by name. They stop at the first match, so a custom resolver runs only when no IP or user exemption of the rule matched.
+  - Within a subject, the matching exemption with the lowest id is the one named, whether it is the rule's or a global one.
+- **When an exemption check fails**, for example because the client IP cannot be read or a custom resolver throws (decision 2):
+  - The failed check counts as no match. If a later check matches, the rule is exempt.
+  - Otherwise the rule counts the request as usual, and the first failed check's error is listed in the evaluation. SPEC-012 reports it.
   - A failing check can therefore never switch limits off.
 - **Storage.** A table `dynamic_throttle_exemptions` (ADR-0020 point 7):
   - Its migration is published under the tag `dynamic-throttle-migrations`, and never loaded (SPEC-005).
@@ -49,11 +51,10 @@ Nothing implements them yet.
     - expired exemptions;
     - exemptions of rules that are not compiled, because they are disabled or invalid;
     - invalid rows, which it skips and reports, as it does for rules.
-  - The manifest never holds a raw user id or custom value: they are hashed with the identity key (ADR-0024, open question 3). IP ranges are kept, normalized, because matching needs them.
-  - Exemptions are grouped by rule and subject when the manifest loads, like the index (ADR-0023). A request then checks only the exemptions of its matched rules:
-    - a set lookup for users and custom values;
-    - a set lookup for single addresses;
-    - one check per range for ranges.
+  - The manifest never holds a raw user id or custom value: they are hashed with the identity key (ADR-0024, decision 3). IP addresses and ranges are kept, normalized, because matching needs them. A single address is a range of one: `/32` or `/128`.
+  - Exemptions are grouped by rule and subject when the manifest loads, like the index (ADR-0023). A request then checks only the exemptions of its matched rules, and the global ones (decision 4):
+    - one set lookup for users, and one per custom scope;
+    - for IP exemptions, one set lookup per prefix length in use, such as `/32`, `/24` and `/8`: the client address is cut to that length and looked up. A thousand ranges cost no more than ten of the same lengths.
 - **Helpers** for writing exemptions before the dashboard and API exist:
   - `Exemption::forIp('10.0.0.0/8')`
   - `Exemption::forUser($user)`
@@ -73,7 +74,7 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
   | Column | Type | Notes |
   |---|---|---|
   | `id` | unsigned big integer, auto-increment | |
-  | `rule_id` | unsigned big integer, nullable | Foreign key to `dynamic_throttle_rules.id`, deleted with the rule. `null` is every rule. The name is open question 5. |
+  | `rule_id` | unsigned big integer, nullable | Foreign key to `dynamic_throttle_rules.id`, deleted with the rule. `null` is every rule. The name is decision 5. |
   | `subject` | string(16) | `ExemptionSubject` |
   | `subject_parameter` | string(64), nullable | The custom scope's name |
   | `value` | string(255) | An address or range, `Class:id`, or a custom value |
@@ -125,9 +126,12 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
   - `tenant` = `acme` exempts a request whose resolver returns `acme`, and not `globex` or `null`.
   - Three rules and two `tenant` exemptions call the resolver once.
   - An exemption for `plan` = `acme` does not match the `tenant` value `acme`.
-- **AC-16 Scope of an exemption:**
+- **AC-16 Scope of an exemption, and which one is named:**
   - A global exemption exempts every matched rule.
   - An exemption for rule `a` exempts `a` only.
+  - A client in a global range (id 3) and a range of rule `a` (id 7) is exempt from `a` by 3.
+  - A matching `ip` exemption stops the checks: the resolver of a `custom` exemption on the same rule is never called.
+  - With `custom` exemptions for `plan` (id 4) and `tenant` (id 2) that both match, the rule is exempt by 4, because `plan` comes first by name.
 - **AC-17 Expiry.** An exemption that expires at T0+60 exempts at T0+59, and not at T0+60, without a new compile.
 
 ### Evaluation
@@ -148,9 +152,9 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
 ### Arch and cost
 - **AC-21 (arch)** `Engine\Exemptions` follows the engine's rules: no database and no wall clock. The expiry check reads the `Clock`.
 - **AC-22** A request with 100 exemptions and a warm manifest runs no database query.
-- **AC-23 (benchmark)** `RuleMatcherBench` gains a manifest with 100 exemptions (50 ranges, 30 users, 20 custom values). The results record, with the hardware:
+- **AC-23 (benchmark)** `RuleMatcherBench` gains manifests with 100 and 1,000 exemptions, each half ranges of four prefix lengths, a third users and the rest custom values. The results record, with the hardware:
   - what they add to decoding;
-  - what checking a request against them costs.
+  - what checking a request against them costs, which should not grow with their number.
 
 ## Interfaces and files
 - `src/Enums/ExemptionSubject.php`
@@ -163,7 +167,7 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
 - `src/Engine/Exemptions/`:
   - `IpRange` parses and matches addresses and ranges.
   - `ExemptionSet` groups exemptions by rule and subject.
-- `src/Engine/Contracts/IdentityResolver.php`: gains `exemption(CompiledRule): ?string`, the id of the exemption that applies.
+- `src/Engine/Contracts/IdentityResolver.php`: gains `exemption(CompiledRule): ?string`, the id of the exemption that applies, or `null`. When no check matched and one failed, it throws that check's `IdentityUnavailableException`.
 - `src/Engine/Stacking/RuleEvaluator.php` and `Evaluation.php`: `exempted` (the rule and the exemption's id) and `exemptionFailures`.
 - `src/Http/RequestIdentityResolver.php`: implements `exemption()` with its memo, the hasher and the clock. It takes the manifest's exemptions: `make(RequestIdentityResolver::class, ['request' => $request, 'exemptions' => $manifest->exemptions])`.
 - Tests:
@@ -198,7 +202,7 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
 - **An exemption and `skip` on the same rule.** The exemption is checked first, so the rule is listed as exempt.
 - **One failing scope, used by an exemption and by the rule itself.** The rule fails (SPEC-008), and the same exception is also listed as a failed exemption check. SPEC-012 reports it once.
 - **Headers.** An exempt rule sets no rate-limit headers, because it counted nothing. When every rule is exempt, the response has none (SPEC-010).
-- **Many exemptions** cost decoding time on every manifest load on PHP-FPM without APCu, and a check per range for each matched rule. AC-23 measures it (open question 4).
+- **Many exemptions** cost decoding time on every manifest load on PHP-FPM without APCu. Checking a request costs one lookup per subject and prefix length, however many there are. AC-23 measures both (decision 4).
 
 ## End-to-end verification
 - `composer test`, `composer analyse`, `composer format:check` and `composer refactor:check`
@@ -208,18 +212,18 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
 
 ## Open questions
 1. **Which clients can be exempted.** Recommendation: `ip` (addresses and ranges), `user` and `custom`.
-   - Not `api_token`: the table would have to keep a secret, or a hash an admin cannot recognize.
-   - Not `header`: a client can send any header value, so a header exemption is a way around every limit (ADR-0009).
-2. **What a failing exemption check does.** Recommendation: the exemption does not apply, and the error is listed for reporting.
-   - The alternative is to fail the rule, but with the default fail-open policy, one broken resolver would then switch off every rule that has an exemption.
-3. **Identifiers in the manifest.** Recommendation: hash user and custom values with the identity key (ADR-0024), and keep IP ranges as written.
-   - The manifest sits in the same cache as the counters, so the reasons for hashing counter keys apply to it.
-   - The cost: rotating `APP_KEY` needs a compile before user and custom exemptions match again.
-4. **A cap on exemptions.** Recommendation: no cap now.
-   - AC-23 measures 100 exemptions.
-   - The Phase 2 exit benchmark sets a limit if needed, and SPEC-016's health check can warn above it.
-5. **The rule column's name.** ADR-0007 calls it `throttle_rule_id`, from before ADR-0020 renamed the tables. Recommendation: `rule_id`.
-   - It is the name Laravel infers for `belongsTo(Rule::class)` and `hasMany(Exemption::class)`, so the relations need no key names.
-   - It matches the manifest's `rule` field.
-   - The alternative, `dynamic_throttle_rule_id`, applies ADR-0020's prefix to the column as well.
-   - Either way, ADR-0007 gets a note that points to this spec.
+   - Laravel's own `throttle` middleware has no exemption list: a named limiter's closure returns `Limit::none()` for the clients it exempts, in code. A `custom` scope keeps that freedom: the app's developers write the resolver, and admins exempt its values.
+   - Not `api_token`: the table would have to keep a secret, or a hash an admin cannot recognize. A token's user can be exempted instead.
+   - Not `header`: a client can send any header value, so a header exemption is a way around every limit (ADR-0009). An app that wants one, such as a secret header for its own services, can read it in a custom scope, deliberately.
+
+The maintainer answered questions 2 to 5 on 2026-09-25, and left 3 and 4 to the best option:
+2. A failed exemption check counts as no match, and the first failed check's error is listed for reporting. Failing the rule instead would, with the default fail-open policy, let one broken resolver switch off every rule that has an exemption.
+3. User and custom values are hashed with the identity key (ADR-0024). IP addresses and ranges are kept, normalized:
+   - Matching needs ranges as they are, and a single address is a range of one, so one code path serves both.
+   - Exempt addresses are a few rows admins chose, not every client's IP, which is what ADR-0024 protects.
+   - The cost: after `APP_KEY` rotates, user and custom exemptions match again from the next compile, at most 5 minutes later with the scheduler. Until then those clients are limited, not let through.
+4. No cap. IP exemptions are grouped by prefix length, so checking a request costs the same with ten or a thousand of them. AC-23 measures 100 and 1,000 exemptions, and the Phase 2 exit benchmark decides whether SPEC-016's health check warns above some number.
+5. The column is `rule_id`:
+   - It is the name Eloquent infers for `belongsTo(Rule::class)` and `hasMany(Exemption::class)`, so the relations need no key names.
+   - It cannot clash with other packages: a column belongs to its table, and ADR-0020 already gave the table a distinctive name.
+   - ADR-0007, which wrote `throttle_rule_id` before ADR-0020 renamed the tables, lists this spec as amending it.
