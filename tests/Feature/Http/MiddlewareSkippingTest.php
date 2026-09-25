@@ -58,7 +58,16 @@ it('AC-6: never limits the paths ADR-0020 excludes, under a * rule', function (s
     expect(array_map(fn (TestResponse $response): int => $response->status(), $excluded))->toBe([200, 200])
         ->and(array_map(Throttling::headers(...), $excluded))->toBe([[], []])
         ->and([$this->get('api/x')->status(), $this->get('api/x')->status()])->toBe([200, 429]);
-})->with(['livewire/update', 'horizon/api/stats', 'up']);
+})->with([
+    'livewire/update',
+    'horizon/api/stats',
+    'up',
+    // Decision 5: the admin tools' root pages, and Livewire 4's endpoint.
+    'horizon',
+    'telescope',
+    'nova',
+    'livewire-3f2a9c1d/update',
+]);
 
 it('AC-6: limits a path once the app removes its pattern from except', function (): void {
     config()->set('dynamic-throttle.except', ['horizon/*', 'up']);

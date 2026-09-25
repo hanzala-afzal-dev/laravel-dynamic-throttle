@@ -142,15 +142,19 @@ it('AC-2: attaches the middleware to no group, and sorts it after no extra middl
     expect(loadPackageConfig()['middleware'])->toBe(['auto_attach' => [], 'after' => []]);
 });
 
-it('AC-6: excludes ADR-0020\'s paths by default', function (): void {
+it('AC-6: excludes ADR-0020\'s paths by default, with the root pages and Livewire 4 (decision 5)', function (): void {
     expect(loadPackageConfig()['except'])->toBe([
+        'horizon',
         'horizon/*',
+        'telescope',
         'telescope/*',
         'pulse',
         'pulse/*',
+        'nova',
         'nova/*',
         'nova-api/*',
         'livewire/*',
+        'livewire-*',
         'broadcasting/auth',
         'sanctum/csrf-cookie',
         'up',
