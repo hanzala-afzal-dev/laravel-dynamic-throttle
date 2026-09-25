@@ -66,13 +66,18 @@ return [
     */
 
     'except' => [
+        'horizon',
         'horizon/*',
+        'telescope',
         'telescope/*',
         'pulse',
         'pulse/*',
+        'nova',
         'nova/*',
         'nova-api/*',
         'livewire/*',
+        // Livewire 4 serves its endpoints under livewire-{hash}/.
+        'livewire-*',
         'broadcasting/auth',
         'sanctum/csrf-cookie',
         'up',
