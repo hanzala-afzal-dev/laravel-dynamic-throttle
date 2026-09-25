@@ -133,3 +133,26 @@ it('AC-17: falls back to /64 for a prefix outside 1 to 128 or not a whole number
         unset($_SERVER['DYNAMIC_THROTTLE_IPV6_PREFIX']);
     }
 })->with(['0', '129', 'wide', '1.5', 'true']);
+
+/*
+| SPEC-010: the middleware section and except (ADR-0020 points 3, 4 and 11).
+*/
+
+it('AC-2: attaches the middleware to no group, and sorts it after no extra middleware, by default', function (): void {
+    expect(loadPackageConfig()['middleware'])->toBe(['auto_attach' => [], 'after' => []]);
+});
+
+it('AC-6: excludes ADR-0020\'s paths by default', function (): void {
+    expect(loadPackageConfig()['except'])->toBe([
+        'horizon/*',
+        'telescope/*',
+        'pulse',
+        'pulse/*',
+        'nova/*',
+        'nova-api/*',
+        'livewire/*',
+        'broadcasting/auth',
+        'sanctum/csrf-cookie',
+        'up',
+    ]);
+});

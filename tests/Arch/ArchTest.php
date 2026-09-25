@@ -59,6 +59,10 @@ arch('the manifest read path never reads the wall clock directly (SPEC-006 AC-19
     ->expect('Afzal\DynamicThrottle\Manifest')
     ->not->toUse($wallClock);
 
+arch('request handling, the middleware included, reads the time only through the Clock (SPEC-010 AC-19)')
+    ->expect('Afzal\DynamicThrottle\Http')
+    ->not->toUse($wallClock);
+
 $databaseAccess = ['Illuminate\Database', DB::class, Schema::class, 'Afzal\DynamicThrottle\Models'];
 
 arch('engine code never touches the database (ADR-0007)')
@@ -104,6 +108,9 @@ arch('enums are string-backed, because their values are stored (SPEC-005 AC-16)'
 dataset('built-in classes the arch rules cannot see', [
     'a "now" date in the engine bypasses travel() (ADR-0006)' => [
         'src/Engine', '/new\s+\\\\?DateTime(?:Immutable)?\s*\(\s*(?:[\'"]now[\'"]\s*)?\)/i',
+    ],
+    'a "now" date in request handling bypasses travel() (SPEC-010 AC-19)' => [
+        'src/Http', '/new\s+\\\\?DateTime(?:Immutable)?\s*\(\s*(?:[\'"]now[\'"]\s*)?\)/i',
     ],
     'PDO in the engine (ADR-0007)' => ['src/Engine', '/\bPDO\b/'],
     'PDO in the middleware (ADR-0007)' => ['src/Http/Middleware', '/\bPDO\b/'],
