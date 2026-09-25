@@ -1,6 +1,6 @@
 # SPEC-010: Middleware, priority, headers and 429
 
-- Status: In progress
+- Status: Done
 - ADRs: ADR-0004, ADR-0006, ADR-0008, ADR-0009, ADR-0010, ADR-0012, ADR-0020, ADR-0021, ADR-0025
 - Roadmap phase: 2
 

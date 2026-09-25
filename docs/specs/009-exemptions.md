@@ -1,6 +1,6 @@
 # SPEC-009: Exemptions
 
-- Status: In progress
+- Status: Done
 - ADRs: ADR-0007, ADR-0008, ADR-0009, ADR-0010, ADR-0012, ADR-0017, ADR-0020, ADR-0023, ADR-0024, ADR-0025
 - Roadmap phase: 2
 
