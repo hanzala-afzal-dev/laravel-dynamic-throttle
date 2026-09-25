@@ -51,6 +51,7 @@ Nothing implements them yet.
     - expired exemptions;
     - exemptions of rules that are not compiled, because they are disabled or invalid;
     - invalid rows, which it skips and reports, as it does for rules.
+  - Without the exemptions table, as after an upgrade whose migration has not run yet, it compiles the rules alone and reports the missing table. Limits keep working, and no client is exempt until the migration runs.
   - The manifest never holds a raw user id or custom value: they are hashed with the identity key (ADR-0024, decision 3). IP addresses and ranges are kept, normalized, because matching needs them. A single address is a range of one: `/32` or `/128`.
   - Exemptions are grouped by rule and subject when the manifest loads, like the index (ADR-0023). A request then checks only the exemptions of its matched rules, and the global ones (decision 4):
     - one set lookup for users, and one per custom scope;
@@ -106,6 +107,10 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
   - a user value without a class and an id;
   - a custom exemption without a scope name, or with a name that is not a scope name;
   - an unknown subject.
+
+  `dynamic-throttle:compile` prints the exemptions after the rules: `Compiled manifest version V: 1 rule, 0 skipped; 1 exemption, 1 skipped.`
+
+  Without the exemptions table, the rules compile with no exemptions, and the missing table is reported.
 - **AC-11** No raw identifier reaches the manifest:
   - `App\Models\User:42` and the custom value `acme` appear nowhere in its JSON.
   - Their `match` is 64 lowercase hex characters, and differs between two app keys.
@@ -161,22 +166,27 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
 - `database/migrations/2026_09_25_000001_create_dynamic_throttle_exemptions_table.php`
 - `src/Models/Exemption.php`, with the helpers, and `Rule::exemptions()`
 - `src/Compiler/ManifestObserver.php`: `RuleObserver`, renamed and registered on both models.
-- `src/Compiler/ManifestCompiler.php` and `CompileResult.php`: compile the exemptions and count them.
-- `src/Manifest/CompiledExemption.php`: an exemption as the manifest stores it, as strict as `CompiledRule`.
-- `src/Manifest/ManifestCodec.php` (format 2) and `Manifest.php` (`exemptions`, and their lookup built at load)
+- `src/Compiler/ManifestCompiler.php`: compiles the exemptions, and hashes their values with `IdentityHasher`.
+- `src/Compiler/CompileResult.php`: gains `exemptions` and `skippedExemptions`, which `dynamic-throttle:compile` prints.
+- `src/Compiler/InvalidExemptionSkipped.php`: what the compiler reports for an invalid row.
+- `src/Manifest/CompiledExemption.php`: an exemption as the manifest stores it, as strict as `CompiledRule`. Its fields are `id`, `rule`, `subject`, `parameter`, `match` and `expiresAt`.
+- `src/Manifest/ManifestCodec.php`: format 2. `encode()` takes the exemptions after the rules.
+- `src/Manifest/Manifest.php`: `new Manifest($version, $rules, $exemptions)`. `$manifest->exemptions` is their `ExemptionSet`, built when the manifest loads.
 - `src/Engine/Exemptions/`:
-  - `IpRange` parses and matches addresses and ranges.
-  - `ExemptionSet` groups exemptions by rule and subject.
+  - `IpRange` parses and normalizes addresses and ranges, reads a client address (unwrapping IPv4-mapped and NAT64 addresses), and cuts an address to a prefix length.
+  - `ExemptionSet` groups exemptions by rule and subject. `match(string $ruleId, int $nowMicroseconds, ExemptionSubjects $subjects): ?string` runs the checks in order, and gives the id of the exemption that applies. `all()` lists the exemptions.
+- `src/Engine/Contracts/ExemptionSubjects.php`: what the request is, for each subject: the client IP, and the hashes of the user and of a custom scope's value. Each may throw `IdentityUnavailableException`.
 - `src/Engine/Contracts/IdentityResolver.php`: gains `exemption(CompiledRule): ?string`, the id of the exemption that applies, or `null`. When no check matched and one failed, it throws that check's `IdentityUnavailableException`.
-- `src/Engine/Stacking/RuleEvaluator.php` and `Evaluation.php`: `exempted` (the rule and the exemption's id) and `exemptionFailures`.
+- `src/Engine/Stacking/RuleEvaluator.php` and `Evaluation.php`: `exempted`, a list of `RuleExemption` (the rule and the exemption's id), and `exemptionFailures`, a list of `RuleFailure`.
 - `src/Http/RequestIdentityResolver.php`: implements `exemption()` with its memo, the hasher and the clock. It takes the manifest's exemptions: `make(RequestIdentityResolver::class, ['request' => $request, 'exemptions' => $manifest->exemptions])`.
 - Tests:
-  - `tests/Feature/Models/ExemptionTest.php`: AC-1, AC-2, AC-5, AC-6
-  - `tests/Drivers/ExemptionSchemaTest.php`: AC-3
+  - `tests/Feature/Models/ExemptionTest.php`: AC-1 to AC-3 on SQLite, AC-5, AC-6
+  - `tests/Drivers/ExemptionSchemaTest.php`: AC-3 on MySQL and PostgreSQL
   - `tests/Unit/Enums/EnumsTest.php`: AC-4
   - `tests/Feature/Compiler/ExemptionCompileTest.php`: AC-7 to AC-11
-  - `tests/Unit/Manifest/ManifestCodecTest.php` and `CompiledExemptionTest.php`: AC-8, AC-12
-  - `tests/Unit/Engine/Exemptions/IpRangeTest.php` and `ExemptionSetTest.php`: the pure parts of AC-13 to AC-17
+  - `tests/Feature/Console/CompileCommandTest.php`: the output in AC-10
+  - `tests/Unit/Manifest/CompiledExemptionTest.php` and `ManifestCodecTest.php`: AC-8, AC-12
+  - `tests/Unit/Engine/Exemptions/IpRangeTest.php` and `ExemptionSetTest.php`: the pure parts of AC-11 and AC-13 to AC-17
   - `tests/Feature/Http/ExemptionMatchingTest.php`: AC-13 to AC-17, AC-20, AC-22
   - `tests/Unit/Engine/Stacking/RuleEvaluatorTest.php`: AC-18 to AC-20
   - `tests/Arch/ArchTest.php`: AC-21
@@ -196,6 +206,7 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
   - A server with this version reads the old manifest as corrupt. One request rebuilds it after its response (SPEC-006).
   - During a rolling deploy, old and new servers rebuild each other's manifests, so rules fall back to what each server last read. On PHP-FPM without APCu, that means no rules at all.
   - The fix is to run `dynamic-throttle:compile` once every server runs the new version.
+- **Upgrading without the migration.** The compiler finds no exemptions table, so it compiles the rules alone and reports the missing table on every compile. Limits keep working, and no client is exempt until the app publishes and runs the migration (ADR-0017).
 - **Proxies.** An `ip` exemption trusts the client IP the app computes. Behind a load balancer that is not a trusted proxy, every client has the balancer's IP, so exempting that IP exempts everyone (ADR-0009). SPEC-016's health check can warn about it.
 - **Rotating `APP_KEY`** changes the hashes. User and custom exemptions stop matching until the next compile: at most 5 minutes with the scheduler, or at once with `dynamic-throttle:compile`. IP exemptions are not affected.
 - **An exemption of a disabled rule** stays in the table, and applies again when the rule is enabled.
