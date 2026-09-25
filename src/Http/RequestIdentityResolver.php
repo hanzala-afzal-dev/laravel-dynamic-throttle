@@ -202,12 +202,10 @@ final class RequestIdentityResolver implements ExemptionSubjects, IdentityResolv
     private function groupedIp(CompiledRule $rule): string
     {
         try {
-            $ip = $this->clientIp();
+            return $this->groupedIp ??= ClientIp::group($this->clientIp(), $this->settings->ipv6Prefix);
         } catch (Throwable $exception) {
             throw IdentityUnavailableException::because("The identity for {$this->scopeName($rule->scope, $rule->scopeParameter)} could not be resolved: the client IP could not be read: {$exception->getMessage()}", $exception);
         }
-
-        return $this->groupedIp ??= ClientIp::group($ip, $this->settings->ipv6Prefix);
     }
 
     /**

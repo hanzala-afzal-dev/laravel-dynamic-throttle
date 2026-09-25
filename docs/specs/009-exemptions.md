@@ -138,7 +138,7 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
   - A client in a global range (id 3) and a range of rule `a` (id 7) is exempt from `a` by 3.
   - A matching `ip` exemption stops the checks: the resolver of a `custom` exemption on the same rule is never called.
   - With `custom` exemptions for `plan` (id 4) and `tenant` (id 2) that both match, the rule is exempt by 4, because `plan` comes first by name.
-- **AC-17 Expiry.** An exemption that expires at T0+60 exempts at T0+59, and not at T0+60, without a new compile. An expiry written in another time zone than the app's, as a date or as text with an offset, keeps its instant.
+- **AC-17 Expiry.** An exemption that expires at T0+60 exempts at T0+59, and not at T0+60, without a new compile. An expiry written through the model in another time zone than the app's, as a date or as text with an offset, keeps its instant.
 
 ### Evaluation
 - **AC-18** An exempt rule:
@@ -212,6 +212,8 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
 - **Proxies.** An `ip` exemption trusts the client IP the app computes. Behind a load balancer that is not a trusted proxy, every client has the balancer's IP, so exempting that IP exempts everyone (ADR-0009). SPEC-016's health check can warn about it.
 - **Rotating `APP_KEY`** changes the hashes. User and custom exemptions stop matching until the next compile: at most 5 minutes with the scheduler, or at once with `dynamic-throttle:compile`. IP exemptions are not affected.
 - **An exemption of a disabled rule** stays in the table, and applies again when the rule is enabled.
+- **Writes that bypass the model.** The query builder writes a date's wall-clock time in the date's own zone, so an expiry from another zone than the app's moves by their difference. It also skips the recompile (SPEC-006). Write exemptions through the model.
+- **Daylight saving time.** The column holds wall-clock time, so in an app zone with daylight saving time, the hour that repeats in autumn is ambiguous: an expiry in its second pass reads back an hour early. Running the app in UTC, as Laravel's default config does, avoids it.
 - **SQLite without foreign keys.** Laravel turns them on by default (`DB_FOREIGN_KEYS`). Without them, deleting a rule leaves its exemptions in the table, and the compiler leaves them out, like those of any rule it does not compile.
 - **An exemption and `skip` on the same rule.** The exemption is checked first, so the rule is listed as exempt.
 - **One failing scope, used by an exemption and by the rule itself.** The rule fails (SPEC-008), and its exemption check is listed as failed too, with the same cause: the same exception for a user or custom scope, and one per request for an unreadable client IP. SPEC-012 reports the cause once.

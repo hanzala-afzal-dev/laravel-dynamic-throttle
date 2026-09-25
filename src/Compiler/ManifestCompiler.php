@@ -198,7 +198,10 @@ final readonly class ManifestCompiler implements ManifestRebuilder
         try {
             return (string) IpRange::parse($value);
         } catch (InvalidArgumentException $exception) {
-            throw new InvalidArgumentException("value must be an IP address or a CIDR range, such as 10.0.0.0/8, got \"{$value}\".", $exception->getCode(), previous: $exception);
+            // Escaped, as IpRange's own message is: a NUL byte makes a log binary to grep.
+            $printable = addcslashes($value, "\0..\37");
+
+            throw new InvalidArgumentException("value must be an IP address or a CIDR range, such as 10.0.0.0/8, got \"{$printable}\".", $exception->getCode(), previous: $exception);
         }
     }
 

@@ -39,7 +39,8 @@ final class ClientIp
             return self::UNKNOWN;
         }
 
-        $bytes = inet_pton($ip);
+        // inet_pton() throws a ValueError for a NUL byte, which no address holds.
+        $bytes = str_contains($ip, "\0") ? false : inet_pton($ip);
 
         // An IPv4 address, or something that is not an IP at all, is used as it is: it is hashed anyway.
         if ($bytes === false || strlen($bytes) === 4) {
