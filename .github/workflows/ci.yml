@@ -260,8 +260,9 @@ jobs:
           MUTATE_PATH: ${{ matrix.path }}
         run: vendor/bin/pest --exclude-group=concurrency --mutate --everything --path="$MUTATE_PATH" --min=85 --parallel
 
-  # Everything but the two stores. None of it needs the services: without them, the
-  # driver tests are skipped, and the score is the same.
+  # Everything but the two stores, without the services, as `composer test` runs: the
+  # driver tests, which only cover the stores, are left out, and the contract suite uses
+  # its in-memory stores. The score is the same as with the services.
   mutation-engine:
     name: Mutation testing · the rest of the engine
     needs: matrix
@@ -284,7 +285,8 @@ jobs:
         run: composer update --prefer-dist --no-interaction --no-progress
 
       - name: Mutation score of at least 85% for the rest of src/Engine
-        run: vendor/bin/pest --exclude-group=concurrency --mutate --everything --path=src/Engine --ignore=src/Engine/Stores/RedisLimiterStore.php,src/Engine/Stores/CacheLimiterStore.php --min=85 --parallel
+        # One flag per group: Pest reads --exclude-group=a,b as a single group named "a,b".
+        run: vendor/bin/pest --exclude-group=concurrency --exclude-group=drivers --mutate --everything --path=src/Engine --ignore=src/Engine/Stores/RedisLimiterStore.php,src/Engine/Stores/CacheLimiterStore.php --min=85 --parallel
 
   static-analysis:
     name: Larastan
