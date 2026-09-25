@@ -5,6 +5,7 @@
 - Roadmap phase: 2–3
 - Amends: [ADR-0004](0004-request-pipeline.md), [ADR-0007](0007-rule-storage-and-distribution.md), [ADR-0008](0008-rule-matching.md), [ADR-0009](0009-scopes-and-identity.md), [ADR-0010](0010-failure-policy.md)
 - Related: ADR-0005, ADR-0017
+- Amended: 2026-09-25, four more `except` defaults for the admin tools' root pages and Livewire 4 (see the decision record)
 
 ## Context
 
@@ -147,3 +148,8 @@ Proposed and accepted on 2026-09-24. The maintainer accepted every point, with r
 - published migrations (point 7)
 - the helper shipping first (point 10)
 - points 11 and 12
+
+Amended on 2026-09-25, after the SPEC-010 review found paths that point 3's defaults miss. The maintainer accepted the recommendation:
+- `horizon`, `telescope` and `nova` join the defaults: `horizon/*` does not match the root page `horizon`. `pulse` was already listed next to `pulse/*`.
+- `livewire-*` joins them too: Livewire 4 serves its endpoints under `livewire-{hash}/`, such as `livewire-3f2a9c1d/update`, where the hash comes from `APP_KEY`. `livewire/*` stays, for Livewire 3.
+- The defaults are now `horizon`, `horizon/*`, `telescope`, `telescope/*`, `pulse`, `pulse/*`, `nova`, `nova/*`, `nova-api/*`, `livewire/*`, `livewire-*`, `broadcasting/auth`, `sanctum/csrf-cookie` and `up`. They change before 0.1.0, because a published config keeps its list whole (point 10).

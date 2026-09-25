@@ -34,7 +34,7 @@ This spec builds it.
 - **For each request**, in this order, the middleware stops at the first step that lets the request through untouched:
   1. **The kill switch.** With `enabled` off, it does nothing (ADR-0011 point 4).
   2. **The package's own routes.** A route whose name starts with `dynamic-throttle.`, such as the dashboard's and its assets' (SPEC-020), is never limited, whatever the rules and `except` say (ADR-0004 point 5).
-  3. **`except`.** Path patterns that no rule ever applies to (ADR-0020 point 3). They are checked like rule patterns: `Str::is` on the decoded path, with a leading slash ignored (SPEC-007). The defaults are ADR-0020's: `horizon/*`, `telescope/*`, `pulse`, `pulse/*`, `nova/*`, `nova-api/*`, `livewire/*`, `broadcasting/auth`, `sanctum/csrf-cookie` and `up`.
+  3. **`except`.** Path patterns that no rule ever applies to (ADR-0020 point 3). They are checked like rule patterns: `Str::is` on the decoded path, with a leading slash ignored (SPEC-007). The defaults are ADR-0020's, as amended after this spec's review (decision 5): `horizon`, `horizon/*`, `telescope`, `telescope/*`, `pulse`, `pulse/*`, `nova`, `nova/*`, `nova-api/*`, `livewire/*`, `livewire-*`, `broadcasting/auth`, `sanctum/csrf-cookie` and `up`.
   4. **The manifest** (SPEC-006) and **matching** (SPEC-007). No matched rule: the request goes through.
   5. **Evaluation** (SPEC-007), with this request's resolver and the manifest's exemptions (SPEC-008, SPEC-009).
 - **The outcome:**
@@ -84,7 +84,7 @@ Feature tests on real routes through Testbench, with rules saved through the mod
 ### Skipping
 - **AC-5** With `enabled` off, a limited route is never limited, sets no headers, and reads nothing from the cache: no manifest and no counter.
 - **AC-6** With a `*` rule of 1 per minute:
-  - `livewire/update`, `horizon/api/stats` and `up` are never limited.
+  - `livewire/update`, `horizon/api/stats` and `up` are never limited, nor are the root pages `horizon`, `telescope` and `nova`, and Livewire 4's `livewire-3f2a9c1d/update` (decision 5).
   - With `livewire/*` removed from `except`, `livewire/update` is limited.
   - A leading slash in an `except` pattern is ignored: `/reports/*` excludes `reports/daily`.
 - **AC-7** A route named `dynamic-throttle.dashboard` is never limited, even with an empty `except`. A route named `dynamic-throttled.home` is.
@@ -176,15 +176,12 @@ Feature tests on real routes through Testbench, with rules saved through the mod
 - `composer bench` (AC-20)
 
 ## Open questions
-The maintainer accepted the recommendations of the first four on 2026-09-25:
+None. The maintainer accepted all five recommendations on 2026-09-25, the fifth after the review:
 1. The class is `DynamicThrottleMiddleware`, behind the alias `dynamic.throttle` that ADR-0004 fixed. `ThrottleRequests` reads well, but it shares its short name with Laravel's, which makes imports in `bootstrap/app.php` collide.
 2. Until SPEC-012, a failure lets the request through, and each one is reported with `report()`. Until SPEC-012 adds the cooldown, an outage reports once per request, and SPEC-012 lands before any release, in the same phase. Letting the request through silently would hide an outage.
 3. An allowed request gets only `X-RateLimit-Limit` and `X-RateLimit-Remaining`, as ADR-0008 and Laravel's `throttle` send. `X-RateLimit-Reset` comes only with the 429, as in Laravel. Among rules with the same remaining, the first in evaluation order gives them, so the headers are stable.
 4. `DynamicThrottle::fake()` covers in-memory counters and the manifest's cache, and nothing more. Rules still come from the rules table, as in production, so a test saves them with the model, and asserts with the response: `assertStatus(429)` and its headers. Assertions such as `DynamicThrottle::assertThrottled()` can come later, if users ask.
-
-Open, from the review:
-5. **The `except` defaults.** ADR-0020 point 3 lists them, and a published config keeps its list whole (ADR-0020 point 10), so they have to be right before 0.1.0. They miss:
-   - the root pages `horizon`, `telescope` and `nova`: `horizon/*` does not match `horizon`;
-   - Livewire 4, which serves `livewire-{hash}/update`, and its scripts and uploads under the same prefix.
-
-   Recommendation: add `horizon`, `telescope`, `nova` and `livewire-*`, and note it in ADR-0020 point 3. `livewire/*` stays, for Livewire 3.
+5. The `except` defaults gain `horizon`, `telescope`, `nova` and `livewire-*`, and ADR-0020 records it.
+   - `horizon/*` does not match the root page `horizon`, and the same goes for `telescope` and `nova`.
+   - Livewire 4 serves its endpoints under `livewire-{hash}/`, such as `livewire-3f2a9c1d/update`. `livewire/*` stays, for Livewire 3.
+   - They change before 0.1.0, because a published config keeps its list whole (ADR-0020 point 10).
