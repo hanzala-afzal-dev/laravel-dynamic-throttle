@@ -369,6 +369,18 @@ it('AC-20: lists one exception for every rule whose ip exemption the unreadable 
         ->and($exceptions[0]->getPrevious())->toBeInstanceOf(ConflictingHeadersException::class);
 });
 
+it('counts a client IP holding a NUL byte on its own, exempts it from nothing, and throws nothing', function (): void {
+    Exemptions::rule();
+    Exemption::forIp('203.0.113.7')->save();
+    $manifest = Exemptions::manifest();
+
+    $evaluation = (new RuleEvaluator(Identities::store()))->evaluate($manifest->rules, Identities::resolver(Identities::request("203.0.113.7\0"), $manifest->exemptions));
+
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Allowed)
+        ->and([$evaluation->exempted, $evaluation->exemptionFailures, $evaluation->failures])->toBe([[], [], []])
+        ->and($evaluation->attempts)->toHaveCount(1);
+});
+
 it('reads the clock once per request for exemptions, and not at all when there are none', function (): void {
     $clock = new class implements Clock
     {

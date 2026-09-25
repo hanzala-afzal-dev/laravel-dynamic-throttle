@@ -69,6 +69,10 @@ it('keeps a value that is not an IP address as it is, because it is hashed anywa
     expect(ClientIp::group('not-an-ip', 64))->toBe('not-an-ip');
 });
 
+it('keeps a value with a NUL byte as it is, where inet_pton() would throw a ValueError', function (): void {
+    expect(ClientIp::group("203.0.113.7\0", 64))->toBe("203.0.113.7\0");
+});
+
 it('rejects a prefix outside 1 to 128, whatever the address', function (string $ip, int $prefix): void {
     expect(fn (): string => ClientIp::group($ip, $prefix))
         ->toThrow(InvalidArgumentException::class, "The IPv6 prefix must be from 1 to 128, got {$prefix}.");

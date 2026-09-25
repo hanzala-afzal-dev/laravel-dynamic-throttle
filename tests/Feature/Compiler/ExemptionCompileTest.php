@@ -147,6 +147,16 @@ it('AC-10: skips and reports an invalid row, and still compiles the others', fun
     'an unknown subject' => [['subject' => 'header', 'value' => 'X-Internal'], 'subject'],
 ]);
 
+it('AC-10: reports a NUL byte escaped, so a log stays text', function (): void {
+    Exceptions::fake();
+    Exemptions::insert(['value' => "10.0.0.1\0/8"]);
+
+    app(ManifestCompiler::class)->compile();
+
+    Exceptions::assertReported(fn (InvalidExemptionSkipped $exception): bool => ! str_contains($exception->getMessage(), "\0")
+        && ! str_contains((string) $exception->getPrevious()?->getMessage(), "\0"));
+});
+
 it('AC-10: compiles the rules alone, and reports the missing table, before the exemptions migration has run', function (): void {
     Exceptions::fake();
     $rule = Exemptions::rule();
@@ -165,6 +175,8 @@ it('AC-17: keeps the instant of an expiry written in another time zone than the 
     // The app runs in New York; one expiry comes from Tokyo, the other as text with an offset.
     config()->set('app.timezone', 'America/New_York');
     date_default_timezone_set('America/New_York');
+    // Carbon 3.8.4 reads dates in the frozen clock's zone, so freeze it in the app's.
+    $this->travelTo(Carbon::createFromTimestamp(FakeClock::T0, 'America/New_York'));
     Exemption::forIp('10.0.0.1')->until(Carbon::createFromTimestamp(FakeClock::T0 + 60, 'Asia/Tokyo'))->save();
     $text = Exemption::forIp('10.0.0.2');
     $text->expires_at = '2027-01-15T17:01:00+09:00';
