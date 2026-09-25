@@ -51,18 +51,28 @@ it('names the field whose value has the wrong type or is unknown', function (str
     'a float window' => ['window_seconds', 60.0, 'window_seconds must be an integer, got float.'],
     'a boolean priority' => ['priority', true, 'priority must be an integer, got bool.'],
     'an unknown mode' => ['mode', 'maybe', 'mode must be one of enforce, dry_run, got "maybe".'],
+    'a mode that is not a string' => ['mode', 1, 'mode must be one of enforce, dry_run, got int.'],
     'an unknown failure policy' => ['on_failure', 'sometimes', 'on_failure must be one of open, closed, got "sometimes".'],
+    'a failure policy that is not a string' => ['on_failure', null, 'on_failure must be one of open, closed, got null.'],
     'an unknown missing-identity policy' => ['on_missing_identity', 'guess', 'on_missing_identity must be one of ip, skip, got "guess".'],
+    'a missing-identity policy that is not a string' => ['on_missing_identity', ['ip'], 'on_missing_identity must be one of ip, skip, got array.'],
     'a response override that is a string' => ['response_override', 'Slow down', 'response_override must be a JSON object.'],
     'a response override that is a list' => ['response_override', ['Slow down'], 'response_override must be a JSON object.'],
     'an integer response override' => ['response_override', 429, 'response_override must be a JSON object.'],
 ]);
 
-it('names the first bad field in the order the manifest writes them', function (): void {
-    $row = [...ManifestFixtures::rule(), 'on_failure' => 'sometimes', 'max_attempts' => '60', 'name' => 7];
+it('names the first bad field in the order the manifest writes them', function (int $first): void {
+    $bad = [
+        'id' => 1, 'name' => 1, 'method' => 1, 'pattern' => 1, 'scope' => 1, 'scope_parameter' => 1, 'max_attempts' => '1',
+        'window_seconds' => '1', 'priority' => '1', 'mode' => 1, 'on_failure' => 1, 'on_missing_identity' => 1, 'response_override' => 1,
+    ];
+    // Every field from the first one on is bad.
+    $row = [...ManifestFixtures::rule(), ...array_slice($bad, $first)];
 
-    expect(fn (): CompiledRule => CompiledRule::fromArray($row))->toThrow(new InvalidArgumentException('name must be a string, got int.'));
-});
+    expect(fn (): CompiledRule => CompiledRule::fromArray($row))->toThrow(function (InvalidArgumentException $exception) use ($first): void {
+        expect($exception->getMessage())->toStartWith(CompiledRule::FIELDS[$first].' must be');
+    });
+})->with(array_combine(CompiledRule::FIELDS, range(0, 12)));
 
 it('checks the types before the rules on the values', function (): void {
     $row = [...ManifestFixtures::rule(), 'id' => 'Rule 1', 'priority' => '1'];
@@ -70,8 +80,14 @@ it('checks the types before the rules on the values', function (): void {
     expect(fn (): CompiledRule => CompiledRule::fromArray($row))->toThrow(new InvalidArgumentException('priority must be an integer, got string.'));
 });
 
-it('accepts null for the optional fields, and an empty response override', function (): void {
-    $rule = CompiledRule::fromArray([...ManifestFixtures::rule(), 'scope_parameter' => null, 'response_override' => []]);
+it('accepts null for the optional fields, and an empty response override', function (?array $override): void {
+    $rule = CompiledRule::fromArray([...ManifestFixtures::rule(), 'scope_parameter' => null, 'response_override' => $override]);
 
-    expect([$rule->scopeParameter, $rule->responseOverride])->toBe([null, []]);
+    expect([$rule->scopeParameter, $rule->responseOverride])->toBe([null, $override]);
+})->with(['a null override' => [null], 'an empty override' => [[]]]);
+
+it('keeps each integer field in its own property', function (): void {
+    $rule = CompiledRule::fromArray([...ManifestFixtures::rule(), 'max_attempts' => 5, 'window_seconds' => 30, 'priority' => 7]);
+
+    expect([$rule->maxAttempts, $rule->windowSeconds, $rule->priority])->toBe([5, 30, 7]);
 });
