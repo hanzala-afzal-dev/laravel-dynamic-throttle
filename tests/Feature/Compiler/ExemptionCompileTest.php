@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Afzal\DynamicThrottle\Compiler\ExemptionsTableMissing;
 use Afzal\DynamicThrottle\Compiler\InvalidExemptionSkipped;
 use Afzal\DynamicThrottle\Compiler\ManifestCompiler;
 use Afzal\DynamicThrottle\Engine\Identity\IdentityHasher;
@@ -156,7 +157,7 @@ it('AC-10: compiles the rules alone, and reports the missing table, before the e
         ->and(array_column(Exemptions::stored()['rules'], 'id'))->toBe([(string) $rule->id])
         ->and([$result->rules, $result->exemptions, $result->skippedExemptions])->toBe([1, 0, 0]);
     Exceptions::assertReportedCount(1);
-    Exceptions::assertReported(fn (Throwable $exception): bool => str_contains($exception->getMessage(), 'dynamic_throttle_exemptions'));
+    Exceptions::assertReported(fn (ExemptionsTableMissing $exception): bool => str_contains($exception->getMessage(), 'dynamic_throttle_exemptions'));
 });
 
 it('AC-11: writes no raw user id or custom value, only their hashes', function (): void {
