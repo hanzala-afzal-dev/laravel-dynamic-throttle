@@ -5,6 +5,7 @@
 - Roadmap phase: 0 to 6
 - Related: ADR-0003, ADR-0005, ADR-0006
 - Amended by: [ADR-0018](0018-minimal-dashboard.md) (Vitest and Playwright replaced by Pest feature tests)
+- Amended: 2026-09-25, mutation testing waits for a PR to leave draft and runs in parallel parts (see the decision record)
 
 ## Context
 
@@ -44,8 +45,10 @@ Tests are the verification loop for Claude Code (ADR-0003), and the only reliabl
 
 ### Mutation testing
 
-- `pest --mutate` on `src/Engine`, minimum score 85%.
-- Run on PRs that touch the engine, and nightly.
+- `pest --mutate` on `src/Engine`, minimum score 85%. CI runs it in parallel parts, and each part must reach 85% on its own.
+- Run on PRs that touch the engine, once they are ready for review, and nightly:
+  - A PR touches the engine when it changes `src/Engine`, a test that covers an engine class, or what every test runs on. `scripts/touches-engine.sh` decides.
+  - A draft PR skips it. Marking the PR ready runs it.
 
 ### CI
 
@@ -89,3 +92,11 @@ Performance numbers are published only from the PHPBench suite, with the hardwar
 - CI is green.
 - The mutation score and coverage are reported on every engine PR.
 - The benchmark results file is committed per release.
+
+## Decision record
+
+Amended on 2026-09-25, after a mutation run took about 8.5 of a pull request's CI minutes on every push. CI had run it on every pull request, not only those that touch the engine. The maintainer accepted the recommendation:
+- Mutation testing runs only on pull requests that touch the engine, as decided above.
+- It runs in three parallel parts: the Redis store, the cache store, and the rest of the engine. The Redis store part takes the longest, and the rest needs no service containers.
+- A draft pull request skips it, and marking the pull request ready runs it.
+- Mutating only the files a pull request changes was rejected for now. The nightly run is off while the repository is private, so nothing would check the whole engine's score. Revisit it when the nightly run is back.
