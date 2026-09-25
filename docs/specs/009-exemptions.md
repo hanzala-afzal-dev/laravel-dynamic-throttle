@@ -19,7 +19,7 @@ Nothing implements them yet.
     - `ip`: an address or a CIDR range, IPv4 or IPv6, such as `203.0.113.7`, `10.0.0.0/8` or `2001:db8::/32`.
       - It matches the client IP as `$request->ip()` returns it, so the app's trusted proxies decide it (ADR-0009).
       - The address is taken whole, before IPv6 grouping.
-      - IPv4-mapped and NAT64 addresses count as their IPv4 address, as in the `ip` scope (SPEC-008).
+      - IPv4-mapped and NAT64 addresses count as their IPv4 address, as in the `ip` scope (SPEC-008). So does an exemption written that way, such as an address copied from a log: `::ffff:203.0.113.7` exempts `203.0.113.7`.
     - `user`: a user, written as its class and id, `App\Models\User:42`. It matches the user the `user` scope finds (SPEC-008): the same guards, and no lookup of its own.
     - `custom`: a value of a registered custom scope, with the scope's name, such as `tenant` = `acme`.
       - It matches exactly, as the scope's counters do: `acme` and `ACME` differ.
@@ -114,7 +114,7 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
 - **AC-11** No raw identifier reaches the manifest:
   - `App\Models\User:42` and the custom value `acme` appear nowhere in its JSON.
   - Their `match` is 64 lowercase hex characters, and differs between two app keys.
-  - Ranges are normalized: `10.0.0.1/8` becomes `10.0.0.0/8`, `2001:DB8::/32` becomes `2001:db8::/32`, and a single address gets `/32` or `/128`.
+  - Ranges are normalized: `10.0.0.1/8` becomes `10.0.0.0/8`, `2001:DB8::/32` becomes `2001:db8::/32`, `::ffff:203.0.113.7` becomes `203.0.113.7/32`, and a single address gets `/32` or `/128`.
 - **AC-12** A manifest with an unknown field in an exemption, a wrong type, or format 1 is corrupt (SPEC-006 AC-16).
 
 ### Matching
@@ -210,6 +210,7 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
 - **Proxies.** An `ip` exemption trusts the client IP the app computes. Behind a load balancer that is not a trusted proxy, every client has the balancer's IP, so exempting that IP exempts everyone (ADR-0009). SPEC-016's health check can warn about it.
 - **Rotating `APP_KEY`** changes the hashes. User and custom exemptions stop matching until the next compile: at most 5 minutes with the scheduler, or at once with `dynamic-throttle:compile`. IP exemptions are not affected.
 - **An exemption of a disabled rule** stays in the table, and applies again when the rule is enabled.
+- **SQLite without foreign keys.** Laravel turns them on by default (`DB_FOREIGN_KEYS`). Without them, deleting a rule leaves its exemptions in the table, and the compiler leaves them out, like those of any rule it does not compile.
 - **An exemption and `skip` on the same rule.** The exemption is checked first, so the rule is listed as exempt.
 - **One failing scope, used by an exemption and by the rule itself.** The rule fails (SPEC-008), and the same exception is also listed as a failed exemption check. SPEC-012 reports it once.
 - **Headers.** An exempt rule sets no rate-limit headers, because it counted nothing. When every rule is exempt, the response has none (SPEC-010).
