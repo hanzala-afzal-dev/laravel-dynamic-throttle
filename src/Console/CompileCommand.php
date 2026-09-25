@@ -28,7 +28,8 @@ final class CompileCommand extends Command
             return self::FAILURE;
         }
 
-        $this->info("Compiled manifest version {$result->version}: {$result->rules} ".Str::plural('rule', $result->rules).", {$result->skipped} skipped.");
+        $this->info("Compiled manifest version {$result->version}: {$result->rules} ".Str::plural('rule', $result->rules).", {$result->skipped} skipped; "
+            ."{$result->exemptions} ".Str::plural('exemption', $result->exemptions).", {$result->skippedExemptions} skipped.");
 
         return self::SUCCESS;
     }

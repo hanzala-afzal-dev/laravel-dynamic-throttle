@@ -157,7 +157,7 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
 ### Arch and cost
 - **AC-21 (arch)** `Engine\Exemptions` follows the engine's rules: no database and no wall clock. The expiry check reads the `Clock`.
 - **AC-22** A request with 100 exemptions and a warm manifest runs no database query.
-- **AC-23 (benchmark)** `RuleMatcherBench` gains manifests with 100 and 1,000 exemptions, each half ranges of four prefix lengths, a third users and the rest custom values. The results record, with the hardware:
+- **AC-23 (benchmark)** `ExemptionSetBench` loads manifests of 100 rules with none, 100 and 1,000 exemptions, each half ranges of four prefix lengths, a third users and the rest custom values. The results record, with the hardware:
   - what they add to decoding;
   - what checking a request against them costs, which should not grow with their number.
 
@@ -190,7 +190,7 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
   - `tests/Feature/Http/ExemptionMatchingTest.php`: AC-13 to AC-17, AC-20, AC-22
   - `tests/Unit/Engine/Stacking/RuleEvaluatorTest.php`: AC-18 to AC-20
   - `tests/Arch/ArchTest.php`: AC-21
-  - `benchmarks/Engine/RuleMatcherBench.php`: AC-23
+  - `benchmarks/Engine/ExemptionSetBench.php`: AC-23, with the results in `benchmarks/results/phase-2-exemptions.md`
 
 ## Out of scope
 - Managing exemptions in the dashboard (SPEC-023), the JSON API (SPEC-017) or Artisan.

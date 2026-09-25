@@ -9,7 +9,9 @@ use Afzal\DynamicThrottle\Enums\MissingIdentity;
 use Afzal\DynamicThrottle\Enums\RequestMethod;
 use Afzal\DynamicThrottle\Enums\RuleMode;
 use Afzal\DynamicThrottle\Enums\Scope;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -33,6 +35,7 @@ use Illuminate\Support\Carbon;
  * @property bool $enabled
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
+ * @property-read Collection<int, Exemption> $exemptions
  */
 final class Rule extends Model
 {
@@ -69,6 +72,16 @@ final class Rule extends Model
         'on_missing_identity' => 'ip',
         'enabled' => true,
     ];
+
+    /**
+     * The exemptions of this rule alone (SPEC-009). Deleting the rule deletes them.
+     *
+     * @return HasMany<Exemption, $this>
+     */
+    public function exemptions(): HasMany
+    {
+        return $this->hasMany(Exemption::class);
+    }
 
     /**
      * The connection from config('dynamic-throttle.database.connection'), or the app's

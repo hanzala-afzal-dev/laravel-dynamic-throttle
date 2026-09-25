@@ -15,7 +15,8 @@ use Afzal\DynamicThrottle\Manifest\CompiledRule;
 /**
  * Counts a request on each of its matched rules, in order (ADR-0008, SPEC-007).
  * The first enforcing rule that rejects it stops evaluation, and every count
- * made so far is released, so a rejected request counts nowhere.
+ * made so far is released, so a rejected request counts nowhere. A rule the
+ * client is exempt from counts nothing (SPEC-009).
  */
 final readonly class RuleEvaluator
 {
@@ -32,6 +33,7 @@ final readonly class RuleEvaluator
      * Never throws a StorageUnavailableException or an IdentityUnavailableException.
      * An identity that cannot be resolved fails only its own rule (SPEC-008), a
      * failed attempt stops evaluation, and a failed release is listed (ADR-0021).
+     * So is a failed exemption check, which exempts nothing (SPEC-009).
      *
      * @param  list<CompiledRule>  $rules  the matched rules, in manifest order
      */
@@ -42,6 +44,8 @@ final readonly class RuleEvaluator
         $wouldBlock = [];
         $skipped = [];
         $ignored = [];
+        $exempted = [];
+        $exemptionFailures = [];
         // Attempts left for each mode: a rule that does not apply takes none, and a
         // dry-run rule never takes an enforcing rule's (ADR-0025).
         $slots = [RuleMode::Enforce->value => $this->maxRulesPerRequest, RuleMode::DryRun->value => $this->maxRulesPerRequest];
@@ -49,6 +53,21 @@ final readonly class RuleEvaluator
         foreach ($rules as $rule) {
             if ($slots[$rule->mode->value] === 0) {
                 $ignored[] = $rule;
+
+                continue;
+            }
+
+            try {
+                $exemption = $identities->exemption($rule);
+            } catch (IdentityUnavailableException $exception) {
+                // A check that fails exempts nothing, so it can never switch a limit off.
+                $exemptionFailures[] = new RuleFailure($rule, $exception);
+                $exemption = null;
+            }
+
+            // An exempt rule does not apply to the request: no attempt, no slot, no identity.
+            if ($exemption !== null) {
+                $exempted[] = new RuleExemption($rule, $exemption);
 
                 continue;
             }
@@ -72,7 +91,7 @@ final readonly class RuleEvaluator
                 $attempt = $this->store->attempt(new CounterKey($rule->id, $identity), $rule->maxAttempts, $rule->windowSeconds);
             } catch (StorageUnavailableException $exception) {
                 // The later rules count on the same store, so they would fail too.
-                return Evaluation::failed([...$failures, new RuleFailure($rule, $exception)], $attempts, $wouldBlock, $skipped, $ignored);
+                return Evaluation::failed([...$failures, new RuleFailure($rule, $exception)], $attempts, $wouldBlock, $skipped, $ignored, $exempted, $exemptionFailures);
             }
 
             $slots[$rule->mode->value]--;
@@ -83,13 +102,15 @@ final readonly class RuleEvaluator
                 // Not counted, and not enforced (ADR-0012).
                 $wouldBlock[] = new RuleAttempt($rule, $attempt);
             } else {
-                return $this->reject(new RuleAttempt($rule, $attempt), $attempts, $failures, $wouldBlock, $skipped, $ignored);
+                [$settled, $releaseFailures] = $this->release($attempts);
+
+                return Evaluation::rejected(new RuleAttempt($rule, $attempt), $settled, $failures, $wouldBlock, $skipped, $releaseFailures, $ignored, $exempted, $exemptionFailures);
             }
         }
 
         return $failures === []
-            ? Evaluation::allowed($attempts, $wouldBlock, $skipped, $ignored)
-            : Evaluation::failed($failures, $attempts, $wouldBlock, $skipped, $ignored);
+            ? Evaluation::allowed($attempts, $wouldBlock, $skipped, $ignored, $exempted, $exemptionFailures)
+            : Evaluation::failed($failures, $attempts, $wouldBlock, $skipped, $ignored, $exempted, $exemptionFailures);
     }
 
     /**
@@ -98,12 +119,9 @@ final readonly class RuleEvaluator
      * request stays rejected.
      *
      * @param  list<RuleAttempt>  $attempts
-     * @param  list<RuleFailure>  $failures
-     * @param  list<RuleAttempt>  $wouldBlock
-     * @param  list<CompiledRule>  $skipped
-     * @param  list<CompiledRule>  $ignored
+     * @return array{list<RuleAttempt>, list<RuleFailure>} the attempts, marked if released, and the releases that failed
      */
-    private function reject(RuleAttempt $rejection, array $attempts, array $failures, array $wouldBlock, array $skipped, array $ignored): Evaluation
+    private function release(array $attempts): array
     {
         $settled = [];
         $releaseFailures = [];
@@ -118,6 +136,6 @@ final readonly class RuleEvaluator
             }
         }
 
-        return Evaluation::rejected($rejection, $settled, $failures, $wouldBlock, $skipped, $releaseFailures, $ignored);
+        return [$settled, $releaseFailures];
     }
 }
