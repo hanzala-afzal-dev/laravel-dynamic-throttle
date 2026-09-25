@@ -103,6 +103,11 @@ function evaluateWithContainer(int $count): Evaluation
 
     return app(RuleEvaluator::class)->evaluate($rules, new class implements IdentityResolver
     {
+        public function exemption(CompiledRule $rule): ?string
+        {
+            return null;
+        }
+
         public function resolve(CompiledRule $rule): string
         {
             return hash('sha256', 'client');

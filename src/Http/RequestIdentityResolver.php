@@ -18,6 +18,7 @@ use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Http\Request;
+use LogicException;
 use Stringable;
 use Throwable;
 
@@ -42,6 +43,11 @@ final class RequestIdentityResolver implements IdentityResolver
         private readonly IdentityHasher $hasher,
         private readonly IdentitySettings $settings,
     ) {}
+
+    public function exemption(CompiledRule $rule): ?string
+    {
+        throw new LogicException("Not implemented yet (SPEC-009): {$rule->id}");
+    }
 
     public function resolve(CompiledRule $rule): ?string
     {

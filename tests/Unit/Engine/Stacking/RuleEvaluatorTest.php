@@ -14,6 +14,7 @@ use Afzal\DynamicThrottle\Engine\Stacking\Evaluation;
 use Afzal\DynamicThrottle\Engine\Stacking\EvaluationOutcome;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleAttempt;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
+use Afzal\DynamicThrottle\Engine\Stacking\RuleExemption;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleFailure;
 use Afzal\DynamicThrottle\Engine\Stores\CacheLimiterStore;
 use Afzal\DynamicThrottle\Enums\RuleMode;
@@ -24,7 +25,7 @@ use Afzal\DynamicThrottle\Tests\Support\ManifestFixtures;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository;
 
-covers(RuleEvaluator::class, Evaluation::class, RuleAttempt::class, RuleFailure::class);
+covers(RuleEvaluator::class, Evaluation::class, RuleAttempt::class, RuleFailure::class, RuleExemption::class);
 
 /*
 | SPEC-007 AC-9 to AC-16: stacking (ADR-0008). The cache driver on the array
@@ -66,6 +67,11 @@ function oneClient(array $notApplying = []): IdentityResolver
          * @param  list<string>  $notApplying
          */
         public function __construct(private array $notApplying) {}
+
+        public function exemption(CompiledRule $rule): ?string
+        {
+            return null;
+        }
 
         public function resolve(CompiledRule $rule): ?string
         {
@@ -144,6 +150,11 @@ function failingIdentities(array $unresolvable): IdentityResolver
          * @param  list<string>  $unresolvable
          */
         public function __construct(private array $unresolvable) {}
+
+        public function exemption(CompiledRule $rule): ?string
+        {
+            return null;
+        }
 
         public function resolve(CompiledRule $rule): string
         {
@@ -430,6 +441,11 @@ it('ADR-0025: never resolves the identity of an ignored rule', function (): void
          */
         public function __construct(private array &$resolved) {}
 
+        public function exemption(CompiledRule $rule): ?string
+        {
+            return null;
+        }
+
         public function resolve(CompiledRule $rule): string
         {
             $this->resolved[] = $rule->id;
@@ -442,4 +458,175 @@ it('ADR-0025: never resolves the identity of an ignored rule', function (): void
     (new RuleEvaluator($stack->store, 5))->evaluate($rules, $identities);
 
     expect($resolved)->toBe(['e1', 'e2', 'e3', 'e4', 'e5']);
+});
+
+/*
+| SPEC-009 AC-18 to AC-20: exemptions. An exempt rule does not apply to the
+| request: it makes no attempt, takes no slot, and never has its identity
+| resolved. A failed exemption check exempts nothing.
+*/
+
+/**
+ * One client, exempt from some rules, whose exemption checks fail on others.
+ * It records the rules whose exemptions it checked, and those it resolved.
+ *
+ * @param  array<string, string>  $exempt  each exempt rule's id, with the id of its exemption
+ * @param  list<string>  $failingChecks  the ids of the rules whose exemption check fails
+ * @return IdentityResolver&object{checked: list<string>, resolved: list<string>}
+ */
+function exemptClient(array $exempt, array $failingChecks = []): IdentityResolver
+{
+    return new class($exempt, $failingChecks) implements IdentityResolver
+    {
+        /** @var list<string> */
+        public array $checked = [];
+
+        /** @var list<string> */
+        public array $resolved = [];
+
+        /**
+         * @param  array<string, string>  $exempt
+         * @param  list<string>  $failingChecks
+         */
+        public function __construct(
+            private readonly array $exempt,
+            private readonly array $failingChecks,
+        ) {}
+
+        public function exemption(CompiledRule $rule): ?string
+        {
+            $this->checked[] = $rule->id;
+
+            return in_array($rule->id, $this->failingChecks, true)
+                ? throw IdentityUnavailableException::because("The exemptions of {$rule->id} could not be checked.")
+                : $this->exempt[$rule->id] ?? null;
+        }
+
+        public function resolve(CompiledRule $rule): string
+        {
+            $this->resolved[] = $rule->id;
+
+            return hash('sha256', 'client');
+        }
+    };
+}
+
+/**
+ * @param  list<RuleExemption>  $exempted
+ * @return list<array{string, string}>
+ */
+function exemptedSummary(array $exempted): array
+{
+    return array_map(fn (RuleExemption $exemption): array => [$exemption->rule->id, $exemption->exemptionId], $exempted);
+}
+
+it('SPEC-009 AC-18: makes no attempt for an exempt rule, lists it with its exemption, and never resolves its identity', function (): void {
+    $stack = stackStore();
+    $client = exemptClient(['a' => '7']);
+
+    $evaluation = (new RuleEvaluator($stack->store))->evaluate([stackRule('a', 5, 10), stackRule('b', 5, 20)], $client);
+
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Allowed)
+        ->and(attemptSummary($evaluation->attempts))->toBe([['b', false]])
+        ->and(exemptedSummary($evaluation->exempted))->toBe([['a', '7']])
+        ->and([stackCount($stack->cache, 'a'), stackCount($stack->cache, 'b')])->toBe([0, 1])
+        ->and([$evaluation->skipped, $evaluation->failures, $evaluation->exemptionFailures])->toBe([[], [], []])
+        ->and([$client->checked, $client->resolved])->toBe([['a', 'b'], ['b']]);
+});
+
+it('SPEC-009 AC-18: gives an exempt rule no slot, so the rule after it still counts (ADR-0025)', function (): void {
+    $stack = stackStore();
+    $rules = matchedForCap([stackRule('exempt', 100, 1), stackRule('counting', 100, 2)]);
+
+    $evaluation = (new RuleEvaluator($stack->store, 1))->evaluate($rules, exemptClient(['exempt' => '7']));
+
+    expect(attemptSummary($evaluation->attempts))->toBe([['counting', false]])
+        ->and(exemptedSummary($evaluation->exempted))->toBe([['exempt', '7']])
+        ->and($evaluation->ignored)->toBe([]);
+});
+
+it('SPEC-009: applies the cap before exemptions, so an ignored rule\'s exemptions are never checked', function (): void {
+    $stack = stackStore();
+    $rules = matchedForCap([stackRule('e1', 100, 1), stackRule('e2', 100, 2)]);
+    $client = exemptClient(['e2' => '7']);
+
+    $evaluation = (new RuleEvaluator($stack->store, 1))->evaluate($rules, $client);
+
+    expect(ruleIds($evaluation->ignored))->toBe(['e2'])
+        ->and($evaluation->exempted)->toBe([])
+        ->and($client->checked)->toBe(['e1']);
+});
+
+it('SPEC-009 AC-19: still counts, and rejects, a client exempt from a strict rule on a lenient rule of the same path', function (): void {
+    $stack = stackStore();
+    $rules = [stackRule('strict', 1, 10), stackRule('lenient', 2, 20)];
+    $evaluator = new RuleEvaluator($stack->store);
+    $client = exemptClient(['strict' => '7']);
+
+    $first = $evaluator->evaluate($rules, $client);
+    $second = $evaluator->evaluate($rules, $client);
+    $third = $evaluator->evaluate($rules, $client);
+
+    expect([$first->outcome, $second->outcome, $third->outcome])->toBe([EvaluationOutcome::Allowed, EvaluationOutcome::Allowed, EvaluationOutcome::Rejected])
+        ->and($third->rejection?->rule->id)->toBe('lenient')
+        ->and(exemptedSummary($third->exempted))->toBe([['strict', '7']])
+        ->and(stackCount($stack->cache, 'strict'))->toBe(0);
+});
+
+it('SPEC-009 AC-19: exempts a dry-run rule like an enforcing one (ADR-0012)', function (): void {
+    $stack = stackStore();
+    $evaluator = new RuleEvaluator($stack->store);
+    $rules = [stackRule('d', 1, 10, RuleMode::DryRun)];
+    $client = exemptClient(['d' => '7']);
+
+    $first = $evaluator->evaluate($rules, $client);
+    $second = $evaluator->evaluate($rules, $client);
+
+    expect([$first->attempts, $second->attempts, $second->wouldBlock])->toBe([[], [], []])
+        ->and(exemptedSummary($second->exempted))->toBe([['d', '7']])
+        ->and(stackCount($stack->cache, 'd'))->toBe(0);
+});
+
+it('SPEC-009 AC-18 and AC-20: keeps the exempt rules and the failed checks when a later rule rejects, or fails', function (): void {
+    $stack = stackStore();
+    $client = exemptClient(['x' => '7'], failingChecks: ['y']);
+    $rules = [stackRule('x', 5, 1), stackRule('y', 5, 2), stackRule('r', 1, 3)];
+    $evaluator = new RuleEvaluator($stack->store);
+
+    $evaluator->evaluate($rules, $client);
+    $rejected = $evaluator->evaluate($rules, $client);
+    $failed = (new RuleEvaluator(failingFor($stack->store, attemptsOf: 'down')))
+        ->evaluate([stackRule('x', 5, 1), stackRule('y', 5, 2), stackRule('down', 5, 3)], $client);
+
+    expect([$rejected->outcome, $failed->outcome])->toBe([EvaluationOutcome::Rejected, EvaluationOutcome::Failed])
+        ->and([exemptedSummary($rejected->exempted), exemptedSummary($failed->exempted)])->toBe([[['x', '7']], [['x', '7']]])
+        ->and(failureSummary($rejected->exemptionFailures))->toBe([['y', 'The exemptions of y could not be checked.']])
+        ->and(failureSummary($failed->exemptionFailures))->toBe([['y', 'The exemptions of y could not be checked.']])
+        ->and(failureSummary($failed->failures))->toBe([['down', 'The store is down.']]);
+});
+
+it('SPEC-009 AC-20: counts the request on a rule whose exemption check failed, lists the failure, and throws nothing', function (): void {
+    $stack = stackStore();
+    $client = exemptClient([], failingChecks: ['a']);
+
+    $evaluation = (new RuleEvaluator($stack->store))->evaluate([stackRule('a', 5, 10), stackRule('b', 5, 20)], $client);
+
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Allowed)
+        ->and(attemptSummary($evaluation->attempts))->toBe([['a', false], ['b', false]])
+        ->and(failureSummary($evaluation->exemptionFailures))->toBe([['a', 'The exemptions of a could not be checked.']])
+        ->and([$evaluation->failures, $evaluation->exempted])->toBe([[], []])
+        ->and($client->resolved)->toBe(['a', 'b']);
+});
+
+it('SPEC-009 AC-20: still rejects on a rule whose exemption check failed', function (): void {
+    $stack = stackStore();
+    $client = exemptClient([], failingChecks: ['a']);
+    $evaluator = new RuleEvaluator($stack->store);
+
+    $evaluator->evaluate([stackRule('a', 1, 10)], $client);
+    $second = $evaluator->evaluate([stackRule('a', 1, 10)], $client);
+
+    expect($second->outcome)->toBe(EvaluationOutcome::Rejected)
+        ->and($second->rejection?->rule->id)->toBe('a')
+        ->and(failureSummary($second->exemptionFailures))->toBe([['a', 'The exemptions of a could not be checked.']]);
 });

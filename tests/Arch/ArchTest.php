@@ -27,8 +27,9 @@ use Illuminate\Support\Facades\Schema;
 | The rules only see direct dependencies, so every request-path namespace
 | gets its own rules. A namespace's rules cover its sub-namespaces (checked
 | with a probe in Engine\Matching), so Engine\Matching and Engine\Stacking
-| fall under the engine's (SPEC-007 AC-18), and so does Engine\Identity
-| (SPEC-008 AC-18). Reading identities from the request lives in Http, which
+| fall under the engine's (SPEC-007 AC-18), and so do Engine\Identity
+| (SPEC-008 AC-18) and Engine\Exemptions (SPEC-009 AC-21), whose expiry check
+| reads the Clock. Reading identities from the request lives in Http, which
 | has its own rules.
 |
 */

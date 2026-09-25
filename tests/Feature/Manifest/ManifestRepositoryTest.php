@@ -171,7 +171,7 @@ it('AC-16: treats a corrupt manifest as missing, and reports it', function (stri
     Exceptions::assertReported(InvalidManifest::class);
 })->with([
     'not JSON' => ['{'],
-    'another format' => ['{"format":2,"version":1,"rules":[]}'],
+    'format 1, from before exemptions (SPEC-009 AC-12)' => ['{"format":1,"version":1,"rules":[]}'],
 ]);
 
 it('AC-17: treats a store that throws as missing, never throws, and reports once per 30 seconds', function (): void {

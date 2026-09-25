@@ -13,6 +13,16 @@ use Afzal\DynamicThrottle\Manifest\CompiledRule;
 interface IdentityResolver
 {
     /**
+     * The id of the exemption that frees the client from this rule, or null
+     * (SPEC-009). The evaluator asks before resolve(), and resolves nothing for
+     * an exempt rule.
+     *
+     * @throws IdentityUnavailableException when no exemption matched and one could
+     *                                      not be checked; the rule then counts
+     */
+    public function exemption(CompiledRule $rule): ?string;
+
+    /**
      * The SHA-256 hash of the client's identity for this rule, or null when the rule does
      * not apply to this request: a missing identity with "skip" (ADR-0022), or an exemption.
      *
