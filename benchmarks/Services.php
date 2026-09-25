@@ -34,6 +34,16 @@ final class Services
         ]);
     }
 
+    /**
+     * The local Redis as a connection in Laravel's database.redis config.
+     *
+     * @return array{host: string, port: int, database: int}
+     */
+    public static function redisConnection(): array
+    {
+        return ['host' => self::env('REDIS_HOST', '127.0.0.1'), 'port' => (int) self::env('REDIS_PORT', '6379'), 'database' => 0];
+    }
+
     public static function cache(string $store): Repository
     {
         return match ($store) {
