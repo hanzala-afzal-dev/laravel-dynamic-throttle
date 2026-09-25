@@ -285,8 +285,9 @@ jobs:
         run: composer update --prefer-dist --no-interaction --no-progress
 
       - name: Mutation score of at least 85% for the rest of src/Engine
-        # One flag per group: Pest reads --exclude-group=a,b as a single group named "a,b".
-        run: vendor/bin/pest --exclude-group=concurrency --exclude-group=drivers --mutate --everything --path=src/Engine --ignore=src/Engine/Stores/RedisLimiterStore.php,src/Engine/Stores/CacheLimiterStore.php --min=85 --parallel
+        # One --exclude-group only: Pest 4, which PHP 8.3 installs, ignores a second one. The
+        # concurrency tests are all in tests/Drivers, so they are left out with the rest.
+        run: vendor/bin/pest --exclude-group=drivers --mutate --everything --path=src/Engine --ignore=src/Engine/Stores/RedisLimiterStore.php,src/Engine/Stores/CacheLimiterStore.php --min=85 --parallel
 
   static-analysis:
     name: Larastan
