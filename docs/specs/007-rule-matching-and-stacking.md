@@ -2,7 +2,7 @@
 
 - Status: Done
 - ADRs: ADR-0006, ADR-0008, ADR-0010, ADR-0012, ADR-0020, ADR-0021, ADR-0023
-- Amended by: ADR-0025 (the cap counts attempts, per mode), SPEC-008 (identity errors fail only their own rule)
+- Amended by: ADR-0025 (the cap counts attempts, per mode), SPEC-008 (identity errors fail only their own rule), SPEC-009 (exemptions have a check of their own, after the cap and before the identity, not a null identity)
 - Roadmap phase: 2
 
 ## Problem

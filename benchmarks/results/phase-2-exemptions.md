@@ -8,7 +8,7 @@ SPEC-009 AC-23 asks what exemptions add to every manifest load, and what checkin
   - `benchDecode` is a whole manifest load: `json_decode`, every rule's and every exemption's checks, the rule index and the exemption set. Each iteration is 100 loads, 10 iterations after one warm-up.
   - `benchCheck` is one rule's check for a request that no exemption frees, so every subject is asked and every prefix length looked up: the most a check costs. The request's user and custom values arrive hashed, as the resolver gives them. Each iteration is 1,000 checks.
   - The manifests hold 100 rules, and none, 100 or 1,000 exemptions. Half are IPv4 ranges of four prefix lengths (`/32` and `/16` global, `/24` and `/8` of the checked rule), a third are the checked rule's users, and the rest are global custom values.
-- Raw data: `phase-2-exemptions.xml`, next to this file. `vendor/bin/phpbench report --file=benchmarks/results/phase-2-exemptions.xml --report=engine` prints the table.
+- Raw data: `phase-2-exemptions.xml`, next to this file, holds run 2. Run 1's numbers are from its console output. `vendor/bin/phpbench report --file=benchmarks/results/phase-2-exemptions.xml --report=engine` prints the table.
 
 ## Machine
 - A Claude Code cloud container: a KVM guest with 4 vCPUs of an Intel Xeon at 2.80 GHz and 15 GiB of RAM. The hardware is shared with other tenants.
@@ -26,9 +26,10 @@ Mode per operation, from two runs:
 | 1,000 | 2,867 µs | 2,789 µs | 2.48 µs | 2.53 µs |
 
 - **A check does not grow with the number of exemptions.** 100 and 1,000 differ by less than the noise: the Phase 1 baseline treats differences under 20% as noise (`phase-1-baseline.md`). A rule with no exemptions, own or global, costs 0.1 µs.
+- On the request path, the resolver adds one clock read per request, about 1.4 µs with Laravel's clock (`phase-1-baseline.md`), and none when the manifest has no exemptions.
 - **A load grows with them**, by about 2.5 µs per exemption: 100 exemptions add about a quarter of a millisecond, and 1,000 add about 2.5 ms.
 
-Where a load of 100 rules and 1,000 exemptions goes, timed part by part with `hrtime()` by a throwaway script (best of 10 rounds of 20 loads, run as `php -d opcache.enable_cli=1 -d pcov.enabled=0`, as PHPBench runs):
+Where a load of 100 rules and 1,000 exemptions goes, timed part by part with `hrtime()` by a throwaway script, which is not kept (best of 10 rounds of 20 loads, run as `php -d opcache.enable_cli=1 -d pcov.enabled=0`, as PHPBench runs):
 
 | Part | Time |
 |---|---:|

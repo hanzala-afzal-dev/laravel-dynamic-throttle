@@ -1,7 +1,7 @@
 # SPEC-009: Exemptions
 
 - Status: In progress
-- ADRs: ADR-0007, ADR-0008, ADR-0009, ADR-0010, ADR-0012, ADR-0017, ADR-0020, ADR-0024, ADR-0025
+- ADRs: ADR-0007, ADR-0008, ADR-0009, ADR-0010, ADR-0012, ADR-0017, ADR-0020, ADR-0023, ADR-0024, ADR-0025
 - Roadmap phase: 2
 
 ## Problem
@@ -25,7 +25,7 @@ Nothing implements them yet.
       - It matches exactly, as the scope's counters do: `acme` and `ACME` differ.
       - The resolver runs at most once per request, for exemptions and rules together.
   - **a rule**: one rule's id, or none for every rule (ADR-0008).
-  - **an expiry**: optional. From that second on, the exemption is ignored, even before the next compile.
+  - **an expiry**: optional. From that second on, the exemption is ignored, even before the next compile. An expiry in another time zone than the app's keeps its instant.
   - **a reason**: optional text for admins.
 - **In the evaluator** (SPEC-007), for each matched rule:
   - The order is: the cap (ADR-0025), then exemptions, then the rule's identity (SPEC-008).
@@ -80,7 +80,7 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
   | `subject_parameter` | string(64), nullable | The custom scope's name |
   | `value` | string(255) | An address or range, `Class:id`, or a custom value |
   | `reason` | string(255), nullable | |
-  | `expires_at` | timestamp, nullable | `null` never expires |
+  | `expires_at` | datetime, nullable | `null` never expires. A datetime, not a timestamp: MySQL's TIMESTAMP ends in January 2038. |
   | `created_at`, `updated_at` | timestamps | |
 - **AC-2** The migration uses `database.connection`, is published with the rules migration, and is never loaded (SPEC-005 AC-8, AC-10).
 - **AC-3 (drivers)** On SQLite, MySQL and PostgreSQL:
@@ -93,6 +93,7 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
   - `forUser` of user 42 of `App\Models\User` gives value `App\Models\User:42`.
   - `forCustom('tenant', 'acme')` gives parameter `tenant` and value `acme`.
   - `forRule`, `until` and `because` set `rule_id`, `expires_at` and `reason`.
+  - `forRule` refuses a rule that is not saved: its missing id would exempt the client from every rule.
 
 ### Compiling
 - **AC-7** Saving or deleting an exemption bumps the manifest's version after the transaction commits. A save inside a transaction that rolls back leaves the manifest unchanged.
@@ -102,7 +103,7 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
   - an exemption of a disabled rule;
   - an exemption of a rule the compiler skipped as invalid.
 - **AC-10** These rows are skipped and reported, and the rest compile:
-  - an address or range that is not one (`10.0.0.0/33`, `2001:db8::/129`, `not-an-ip`, `10.0.0.1/-1`);
+  - an address or range that is not one (`10.0.0.0/33`, `2001:db8::/129`, `not-an-ip`, `10.0.0.1/-1`, or one with a NUL byte);
   - an empty value;
   - a user value without a class and an id;
   - a custom exemption without a scope name, or with a name that is not a scope name;
@@ -137,7 +138,7 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
   - A client in a global range (id 3) and a range of rule `a` (id 7) is exempt from `a` by 3.
   - A matching `ip` exemption stops the checks: the resolver of a `custom` exemption on the same rule is never called.
   - With `custom` exemptions for `plan` (id 4) and `tenant` (id 2) that both match, the rule is exempt by 4, because `plan` comes first by name.
-- **AC-17 Expiry.** An exemption that expires at T0+60 exempts at T0+59, and not at T0+60, without a new compile.
+- **AC-17 Expiry.** An exemption that expires at T0+60 exempts at T0+59, and not at T0+60, without a new compile. An expiry written in another time zone than the app's, as a date or as text with an offset, keeps its instant.
 
 ### Evaluation
 - **AC-18** An exempt rule:
@@ -156,7 +157,7 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
 
 ### Arch and cost
 - **AC-21 (arch)** `Engine\Exemptions` follows the engine's rules: no database and no wall clock. The expiry check reads the `Clock`.
-- **AC-22** A request with 100 exemptions and a warm manifest runs no database query.
+- **AC-22** A request with 100 exemptions and a warm manifest runs no database query. The resolver reads the clock once per request, and not at all when the manifest has no exemptions.
 - **AC-23 (benchmark)** `ExemptionSetBench` loads manifests of 100 rules with none, 100 and 1,000 exemptions, each half ranges of four prefix lengths, a third users and the rest custom values. The results record, with the hardware:
   - what they add to decoding;
   - what checking a request against them costs, which should not grow with their number.
@@ -169,6 +170,7 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
 - `src/Compiler/ManifestCompiler.php`: compiles the exemptions, and hashes their values with `IdentityHasher`.
 - `src/Compiler/CompileResult.php`: gains `exemptions` and `skippedExemptions`, which `dynamic-throttle:compile` prints.
 - `src/Compiler/InvalidExemptionSkipped.php`: what the compiler reports for an invalid row.
+- `src/Compiler/ExemptionsTableMissing.php`: what it reports when the table does not exist.
 - `src/Manifest/CompiledExemption.php`: an exemption as the manifest stores it, as strict as `CompiledRule`. Its fields are `id`, `rule`, `subject`, `parameter`, `match` and `expiresAt`.
 - `src/Manifest/ManifestCodec.php`: format 2. `encode()` takes the exemptions after the rules.
 - `src/Manifest/Manifest.php`: `new Manifest($version, $rules, $exemptions)`. `$manifest->exemptions` is their `ExemptionSet`, built when the manifest loads.
@@ -212,7 +214,7 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
 - **An exemption of a disabled rule** stays in the table, and applies again when the rule is enabled.
 - **SQLite without foreign keys.** Laravel turns them on by default (`DB_FOREIGN_KEYS`). Without them, deleting a rule leaves its exemptions in the table, and the compiler leaves them out, like those of any rule it does not compile.
 - **An exemption and `skip` on the same rule.** The exemption is checked first, so the rule is listed as exempt.
-- **One failing scope, used by an exemption and by the rule itself.** The rule fails (SPEC-008), and the same exception is also listed as a failed exemption check. SPEC-012 reports it once.
+- **One failing scope, used by an exemption and by the rule itself.** The rule fails (SPEC-008), and its exemption check is listed as failed too, with the same cause: the same exception for a user or custom scope, and one per request for an unreadable client IP. SPEC-012 reports the cause once.
 - **Headers.** An exempt rule sets no rate-limit headers, because it counted nothing. When every rule is exempt, the response has none (SPEC-010).
 - **Many exemptions** cost decoding time on every manifest load on PHP-FPM without APCu. Checking a request costs one lookup per subject and prefix length, however many there are. AC-23 measures both (decision 4).
 
