@@ -24,6 +24,67 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Middleware
+    |--------------------------------------------------------------------------
+    |
+    | Rules apply only to routes that run the "dynamic.throttle" middleware.
+    | The package attaches it nowhere by itself: add it to your route groups,
+    | for example in bootstrap/app.php:
+    |
+    |     ->withMiddleware(function (Middleware $middleware) {
+    |         $middleware->appendToGroup('api', 'dynamic.throttle');
+    |     })
+    |
+    | or list the groups in "auto_attach", such as ['api']. A route in no
+    | group that runs the middleware is never limited.
+    |
+    | The middleware always runs after Laravel's authentication middleware,
+    | auth and auth.basic, so user rules see the user. List any other
+    | middleware that logs users in, such as a JWT package's or your own
+    | API key check, in "after", by alias or class: until you do, user
+    | rules count those users as guests.
+    |
+    */
+
+    'middleware' => [
+        'auto_attach' => [],
+        'after' => [],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Excluded paths
+    |--------------------------------------------------------------------------
+    |
+    | No rule ever applies to these paths, even a "*" rule. Patterns work as
+    | in rules: "*" matches any characters, and a leading slash is ignored.
+    | The defaults keep admin tools, Livewire and auth endpoints that other
+    | packages rely on reachable (docs/adr/0020). Remove an entry to limit
+    | its path. The package's own dashboard is never limited, whatever
+    | this list says.
+    |
+    */
+
+    'except' => [
+        'horizon',
+        'horizon/*',
+        'telescope',
+        'telescope/*',
+        'pulse',
+        'pulse/*',
+        'nova',
+        'nova/*',
+        'nova-api/*',
+        'livewire/*',
+        // Livewire 4 serves its endpoints under livewire-{hash}/.
+        'livewire-*',
+        'broadcasting/auth',
+        'sanctum/csrf-cookie',
+        'up',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Counter driver
     |--------------------------------------------------------------------------
     |

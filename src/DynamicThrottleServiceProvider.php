@@ -13,6 +13,7 @@ use Afzal\DynamicThrottle\Engine\Identity\IdentityHasher;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
 use Afzal\DynamicThrottle\Http\IdentitySettings;
+use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Models\Exemption;
 use Afzal\DynamicThrottle\Models\Rule;
@@ -20,11 +21,16 @@ use Afzal\DynamicThrottle\Support\ConfigMerger;
 use Afzal\DynamicThrottle\Support\LaravelClock;
 use Afzal\DynamicThrottle\Support\LimiterStoreFactory;
 use Composer\InstalledVersions;
+use Illuminate\Auth\Middleware\AuthenticateWithBasicAuth;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Foundation\CachesConfiguration;
+use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Foundation\Console\AboutCommand;
+use Illuminate\Foundation\Http\Kernel;
+use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
 
 final class DynamicThrottleServiceProvider extends ServiceProvider
@@ -159,6 +165,23 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
         Rule::observe(ManifestObserver::class);
         Exemption::observe(ManifestObserver::class);
 
+        // A route middleware, attached nowhere until the app says so (ADR-0004, ADR-0020 point 11).
+        $this->callAfterResolving(Router::class, function (Router $router): void {
+            $router->aliasMiddleware(DynamicThrottleMiddleware::ALIAS, DynamicThrottleMiddleware::class);
+        });
+
+        // Once every provider has booted, so middleware.after can name aliases that other
+        // packages register. Through the kernel, which copies its lists to the router each
+        // time they change, so a later change there keeps these.
+        $this->app->booted(function (): void {
+            $this->callAfterResolving(HttpKernel::class, function (HttpKernel $kernel): void {
+                // Another kernel gets neither: the docs show the manual setup (ADR-0004's fallback).
+                if ($kernel instanceof Kernel) {
+                    $this->wireMiddleware($kernel, $this->app->make(Router::class));
+                }
+            });
+        });
+
         if (! $this->app->runningInConsole()) {
             return;
         }
@@ -193,5 +216,103 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
                     : '<fg=yellow;options=bold>DISABLED</>',
             ),
         ]);
+    }
+
+    /**
+     * middleware.auto_attach, and the middleware's place in the priority list.
+     *
+     * The kernel writes all its lists over the router's each time one of them changes,
+     * so it first takes the router's, all read before the first write: what other
+     * providers changed there while booting, a group, an alias or the priority list,
+     * stays as they left it (SPEC-010 AC-21).
+     */
+    private function wireMiddleware(Kernel $kernel, Router $router): void
+    {
+        $aliases = $router->getMiddleware();
+        $groups = $router->getMiddlewareGroups();
+        $priority = $this->prioritized($router->middlewarePriority, $aliases);
+
+        // A group the app has not defined is skipped, never thrown on, so a config mistake
+        // cannot take the app down (ADR-0020 point 1).
+        foreach ($this->configList('dynamic-throttle.middleware.auto_attach') as $group) {
+            if (isset($groups[$group]) && is_array($groups[$group]) && ! in_array(DynamicThrottleMiddleware::class, $groups[$group], true)) {
+                $groups[$group][] = DynamicThrottleMiddleware::class;
+            }
+        }
+
+        $kernel->setMiddlewareAliases($aliases);
+        $kernel->setMiddlewareGroups($groups);
+        $kernel->setMiddlewarePriority($priority);
+    }
+
+    /**
+     * The priority list, with the middleware after Laravel's authentication, its basic
+     * authentication included, and after middleware.after, so user rules see the user
+     * wherever a group lists it (ADR-0004 point 2, ADR-0020 point 4). A middleware the
+     * list lacks goes right before it. An app that placed the middleware in the list
+     * itself keeps that place.
+     *
+     * Computed here: the kernel's addToMiddlewarePriorityAfter() places it before an
+     * entry that sits right after another on Laravel 12.61.1.
+     *
+     * @param  array<array-key, mixed>  $priority
+     * @param  array<array-key, mixed>  $aliases
+     * @return list<string>
+     */
+    private function prioritized(array $priority, array $aliases): array
+    {
+        $priority = array_values(array_filter($priority, is_string(...)));
+        $after = array_values(array_unique([
+            AuthenticatesRequests::class,
+            AuthenticateWithBasicAuth::class,
+            ...$this->middlewareClasses($this->configList('dynamic-throttle.middleware.after'), $aliases),
+        ]));
+
+        if (! in_array(DynamicThrottleMiddleware::class, $priority, true)) {
+            $present = array_keys(array_intersect($priority, $after));
+            array_splice($priority, $present === [] ? count($priority) : max($present) + 1, 0, [DynamicThrottleMiddleware::class]);
+        }
+
+        array_splice($priority, (int) array_search(DynamicThrottleMiddleware::class, $priority, true), 0, array_values(array_diff($after, $priority)));
+
+        return $priority;
+    }
+
+    /**
+     * Middleware as the priority list names them: aliases as their classes, without
+     * parameters such as the ":api" of "auth:api".
+     *
+     * @param  list<string>  $names
+     * @param  array<array-key, mixed>  $aliases  the router's
+     * @return list<string>
+     */
+    private function middlewareClasses(array $names, array $aliases): array
+    {
+        $classes = [];
+
+        foreach ($names as $name) {
+            $name = explode(':', $name, 2)[0];
+            $class = $aliases[$name] ?? $name;
+
+            if (is_string($class)) {
+                $classes[] = $class;
+            }
+        }
+
+        return $classes;
+    }
+
+    /**
+     * A config list's non-empty strings. Anything else in it is skipped.
+     *
+     * @return list<string>
+     */
+    private function configList(string $key): array
+    {
+        $values = $this->app->make('config')->get($key);
+
+        return is_array($values)
+            ? array_values(array_filter($values, fn (mixed $value): bool => is_string($value) && $value !== ''))
+            : [];
     }
 }
