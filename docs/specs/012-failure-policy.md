@@ -1,6 +1,6 @@
 # SPEC-012: The failure policy
 
-- Status: Draft
+- Status: In progress
 - ADRs: ADR-0008, ADR-0010, ADR-0013, ADR-0020, ADR-0021, ADR-0025
 - Roadmap phase: 2
 
@@ -19,7 +19,7 @@ SPEC-010 lets every request through when something fails, and reports each failu
   - **Its counter cannot be checked** when:
     - the counter store throws, on this rule's attempt or on an earlier rule's;
     - the store is in its cooldown (below);
-    - the store cannot be built, because of a config mistake such as an unknown `driver`;
+    - the store cannot be built, because of a config mistake such as an unknown `driver`, which counts as a failed store (below);
     - the rule's own identity cannot be resolved, such as a custom resolver that throws, or a client IP that cannot be read.
 - **The first decision in evaluation order wins.** Evaluation stops at the 503, as at a rejection (ADR-0008): a 429 from an earlier rule stands, and the rules after it never run.
 - **Counts made before it** are released when the store works, as for a 429 (ADR-0008). When the store is down they are kept: releasing would only wait for more failures, and a kept count is stricter, never looser (SPEC-004).
@@ -32,11 +32,13 @@ SPEC-010 lets every request through when something fails, and reports each failu
 
 ### The cooldown (ADR-0010 point 4)
 - When the counter store throws, on an attempt or on a release (ADR-0021), the package skips the store for `failure.cooldown_seconds`: default 10, `DYNAMIC_THROTTLE_COOLDOWN`. 0 turns it off.
-- **During the cooldown**, no request touches the counter store:
+- **A store that cannot be built**, because of a config mistake, counts as one that failed, with the config error as the reason. So it starts the cooldown, is reported once per cooldown, and dispatches `StorageUnavailable`. Strict mode rethrows it instead (below).
+- **During the cooldown**, no request counts on the counter store:
   - fail-open rules let the request through, and set no headers;
   - fail-closed rules answer 503 at once;
   - dry-run rules count nothing and dispatch nothing.
-- **After it**, the next request tries the store again. If that fails, a new cooldown starts.
+- **The request whose release failed** still tries its other releases (ADR-0021). The store just counted for that request, and a count left behind would stay counted.
+- **After the cooldown**, the next request tries the store again. If that fails, a new cooldown starts.
 - **Where it lives** (decision 1): in the process, for Octane and queue workers, and in APCu when the extension is enabled, where the PHP-FPM workers of a server share it. So each server finds an outage on its own, and so does each Octane worker on a server without APCu.
 
 ### Reporting (ADR-0020 point 1)
@@ -45,7 +47,7 @@ SPEC-010 lets every request through when something fails, and reports each failu
 - The throttle lives where the cooldown does (decision 1).
 
 ### `StorageUnavailable` (ADR-0010 point 1, ADR-0013 point 6)
-- **When:** the counter store failed and a cooldown started, so once per cooldown in each process or server. Also after a failed release, which keeps its 429 (ADR-0021).
+- **When:** the counter store failed, at most once per request, for its first store failure. With the cooldown on, that is once per cooldown in each process or server, give or take the requests that were already waiting on the store when it failed. A failed release counts too, and keeps its 429 (ADR-0021).
 - **After the response,** from the middleware's `terminate()`, as SPEC-011 dispatches `RateLimitWouldBlock`. A listener that throws is reported, and the next event still goes out.
 - **What it carries** (decision 3): plain values, so a queued listener works:
   - the error's class and message;
@@ -108,26 +110,34 @@ Feature tests on real routes through Testbench, with rules saved through the mod
     - a failing store: 200 for fail-open, 503 for fail-closed;
     - a corrupt manifest;
     - a client IP that cannot be read.
-- **AC-10 (APCu)** Where the extension is enabled, a cooldown started by one process is seen by another, which makes no store call. The test is skipped where APCu is missing.
+- **AC-10 (shared)** A cooldown started by one process is seen by another, which makes no store call, and a cause reported by one is not reported again by another. This is tested with a stand-in for the shared memory, and with APCu itself where the extension is enabled (`composer test:apcu`).
 - **AC-11 (arch)**
-  - The cooldown and the report throttle keep no state on the middleware or the evaluator.
-  - Their keys come from `KeyBuilder`.
+  - The middleware and the evaluator are readonly, so they keep no state between requests.
+  - Only `ApcuFailureMemory` calls APCu, and its keys come from `KeyBuilder`.
   - `Events` stays free of the database, the clock and the request (SPEC-011 AC-9).
 
 ## Interfaces and files
 - `config/dynamic-throttle.php`: `failure.cooldown_seconds` (`DYNAMIC_THROTTLE_COOLDOWN`, default 10, read as written like the other integers).
-- `src/Events/StorageUnavailable.php`: a final readonly class with public properties: `exceptionClass`, `message`, `release` and `cooldownSeconds`.
-- `src/DynamicThrottle.php` and its facade: `strict(bool $strict = true): void`.
-- The cooldown and the report throttle: new classes in `src/Engine`, reading time from the `Clock`, with keys from `KeyBuilder`.
-- `src/Engine/Stacking/RuleEvaluator.php`, `Evaluation` and `EvaluationOutcome`: a fail-closed rule that cannot be checked stops evaluation with a new outcome.
+- `src/Events/StorageUnavailable.php`: a final readonly class with public properties, in this order: `exceptionClass`, `message`, `release` (bool) and `cooldownSeconds` (int).
+- `src/DynamicThrottle.php` and its facade: `strict(bool $strict = true): void`, and `isStrict(): bool` for the middleware.
+- Remembering failures, with time from the `Clock`:
+  - `src/Engine/Contracts/FailureMemory.php`: when the cooldown started, and when each cause was last reported.
+  - `src/Engine/Failure/ProcessFailureMemory.php`: in the process. The provider registers one instance at boot, so it outlives each request on Octane and in queue workers.
+  - `src/Support/ApcuFailureMemory.php`: in APCu, when the extension is enabled, with keys from `KeyBuilder::cooldown()` and `KeyBuilder::reported()`.
+  - `src/Engine/Failure/Cooldown.php` and `src/Engine/Failure/ReportThrottle.php`, over one or more memories.
+- `src/Engine/Stores/UnavailableLimiterStore.php`: stands in for a store that could not be built. Every call fails, with the reason.
+- `src/Engine/Stacking/RuleEvaluator.php` takes the `Cooldown`. `Evaluation` gains `unavailable`, the fail-closed rule that stopped it, and `unchecked`, the rules the store could not count. `EvaluationOutcome` gains `Unavailable`.
+- `src/Engine/Exceptions/IdentityUnavailableException.php`: marks a client IP that cannot be read, which strict mode never rethrows.
 - `src/Http/Middleware/DynamicThrottleMiddleware.php`: the 503, strict mode, the report throttle, and `StorageUnavailable` in `terminate()`.
 - `README.md` and `CHANGELOG.md`.
 - Tests:
   - `tests/Feature/Http/FailurePolicyTest.php`: AC-1 to AC-8
   - `tests/Feature/Http/StrictModeTest.php`: AC-9
-  - `tests/Unit/...`: the cooldown and the throttle on their own, AC-10
+  - `tests/Unit/Engine/Failure/`: the cooldown and the throttle on their own, and AC-10 with a stand-in for the shared memory
+  - `tests/Unit/Engine/Stacking/RuleEvaluatorTest.php`: the new outcome
+  - `tests/Unit/Support/ApcuFailureMemoryTest.php`: AC-10 with APCu itself, in the `apcu` group
   - `tests/Arch/ArchTest.php`: AC-11
-- CI and `scripts/cloud-setup.sh` enable APCu (`apc.enable_cli=1`), so AC-10 runs.
+- `composer test:apcu` runs the `apcu` group with `apc.enable_cli=1`. CI and `scripts/cloud-session-start.sh` install the extension. The main suite leaves APCu off, so no state leaks from one test to the next.
 
 ## Out of scope
 - The manifest's own failures keep SPEC-006's handling. On PHP-FPM the manifest is read from the store on every request, so while the store is down each request waits for that read to fail and finds no rules (ADR-0010 point 3). Fail-closed rules then protect nothing on FPM, unless the manifest lives in memory: ADR-0007's L1 cache (APCu), which the Phase 2 exit decides.
@@ -150,20 +160,21 @@ Feature tests on real routes through Testbench, with rules saved through the mod
 - `composer test:mutate`, since the cooldown and the evaluator are in `src/Engine`
 
 ## Open questions
-1. **The cooldown on PHP-FPM without APCu.** Recommendation: as ADR-0010 decides, keep it in the process and in APCu, and document that PHP-FPM without APCu keeps nothing between requests: each request tries the store once, and reports. The docs recommend APCu.
-   - The alternative, a small file in Laravel's storage directory, costs one file check per request on every FPM app, and rarely helps. On FPM the manifest is read from the same store first, so during an outage requests find no rules before they reach the counters.
-   - The throttle of reports lives with it, so on FPM without APCu reports are not throttled. ADR-0020 counted on the cooldown for that.
-2. **The 503.** Recommendation, as above:
-   - Symfony's `ServiceUnavailableHttpException`, rendered by the app's handler.
+None. The maintainer accepted all five recommendations on 2026-09-27:
+1. **PHP-FPM without APCu.** As ADR-0010 decides, the cooldown and the throttle live in the process and in APCu. PHP-FPM without APCu keeps nothing between requests: each request tries the store once, and reports. The docs recommend APCu.
+   - A file in Laravel's storage directory would cost one file check per request on every FPM app, and rarely help. On FPM the manifest is read from the same store first, so during an outage requests find no rules before they reach the counters.
+   - So reports are not throttled on FPM without APCu, although ADR-0020 counted on the cooldown for that.
+2. **The 503.**
+   - It is Symfony's `ServiceUnavailableHttpException`, rendered by the app's handler.
    - `Retry-After` is what is left of the cooldown.
    - `response_override` stays 429-only.
    - Counts made before it are released when the store works.
-3. **What `StorageUnavailable` carries.** Recommendation: the error's class and message, whether it was a release, and the cooldown in seconds.
+3. **What `StorageUnavailable` carries.** The error's class and message, whether it was a release, and the cooldown in seconds.
    - Not the exception itself: a trace can hold closures, which cannot be serialized, so a queued listener would fail.
    - Not the store's name or host: a listener can read the config.
-4. **What strict mode rethrows.** Recommendation, as above:
+4. **What strict mode rethrows.**
    - Rethrown: config mistakes, the app's own resolvers and guards, and unexpected package errors.
-   - Never: storage, the manifest, or an unreadable client IP.
-5. **The throttle of reports.** Recommendation: each cause at most once per cooldown, where a cause is the class and the throw site of the root exception. Error trackers group reports the same way.
+   - Never rethrown: storage errors, the manifest, and a client IP that cannot be read.
+5. **The throttle of reports.** Each cause at most once per cooldown, where a cause is the class and the throw site of the root exception. Error trackers group reports the same way.
    - Throttling by class alone would hide a second, different failure of the same class.
    - Throttling by message would let a message that carries a changing value, such as an id, flood the tracker.
