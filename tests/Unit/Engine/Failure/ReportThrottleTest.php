@@ -86,3 +86,33 @@ it('AC-10: never reports a cause again that another process reported through the
 
     expect([$first->allows(oneCause('One.')), $second->allows(oneCause('Two.'))])->toBe([true, false]);
 });
+
+it('remembers nothing when the cooldown is 0, so a throttle sharing its memory still reports the cause', function (): void {
+    $clock = new FakeClock;
+    $shared = new ProcessFailureMemory;
+    $cause = oneCause('One.');
+
+    (new ReportThrottle($clock, 0, $shared))->allows($cause);
+
+    expect((new ReportThrottle($clock, 10, $shared))->allows($cause))->toBeTrue();
+});
+
+it('throttles a cause for one second when the cooldown is 1', function (): void {
+    $clock = new FakeClock;
+    $throttle = new ReportThrottle($clock, 1, new ProcessFailureMemory);
+
+    $within = [$throttle->allows(oneCause('One.')), $throttle->allows(oneCause('Two.'))];
+    $clock->setSeconds(FakeClock::T0 + 1);
+
+    expect($within)->toBe([true, false])
+        ->and($throttle->allows(oneCause('Three.')))->toBeTrue();
+});
+
+it('tells apart two causes thrown on the same line of different files', function (): void {
+    $throttle = new ReportThrottle(new FakeClock, 10, new ProcessFailureMemory);
+    $here = oneCause('Same message.');
+    $elsewhere = oneCause('Same message.');
+    (new ReflectionProperty(Exception::class, 'file'))->setValue($elsewhere, '/app/Other.php');
+
+    expect([$throttle->allows($here), $throttle->allows($elsewhere)])->toBe([true, true]);
+});

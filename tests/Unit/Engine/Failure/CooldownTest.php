@@ -98,3 +98,25 @@ it('AC-10: follows the latest start among its memories', function (): void {
     // This process started at T0, but another one failed again at T0 + 5.
     expect($here->secondsLeft())->toBe(3);
 });
+
+it('writes nothing to its memories when its length is 0', function (): void {
+    $memory = new ProcessFailureMemory;
+
+    (new Cooldown(new FakeClock, 0, $memory))->start();
+
+    expect($memory->cooldownStartedAt())->toBeNull();
+});
+
+it('runs for a whole second when its length is 1', function (): void {
+    $clock = new FakeClock;
+    $cooldown = new Cooldown($clock, 1, new ProcessFailureMemory);
+    $cooldown->start();
+    $left = [];
+
+    foreach ([0, 999_999, 1_000_000] as $elapsed) {
+        cooldownAt($clock, $elapsed);
+        $left[] = $cooldown->secondsLeft();
+    }
+
+    expect($left)->toBe([1, 1, 0]);
+});

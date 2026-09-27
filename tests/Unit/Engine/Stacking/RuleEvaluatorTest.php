@@ -740,6 +740,20 @@ it('SPEC-012 AC-3: stops with Unavailable at a fail-closed rule whose identity f
         ->and([stackCount($stack->cache, 'a'), stackCount($stack->cache, 'd')])->toBe([0, 0]);
 });
 
+it('SPEC-012 AC-3: keeps the counts before a fail-closed rule whose identity fails once the store is down', function (): void {
+    $stack = stackStore();
+
+    $evaluation = (new RuleEvaluator(failingFor($stack->store, attemptsOf: 'b')))
+        ->evaluate([stackRule('a', 100, 10), stackRule('b', 100, 20), closedRule('c', 30)], failingIdentities(['c']));
+
+    // Releasing on a store that just failed would only fail again, and a kept count is stricter.
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Unavailable)
+        ->and($evaluation->unavailable?->id)->toBe('c')
+        ->and(failureSummary($evaluation->failures))->toBe([['b', 'The store is down.'], ['c', 'The identity for custom:plan could not be resolved.']])
+        ->and(attemptSummary($evaluation->attempts))->toBe([['a', false]])
+        ->and([$evaluation->releaseFailures, stackCount($stack->cache, 'a')])->toBe([[], 1]);
+});
+
 it('SPEC-012 AC-4: never stops at a dry-run fail-closed rule', function (): void {
     $stack = stackStore();
 
