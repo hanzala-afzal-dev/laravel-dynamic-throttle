@@ -63,7 +63,7 @@ it('AC-15: lets the request through without headers, and reports once, when the 
         ->and(reportedErrors())->toBe([[StorageUnavailableException::class, FailingStore::DOWN]]);
 });
 
-it('AC-15: lets the request through without headers, and reports once, for a config mistake', function (string $key, string $value, string $message): void {
+it('AC-15: lets the request through without headers, and reports once, for a config mistake', function (string $key, string $value, string $class, string $message): void {
     Throttling::rule(['max_attempts' => 1]);
     Throttling::route('api/x');
     config()->set("dynamic-throttle.{$key}", $value);
@@ -73,11 +73,13 @@ it('AC-15: lets the request through without headers, and reports once, for a con
 
     expect($response->status())->toBe(200)
         ->and(Throttling::headers($response))->toBe([])
-        ->and(reportedErrors())->toBe([[InvalidArgumentException::class, $message]]);
+        ->and(reportedErrors())->toBe([[$class, $message]]);
 })->with([
-    'an invalid driver' => ['driver', 'nope', 'Unknown dynamic-throttle.driver "nope": use auto, redis or cache.'],
-    'an undefined store' => ['store', 'missing', 'Cache store [missing] is not defined.'],
-    'an invalid prefix' => ['prefix', 'bad prefix!', 'The key prefix must be at most 32 characters from A-Z, a-z, 0-9, ":", "_", "." and "-".'],
+    // A counter store that cannot be built counts as a store that failed (SPEC-012).
+    'an invalid driver' => ['driver', 'nope', StorageUnavailableException::class, 'The counter store could not be built: Unknown dynamic-throttle.driver "nope": use auto, redis or cache.'],
+    // The manifest's cache store fails first, so no rule is known.
+    'an undefined store' => ['store', 'missing', InvalidArgumentException::class, 'Cache store [missing] is not defined.'],
+    'an invalid prefix' => ['prefix', 'bad prefix!', InvalidArgumentException::class, 'The key prefix must be at most 32 characters from A-Z, a-z, 0-9, ":", "_", "." and "-".'],
 ]);
 
 it('AC-15: lets the request through without headers, and reports once, when the manifest is corrupt', function (): void {
