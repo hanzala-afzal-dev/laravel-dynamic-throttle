@@ -188,6 +188,7 @@ final readonly class DynamicThrottleMiddleware
      * One event for each dry-run rule that would have rejected the request, in
      * evaluation order, kept for terminate(). Whatever the outcome: the rules
      * before the one that rejects, or before a failure, were evaluated (SPEC-011).
+     * A failure here is reported, and never changes the decision, the 429 included.
      */
     private function keepWouldBlock(Request $request, RequestTarget $target, Evaluation $evaluation): void
     {
@@ -195,20 +196,24 @@ final readonly class DynamicThrottleMiddleware
             return;
         }
 
-        $request->attributes->set(self::WOULD_BLOCK, array_map(
-            fn (RuleAttempt $wouldBlock): RateLimitWouldBlock => new RateLimitWouldBlock(
-                ruleId: $wouldBlock->rule->id,
-                ruleName: $wouldBlock->rule->name,
-                limit: $wouldBlock->attempt->limit,
-                windowSeconds: $wouldBlock->attempt->windowSeconds,
-                scope: $wouldBlock->rule->scope,
-                identityHash: $wouldBlock->attempt->key->identityHash,
-                retryAfter: $wouldBlock->attempt->retryAfter,
-                method: $target->method,
-                path: $target->path,
-            ),
-            $evaluation->wouldBlock,
-        ));
+        try {
+            $request->attributes->set(self::WOULD_BLOCK, array_map(
+                fn (RuleAttempt $wouldBlock): RateLimitWouldBlock => new RateLimitWouldBlock(
+                    ruleId: $wouldBlock->rule->id,
+                    ruleName: $wouldBlock->rule->name,
+                    limit: $wouldBlock->attempt->limit,
+                    windowSeconds: $wouldBlock->attempt->windowSeconds,
+                    scope: $wouldBlock->rule->scope,
+                    identityHash: $wouldBlock->attempt->key->identityHash,
+                    retryAfter: $wouldBlock->attempt->retryAfter,
+                    method: $target->method,
+                    path: $target->path,
+                ),
+                $evaluation->wouldBlock,
+            ));
+        } catch (Throwable $exception) {
+            $this->report($exception);
+        }
     }
 
     /**
