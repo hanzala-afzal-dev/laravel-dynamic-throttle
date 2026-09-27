@@ -1,6 +1,6 @@
 # SPEC-011: Dry-run
 
-- Status: In progress
+- Status: Done
 - ADRs: ADR-0008, ADR-0012, ADR-0013, ADR-0020, ADR-0021, ADR-0025
 - Roadmap phase: 2
 
