@@ -5,9 +5,11 @@ declare(strict_types=1);
 use Afzal\DynamicThrottle\DynamicThrottle;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 
 /*
 |--------------------------------------------------------------------------
@@ -30,7 +32,8 @@ use Illuminate\Support\Facades\Schema;
 | fall under the engine's (SPEC-007 AC-18), and so do Engine\Identity
 | (SPEC-008 AC-18) and Engine\Exemptions (SPEC-009 AC-21), whose expiry check
 | reads the Clock. Reading identities from the request lives in Http, which
-| has its own rules.
+| has its own rules. The events the middleware dispatches (SPEC-011 AC-9)
+| are built on the request path too, so Events has its own.
 |
 */
 
@@ -105,6 +108,23 @@ arch('enums are string-backed, because their values are stored (SPEC-005 AC-16)'
     ->expect('Afzal\DynamicThrottle\Enums')
     ->toBeStringBackedEnums();
 
+arch('events are final readonly classes (SPEC-011 AC-9)')
+    ->expect('Afzal\DynamicThrottle\Events')
+    ->toBeFinal()
+    ->toBeReadonly();
+
+arch('events never touch the database (ADR-0007, SPEC-011 AC-9)')
+    ->expect('Afzal\DynamicThrottle\Events')
+    ->not->toUse($databaseAccess);
+
+arch('events never read the wall clock (SPEC-011 AC-9)')
+    ->expect('Afzal\DynamicThrottle\Events')
+    ->not->toUse($wallClock);
+
+arch('events carry plain values, never the request, so a queued listener can serialize them (SPEC-011 AC-9)')
+    ->expect('Afzal\DynamicThrottle\Events')
+    ->not->toUse([Request::class, SymfonyRequest::class]);
+
 dataset('built-in classes the arch rules cannot see', [
     'a "now" date in the engine bypasses travel() (ADR-0006)' => [
         'src/Engine', '/new\s+\\\\?DateTime(?:Immutable)?\s*\(\s*(?:[\'"]now[\'"]\s*)?\)/i',
@@ -115,6 +135,10 @@ dataset('built-in classes the arch rules cannot see', [
     'PDO in the engine (ADR-0007)' => ['src/Engine', '/\bPDO\b/'],
     'PDO in the middleware (ADR-0007)' => ['src/Http/Middleware', '/\bPDO\b/'],
     'PDO in request handling (SPEC-007 AC-18)' => ['src/Http', '/\bPDO\b/'],
+    'a "now" date in the events (SPEC-011 AC-9)' => [
+        'src/Events', '/new\s+\\\\?DateTime(?:Immutable)?\s*\(\s*(?:[\'"]now[\'"]\s*)?\)/i',
+    ],
+    'PDO in the events (SPEC-011 AC-9)' => ['src/Events', '/\bPDO\b/'],
 ]);
 
 test('the request path stays free of', function (string $directory, string $pattern): void {
