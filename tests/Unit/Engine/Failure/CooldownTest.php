@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Afzal\DynamicThrottle\Engine\Contracts\Clock;
 use Afzal\DynamicThrottle\Engine\Failure\Cooldown;
 use Afzal\DynamicThrottle\Engine\Failure\ProcessFailureMemory;
 use Afzal\DynamicThrottle\Tests\Support\FakeClock;
@@ -119,4 +120,16 @@ it('runs for a whole second when its length is 1', function (): void {
     }
 
     expect($left)->toBe([1, 1, 0]);
+});
+
+it('never reads the clock while no cooldown was started, as on almost every request', function (): void {
+    $clock = new readonly class implements Clock
+    {
+        public function microseconds(): int
+        {
+            throw new LogicException('The clock was read.');
+        }
+    };
+
+    expect((new Cooldown($clock, 10, new ProcessFailureMemory, new ProcessFailureMemory))->secondsLeft())->toBe(0);
 });

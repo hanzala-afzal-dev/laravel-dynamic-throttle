@@ -21,6 +21,7 @@ use Afzal\DynamicThrottle\Tests\Support\FakeClock;
 use Afzal\DynamicThrottle\Tests\Support\Throttling;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
@@ -302,6 +303,22 @@ it('AC-6: keeps the 429 when a release fails, dispatches StorageUnavailable for 
         ->and([$store->attempts, $next->status()])->toBe([$attemptsBefore, 200]);
 });
 
+it('AC-6: marks StorageUnavailable as a release when the count before a fail-closed rule cannot be released', function (): void {
+    DynamicThrottle::scope('tenant', fn (): string => throw new RuntimeException('The tenant lookup failed.'));
+    Throttling::rule(['pattern' => 'api/*', 'max_attempts' => 5, 'priority' => 1]);
+    Throttling::rule(['pattern' => 'api/login', 'scope' => Scope::Custom, 'scope_parameter' => 'tenant', 'on_failure' => FailurePolicy::Closed, 'priority' => 2]);
+    Throttling::route('api/login');
+    $store = FailingStore::failingReleases(app(LimiterStore::class));
+    app()->instance(LimiterStore::class, $store);
+
+    $response = $this->get('api/login');
+
+    // The failed release starts the cooldown, and the 503 stands.
+    expect(statusAndRetry($response))->toBe([503, '10'])
+        ->and(array_map(fn (StorageUnavailable $event): array => [$event->message, $event->release], storageEvents()))->toBe([[FailingStore::RELEASE_FAILED, true]])
+        ->and($store->releases)->toBe(1);
+});
+
 it('AC-7: carries the error\'s class and message, whether it was a release, and the cooldown, and survives serialize()', function (): void {
     Throttling::rule();
     Throttling::route('api/x');
@@ -370,6 +387,19 @@ it('AC-8: reports a failing resolver once per cooldown', function (): void {
 
     expect($withinCooldown)->toBe(1)
         ->and(count(policyReports()))->toBe(2);
+});
+
+it('AC-8: reports a failing resolver once per cooldown, whichever route it fails on', function (): void {
+    DynamicThrottle::scope('tenant', fn (): string => throw new RuntimeException('The tenant lookup failed.'));
+    Throttling::rule(['scope' => Scope::Custom, 'scope_parameter' => 'tenant']);
+    Throttling::route('api/a');
+    Throttling::route('api/b', [SubstituteBindings::class, 'dynamic.throttle']);
+
+    $this->get('api/a');
+    $this->get('api/b');
+
+    // The routes run different middleware before the package's, which is no part of the cause.
+    expect(policyReports())->toHaveCount(1);
 });
 
 it('AC-8: reports two causes of the same class once each, since a cause is where it was thrown', function (): void {
