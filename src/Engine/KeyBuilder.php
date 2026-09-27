@@ -60,4 +60,20 @@ final readonly class KeyBuilder
     {
         return $this->manifest().':rebuild';
     }
+
+    /**
+     * When the counter store's cooldown started, in APCu (SPEC-012).
+     */
+    public function cooldown(): string
+    {
+        return "{$this->prefix}cooldown";
+    }
+
+    /**
+     * When a cause of a failure was last reported, in APCu (SPEC-012).
+     */
+    public function reported(string $cause): string
+    {
+        return "{$this->prefix}reported:{$cause}";
+    }
 }

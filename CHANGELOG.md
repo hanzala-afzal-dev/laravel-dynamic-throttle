@@ -50,9 +50,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - It runs after Laravel's authentication middleware, `auth` and `auth.basic`, and after the middleware you list in `middleware.after`, wherever a group lists it.
   - It lets through, untouched, the paths in `except` (by default Horizon, Telescope, Pulse, Nova, Livewire 3 and 4, `broadcasting/auth`, `sanctum/csrf-cookie` and `up`), the package's own routes, and every request while `enabled` is off.
   - A limited request gets Laravel's 429 through your exception handler, or the rule's `response_override` as its JSON body, with `Retry-After`, `X-RateLimit-Reset`, `X-RateLimit-Limit` and `X-RateLimit-Remaining`. An allowed request gets `X-RateLimit-Limit` and `X-RateLimit-Remaining` from its most restrictive enforcing rule. Dry-run rules set no headers.
-  - When something fails while deciding, such as the counter store, a config value or one of your scope resolvers, the request goes through, and the error is reported.
+  - When something fails while deciding, such as the counter store, a config value or one of your scope resolvers, the request goes through, unless a rule fails closed (below), and the error is reported.
 - `DynamicThrottle::fake()` for your app's tests: the counters and the manifest live in memory, so tests need no Redis and each one starts from zero.
 - The `RateLimitWouldBlock` event: a dry-run rule dispatches it, after the response, on exactly the requests an enforcing copy of the rule would reject.
   - One event for each dry-run rule that would block, in the order the rules run.
   - It carries plain values, so queued listeners work: the rule's id, name, limit, window and scope, the client's identity hash, the `Retry-After` it would have got, and the request's method and path.
   - A listener that throws is reported, and the other events are still dispatched.
+- The failure policy:
+  - A rule with `on_failure: closed` answers 503 (`ServiceUnavailableHttpException`, rendered by your exception handler) with a `Retry-After` when its counter cannot be checked: the counter store fails, or the rule's identity cannot be resolved. The counts made before it are released when the store works. Dry-run rules never answer 503.
+  - Config key `failure.cooldown_seconds` (`DYNAMIC_THROTTLE_COOLDOWN`, default 10): after the counter store fails, it is skipped for that long, so an outage costs one failed call per cooldown. The cooldown lives in the process, and in APCu when the extension is enabled, where a server's PHP-FPM workers share it.
+  - Each cause of a failure is reported at most once per cooldown.
+  - A counter store that cannot be built, such as for an unknown `driver`, counts as a store that failed.
+  - The `StorageUnavailable` event, dispatched after the response when the counter store failed, at most once per request. It carries the error's class and message, whether it failed on a release, and the cooldown.
+  - `DynamicThrottle::strict()`: the middleware rethrows config mistakes and errors from your own code, such as a custom scope resolver that throws, instead of reporting them. Storage errors, the manifest and a client IP that cannot be read still follow `on_failure`.

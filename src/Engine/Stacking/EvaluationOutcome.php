@@ -17,7 +17,14 @@ enum EvaluationOutcome: string
 
     /**
      * A rule's counter could not be checked, or its identity could not be resolved,
-     * and no enforcing rule rejected the request. SPEC-012 decides the response.
+     * and no enforcing rule rejected the request. It goes through (ADR-0010).
      */
     case Failed = 'failed';
+
+    /**
+     * An enforcing fail-closed rule applied, and its counter could not be checked:
+     * the store failed or is in its cooldown, or the rule's identity could not be
+     * resolved. The request gets a 503 (ADR-0010 point 2, SPEC-012).
+     */
+    case Unavailable = 'unavailable';
 }

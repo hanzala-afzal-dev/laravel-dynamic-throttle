@@ -99,7 +99,7 @@ final class RequestIdentityResolver implements ExemptionSubjects, IdentityResolv
             return $this->clientIp();
         } catch (Throwable $exception) {
             // One exception for every rule's check, as a failing scope gives, so it is reported once.
-            throw $this->exemptionIpError ??= IdentityUnavailableException::because('The exemptions could not be checked: the client IP could not be read: '.$exception->getMessage(), $exception);
+            throw $this->exemptionIpError ??= IdentityUnavailableException::unreadableClientIp('The exemptions could not be checked: the client IP could not be read: '.$exception->getMessage(), $exception);
         }
     }
 
@@ -204,7 +204,7 @@ final class RequestIdentityResolver implements ExemptionSubjects, IdentityResolv
         try {
             return $this->groupedIp ??= ClientIp::group($this->clientIp(), $this->settings->ipv6Prefix);
         } catch (Throwable $exception) {
-            throw IdentityUnavailableException::because("The identity for {$this->scopeName($rule->scope, $rule->scopeParameter)} could not be resolved: the client IP could not be read: {$exception->getMessage()}", $exception);
+            throw IdentityUnavailableException::unreadableClientIp("The identity for {$this->scopeName($rule->scope, $rule->scopeParameter)} could not be resolved: the client IP could not be read: {$exception->getMessage()}", $exception);
         }
     }
 
