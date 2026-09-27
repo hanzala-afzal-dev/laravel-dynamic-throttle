@@ -9,7 +9,11 @@ namespace Afzal\DynamicThrottle\Engine\Stacking;
  */
 enum EvaluationOutcome: string
 {
-    /** Every rule that applied allowed the request. Dry-run rules may have wanted to block it. */
+    /**
+     * Every rule that applied allowed the request, and none failed. Dry-run rules may
+     * have wanted to block it. During the store's cooldown, the rules that applied
+     * went unchecked (SPEC-012).
+     */
     case Allowed = 'allowed';
 
     /** An enforcing rule rejected it, and every earlier count was released. */

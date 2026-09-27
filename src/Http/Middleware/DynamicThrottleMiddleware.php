@@ -64,6 +64,7 @@ final readonly class DynamicThrottleMiddleware
         private Container $container,
         private Config $config,
         private Clock $clock,
+        private DynamicThrottle $dynamicThrottle,
     ) {}
 
     /**
@@ -156,13 +157,13 @@ final readonly class DynamicThrottleMiddleware
             $identities = $this->container->make(RequestIdentityResolver::class, ['request' => $request, 'exemptions' => $manifest->exemptions]);
             $evaluation = $this->container->make(RuleEvaluator::class)->evaluate($rules, $identities);
             $mistake = $this->strictMistake($evaluation);
+            // Also when strict mode rethrows a mistake: an outage in the same request is still told.
+            $this->keepEvents($request, $target, $evaluation);
+            $this->reportFailures($evaluation, except: $mistake);
 
             if ($mistake instanceof Throwable) {
                 return $mistake;
             }
-
-            $this->keepEvents($request, $target, $evaluation);
-            $this->reportFailures($evaluation);
 
             return match (true) {
                 $evaluation->rejection instanceof RuleAttempt => $this->rejection($evaluation->rejection),
@@ -212,7 +213,7 @@ final readonly class DynamicThrottleMiddleware
 
     private function isStrict(): bool
     {
-        return $this->container->make(DynamicThrottle::class)->isStrict();
+        return $this->dynamicThrottle->isStrict();
     }
 
     /**
@@ -347,11 +348,12 @@ final readonly class DynamicThrottleMiddleware
     /**
      * Every failure the evaluation lists, once per cause: rules that use a scope that
      * failed share its exception, and those that count by an unreadable client IP each
-     * wrap the same one (SPEC-008). A failed release keeps the 429 (ADR-0021).
+     * wrap the same one (SPEC-008). A failed release keeps the 429 (ADR-0021). The
+     * mistake strict mode rethrows is left to the app's handler, which reports it.
      */
-    private function reportFailures(Evaluation $evaluation): void
+    private function reportFailures(Evaluation $evaluation, ?Throwable $except = null): void
     {
-        $reported = [];
+        $reported = $except instanceof Throwable ? [spl_object_id($except->getPrevious() ?? $except) => true] : [];
 
         foreach ([...$evaluation->failures, ...$evaluation->releaseFailures, ...$evaluation->exemptionFailures] as $failure) {
             $id = spl_object_id($failure->exception->getPrevious() ?? $failure->exception);

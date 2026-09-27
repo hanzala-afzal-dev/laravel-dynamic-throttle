@@ -48,23 +48,30 @@ final readonly class Cooldown
      */
     public function secondsLeft(): int
     {
-        if ($this->seconds <= 0) {
-            return 0;
-        }
-
-        $now = $this->clock->microseconds();
-        $startedAt = null;
+        $starts = [];
 
         foreach ($this->memories as $memory) {
             $at = $memory->cooldownStartedAt();
 
-            // A start after now means the clock went back: that cooldown ends, so a clock step never stretches it.
-            if ($at !== null && $at <= $now && ($startedAt === null || $at > $startedAt)) {
-                $startedAt = $at;
+            if ($at !== null) {
+                $starts[] = $at;
             }
         }
 
-        $left = $startedAt === null ? 0 : $startedAt + $this->seconds * 1_000_000 - $now;
+        // Almost every request finds none, and so reads no clock.
+        if ($starts === []) {
+            return 0;
+        }
+
+        $now = $this->clock->microseconds();
+        // A start after now means the clock went back: that cooldown ends, so a clock step never stretches it.
+        $started = array_filter($starts, fn (int $at): bool => $at <= $now);
+
+        if ($started === []) {
+            return 0;
+        }
+
+        $left = max($started) + $this->seconds * 1_000_000 - $now;
 
         return $left > 0 ? intdiv($left + 999_999, 1_000_000) : 0;
     }

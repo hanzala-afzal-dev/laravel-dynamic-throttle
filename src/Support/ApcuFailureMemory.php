@@ -9,13 +9,16 @@ use Afzal\DynamicThrottle\Engine\KeyBuilder;
 
 /**
  * Failures remembered in APCu, where the PHP-FPM workers of one server share
- * them (ADR-0010 point 4, SPEC-012). A full or disabled APCu keeps nothing,
- * and the process still remembers.
+ * them (ADR-0010 point 4, SPEC-012). Every app of the server has entries of
+ * its own. A full or disabled APCu keeps nothing, and the process still
+ * remembers.
  */
 final readonly class ApcuFailureMemory implements FailureMemory
 {
     public function __construct(
         private KeyBuilder $keys,
+        /** The app among those of the server, whose PHP-FPM pools share APCu. */
+        private string $app,
     ) {}
 
     /**
@@ -28,22 +31,22 @@ final readonly class ApcuFailureMemory implements FailureMemory
 
     public function cooldownStartedAt(): ?int
     {
-        return $this->fetch($this->keys->cooldown());
+        return $this->fetch($this->keys->cooldown($this->app));
     }
 
     public function startCooldown(int $at, int $seconds): void
     {
-        $this->store($this->keys->cooldown(), $at, $seconds);
+        $this->store($this->keys->cooldown($this->app), $at, $seconds);
     }
 
     public function reportedAt(string $cause): ?int
     {
-        return $this->fetch($this->keys->reported($cause));
+        return $this->fetch($this->keys->reported($this->app, $cause));
     }
 
     public function markReported(string $cause, int $at, int $seconds): void
     {
-        $this->store($this->keys->reported($cause), $at, $seconds);
+        $this->store($this->keys->reported($this->app, $cause), $at, $seconds);
     }
 
     private function fetch(string $key): ?int

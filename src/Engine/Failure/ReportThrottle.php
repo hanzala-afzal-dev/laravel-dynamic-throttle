@@ -11,8 +11,8 @@ use Throwable;
 /**
  * Each cause of a failure is reported at most once per cooldown (ADR-0020
  * point 1, SPEC-012 decision 5), so an outage, a broken resolver or a config
- * mistake cannot flood the app's error tracker. A cause is the class and the
- * throw site of the root exception, as error trackers group reports.
+ * mistake cannot flood the app's error tracker. A cause is the class of the
+ * root exception and where it was thrown, as error trackers group reports.
  */
 final readonly class ReportThrottle
 {
@@ -56,12 +56,32 @@ final readonly class ReportThrottle
         return true;
     }
 
+    /**
+     * Where it was thrown is the line that made the root exception, and the calls that
+     * led there from the package's own code. A factory, or a library helper such as
+     * abort(), makes all its exceptions on one line, and the calls tell them apart.
+     * The calls before the package's are left out, so a failure is one cause whatever
+     * route runs into it.
+     */
     private function cause(Throwable $exception): string
     {
         while (($previous = $exception->getPrevious()) instanceof Throwable) {
             $exception = $previous;
         }
 
-        return hash('xxh128', $exception::class.'@'.$exception->getFile().':'.$exception->getLine());
+        $source = dirname(__DIR__, 2).DIRECTORY_SEPARATOR;
+        $path = [$exception::class, $exception->getFile(), $exception->getLine()];
+
+        foreach ($exception->getTrace() as $frame) {
+            $file = $frame['file'] ?? null;
+            $path[] = [$file, $frame['line'] ?? null];
+
+            // A call the package's own code made.
+            if ($file !== null && str_starts_with($file, $source)) {
+                break;
+            }
+        }
+
+        return hash('xxh128', serialize($path));
     }
 }

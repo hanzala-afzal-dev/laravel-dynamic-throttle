@@ -62,18 +62,20 @@ final readonly class KeyBuilder
     }
 
     /**
-     * When the counter store's cooldown started, in APCu (SPEC-012).
+     * When the counter store's cooldown started, in APCu (SPEC-012). The PHP-FPM pools
+     * of a server share APCu, so the key names the app: another app's outage is not
+     * this one's.
      */
-    public function cooldown(): string
+    public function cooldown(string $app): string
     {
-        return "{$this->prefix}cooldown";
+        return "{$this->prefix}cooldown:{$app}";
     }
 
     /**
-     * When a cause of a failure was last reported, in APCu (SPEC-012).
+     * When a cause of a failure was last reported, in APCu, for one app (SPEC-012).
      */
-    public function reported(string $cause): string
+    public function reported(string $app, string $cause): string
     {
-        return "{$this->prefix}reported:{$cause}";
+        return "{$this->prefix}reported:{$app}:{$cause}";
     }
 }

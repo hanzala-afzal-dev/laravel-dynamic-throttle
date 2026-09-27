@@ -195,7 +195,8 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
         // fake()'s failures stay in the process: APCu would carry them from one test to the next.
         if (ApcuFailureMemory::available() && ! $app->make(DynamicThrottle::class)->isFaked()) {
             try {
-                $memories[] = new ApcuFailureMemory($app->make(KeyBuilder::class));
+                // Named by the app's path: the PHP-FPM pools of a server share APCu.
+                $memories[] = new ApcuFailureMemory($app->make(KeyBuilder::class), hash('xxh128', $app->basePath()));
             } catch (Throwable) {
                 // An invalid prefix, reported where the counter store is built. The process still remembers.
             }
