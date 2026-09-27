@@ -3,11 +3,13 @@
 declare(strict_types=1);
 
 use Afzal\DynamicThrottle\DynamicThrottle;
+use Afzal\DynamicThrottle\Engine\Contracts\Clock;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Request as RequestFacade;
 use Illuminate\Support\Facades\Schema;
 use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 
@@ -117,13 +119,13 @@ arch('events never touch the database (ADR-0007, SPEC-011 AC-9)')
     ->expect('Afzal\DynamicThrottle\Events')
     ->not->toUse($databaseAccess);
 
-arch('events never read the wall clock (SPEC-011 AC-9)')
+arch('events read no clock, not even the package\'s Clock (SPEC-011 AC-9)')
     ->expect('Afzal\DynamicThrottle\Events')
-    ->not->toUse($wallClock);
+    ->not->toUse([...$wallClock, Clock::class]);
 
 arch('events carry plain values, never the request, so a queued listener can serialize them (SPEC-011 AC-9)')
     ->expect('Afzal\DynamicThrottle\Events')
-    ->not->toUse([Request::class, SymfonyRequest::class]);
+    ->not->toUse([Request::class, SymfonyRequest::class, RequestFacade::class, 'request']);
 
 dataset('built-in classes the arch rules cannot see', [
     'a "now" date in the engine bypasses travel() (ADR-0006)' => [

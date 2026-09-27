@@ -18,6 +18,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Exceptions;
+use Symfony\Component\HttpFoundation\ParameterBag;
+use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 
 /*
 | SPEC-011 AC-1 to AC-8: the RateLimitWouldBlock event a dry-run rule
@@ -279,6 +281,39 @@ it('AC-7: reports a listener that throws, once, keeps the response, and still di
         ->and($heard)->toBe(['First', 'Second'])
         ->and(array_map(fn (Throwable $exception): array => [$exception::class, $exception->getMessage()], Exceptions::reported()))
         ->toBe([[RuntimeException::class, 'The listener failed.']]);
+});
+
+it('AC-7: still answers 429 when keeping the events fails, and reports the failure', function (): void {
+    Throttling::rule(['name' => 'Dry run', 'max_attempts' => 1, 'priority' => 1, 'mode' => RuleMode::DryRun]);
+    Throttling::rule(['name' => 'Enforced', 'max_attempts' => 1, 'priority' => 2]);
+    Throttling::route('api/x');
+    $this->get('api/x');
+    Exceptions::fake();
+    $kernel = app(HttpKernel::class);
+    $request = Request::create('/api/x');
+    // An attributes bag that refuses the package's keys. Set as Symfony's own initialize()
+    // sets it, because assigning the property is deprecated from Symfony 8.1.
+    $refusing = new class extends ParameterBag
+    {
+        public function set(string $key, mixed $value): void
+        {
+            if (str_starts_with($key, 'dynamic-throttle.')) {
+                throw new RuntimeException('The events could not be kept.');
+            }
+
+            parent::set($key, $value);
+        }
+    };
+    $attributes = new ReflectionProperty(SymfonyRequest::class, 'attributes');
+    PHP_VERSION_ID >= 80400 ? $attributes->setRawValue($request, $refusing) : $attributes->setValue($request, $refusing);
+
+    $response = $kernel->handle($request);
+    $kernel->terminate($request, $response);
+
+    expect($response->getStatusCode())->toBe(429)
+        ->and(wouldBlockEvents())->toBe([])
+        ->and(array_map(fn (Throwable $exception): array => [$exception::class, $exception->getMessage()], Exceptions::reported()))
+        ->toBe([[RuntimeException::class, 'The events could not be kept.']]);
 });
 
 it('AC-8: dispatches the event when the evaluation failed, and reports the failure', function (): void {
