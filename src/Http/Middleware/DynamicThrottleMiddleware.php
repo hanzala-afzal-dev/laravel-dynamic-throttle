@@ -9,6 +9,7 @@ use Afzal\DynamicThrottle\Engine\Matching\RuleMatcher;
 use Afzal\DynamicThrottle\Engine\Stacking\Evaluation;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleAttempt;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
+use Afzal\DynamicThrottle\Events\RateLimitWouldBlock;
 use Afzal\DynamicThrottle\Http\RateLimitHeaders;
 use Afzal\DynamicThrottle\Http\RequestIdentityResolver;
 use Afzal\DynamicThrottle\Http\RequestTarget;
@@ -16,6 +17,7 @@ use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Closure;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Contracts\Container\Container;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\JsonResponse;
@@ -26,8 +28,9 @@ use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
 /**
- * Applies the rules to a request (ADR-0004, ADR-0008, SPEC-010). Only the 429
- * leaves it: anything else the package throws while deciding is reported, and
+ * Applies the rules to a request (ADR-0004, ADR-0008, SPEC-010), and tells the
+ * app after the response which dry-run rules would have blocked it (SPEC-011).
+ * Only the 429 leaves it: anything else the package throws is reported, and
  * the request goes through (ADR-0020 point 1).
  */
 final readonly class DynamicThrottleMiddleware
@@ -36,6 +39,13 @@ final readonly class DynamicThrottleMiddleware
 
     /** The package's own routes, such as the dashboard's, are never limited (ADR-0004 point 5). */
     public const string OWN_ROUTES = 'dynamic-throttle.';
+
+    /**
+     * The request attribute that carries the would-block events from handle() to
+     * terminate(): Laravel builds a new middleware for terminate(), and the request
+     * is per request, under Octane too (SPEC-011 decision 2).
+     */
+    private const string WOULD_BLOCK = 'dynamic-throttle.would-block';
 
     public function __construct(
         // The rest is resolved in handle(), where its errors are caught: a config
@@ -69,6 +79,40 @@ final readonly class DynamicThrottleMiddleware
     }
 
     /**
+     * Dispatches the RateLimitWouldBlock events handle() kept, once the response is
+     * sent (SPEC-011 decision 2). A listener that throws is reported, and the next
+     * event still goes out. Laravel also passes the response, which this does not need.
+     */
+    public function terminate(Request $request): void
+    {
+        try {
+            $events = $request->attributes->get(self::WOULD_BLOCK);
+            // Taken, not read: a middleware the app also lists globally terminates twice.
+            $request->attributes->remove(self::WOULD_BLOCK);
+
+            if (! is_array($events)) {
+                return;
+            }
+
+            $dispatcher = $this->container->make(Dispatcher::class);
+
+            foreach ($events as $event) {
+                if (! $event instanceof RateLimitWouldBlock) {
+                    continue;
+                }
+
+                try {
+                    $dispatcher->dispatch($event);
+                } catch (Throwable $exception) {
+                    $this->report($exception);
+                }
+            }
+        } catch (Throwable $exception) {
+            $this->report($exception);
+        }
+    }
+
+    /**
      * The headers for the response, or the 429 to throw. In order, the first step that
      * lets the request through untouched ends it: the kill switch, the package's own
      * routes, except, and no matched rule.
@@ -97,6 +141,7 @@ final readonly class DynamicThrottleMiddleware
 
             $identities = $this->container->make(RequestIdentityResolver::class, ['request' => $request, 'exemptions' => $manifest->exemptions]);
             $evaluation = $this->container->make(RuleEvaluator::class)->evaluate($rules, $identities);
+            $this->keepWouldBlock($request, $target, $evaluation);
             $this->reportFailures($evaluation);
 
             return $evaluation->rejection instanceof RuleAttempt
@@ -137,6 +182,38 @@ final readonly class DynamicThrottleMiddleware
         }
 
         return false;
+    }
+
+    /**
+     * One event for each dry-run rule that would have rejected the request, in
+     * evaluation order, kept for terminate(). Whatever the outcome: the rules
+     * before the one that rejects, or before a failure, were evaluated (SPEC-011).
+     * A failure here is reported, and never changes the decision, the 429 included.
+     */
+    private function keepWouldBlock(Request $request, RequestTarget $target, Evaluation $evaluation): void
+    {
+        if ($evaluation->wouldBlock === []) {
+            return;
+        }
+
+        try {
+            $request->attributes->set(self::WOULD_BLOCK, array_map(
+                fn (RuleAttempt $wouldBlock): RateLimitWouldBlock => new RateLimitWouldBlock(
+                    ruleId: $wouldBlock->rule->id,
+                    ruleName: $wouldBlock->rule->name,
+                    limit: $wouldBlock->attempt->limit,
+                    windowSeconds: $wouldBlock->attempt->windowSeconds,
+                    scope: $wouldBlock->rule->scope,
+                    identityHash: $wouldBlock->attempt->key->identityHash,
+                    retryAfter: $wouldBlock->attempt->retryAfter,
+                    method: $target->method,
+                    path: $target->path,
+                ),
+                $evaluation->wouldBlock,
+            ));
+        } catch (Throwable $exception) {
+            $this->report($exception);
+        }
     }
 
     /**

@@ -52,3 +52,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - A limited request gets Laravel's 429 through your exception handler, or the rule's `response_override` as its JSON body, with `Retry-After`, `X-RateLimit-Reset`, `X-RateLimit-Limit` and `X-RateLimit-Remaining`. An allowed request gets `X-RateLimit-Limit` and `X-RateLimit-Remaining` from its most restrictive enforcing rule. Dry-run rules set no headers.
   - When something fails while deciding, such as the counter store, a config value or one of your scope resolvers, the request goes through, and the error is reported.
 - `DynamicThrottle::fake()` for your app's tests: the counters and the manifest live in memory, so tests need no Redis and each one starts from zero.
+- The `RateLimitWouldBlock` event: a dry-run rule dispatches it, after the response, on exactly the requests an enforcing copy of the rule would reject.
+  - One event for each dry-run rule that would block, in the order the rules run.
+  - It carries plain values, so queued listeners work: the rule's id, name, limit, window and scope, the client's identity hash, the `Retry-After` it would have got, and the request's method and path.
+  - A listener that throws is reported, and the other events are still dispatched.
