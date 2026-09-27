@@ -8,6 +8,8 @@ use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
 use Afzal\DynamicThrottle\Engine\CounterKey;
 use Afzal\DynamicThrottle\Engine\Exceptions\IdentityUnavailableException;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
+use Afzal\DynamicThrottle\Engine\Failure\Cooldown;
+use Afzal\DynamicThrottle\Engine\Failure\ProcessFailureMemory;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Matching\RuleMatcher;
 use Afzal\DynamicThrottle\Engine\Stacking\Evaluation;
@@ -20,6 +22,7 @@ use Afzal\DynamicThrottle\Engine\Stores\CacheLimiterStore;
 use Afzal\DynamicThrottle\Enums\RuleMode;
 use Afzal\DynamicThrottle\Manifest\CompiledRule;
 use Afzal\DynamicThrottle\Manifest\Manifest;
+use Afzal\DynamicThrottle\Tests\Support\FailingStore;
 use Afzal\DynamicThrottle\Tests\Support\FakeClock;
 use Afzal\DynamicThrottle\Tests\Support\ManifestFixtures;
 use Illuminate\Cache\ArrayStore;
@@ -629,4 +632,154 @@ it('SPEC-009 AC-20: still rejects on a rule whose exemption check failed', funct
     expect($second->outcome)->toBe(EvaluationOutcome::Rejected)
         ->and($second->rejection?->rule->id)->toBe('a')
         ->and(failureSummary($second->exemptionFailures))->toBe([['a', 'The exemptions of a could not be checked.']]);
+});
+
+/*
+| SPEC-012: a fail-closed rule that cannot be checked stops evaluation with the
+| Unavailable outcome (ADR-0010 point 2), and the cooldown keeps the store out
+| of the next requests (point 4).
+*/
+
+function closedRule(string $id, int $priority, RuleMode $mode = RuleMode::Enforce): CompiledRule
+{
+    return CompiledRule::fromArray(ManifestFixtures::rule([
+        'id' => $id,
+        'max_attempts' => 100,
+        'priority' => $priority,
+        'mode' => $mode->value,
+        'on_failure' => 'closed',
+    ]));
+}
+
+/**
+ * A 10-second cooldown at T0 + 10, as the stack store's clock stands.
+ */
+function stackCooldown(): Cooldown
+{
+    $clock = new FakeClock;
+    $clock->setSeconds(FakeClock::T0 + 10);
+
+    return new Cooldown($clock, 10, new ProcessFailureMemory);
+}
+
+/**
+ * @param  list<CompiledRule>  $rules
+ * @return list<string>
+ */
+function uncheckedIds(array $rules): array
+{
+    return array_map(fn (CompiledRule $rule): string => $rule->id, $rules);
+}
+
+it('SPEC-012 AC-2: stops with Unavailable at a fail-closed rule whose attempt fails, and keeps the counts before it', function (): void {
+    $stack = stackStore();
+    $cooldown = stackCooldown();
+
+    $evaluation = (new RuleEvaluator(failingFor($stack->store, attemptsOf: 'c'), 5, $cooldown))
+        ->evaluate([stackRule('a', 100, 10), closedRule('c', 20), stackRule('d', 100, 30)], oneClient());
+
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Unavailable)
+        ->and($evaluation->unavailable?->id)->toBe('c')
+        ->and(failureSummary($evaluation->failures))->toBe([['c', 'The store is down.']])
+        // The store is down, so a release would only fail again.
+        ->and(attemptSummary($evaluation->attempts))->toBe([['a', false]])
+        ->and([stackCount($stack->cache, 'a'), stackCount($stack->cache, 'd')])->toBe([1, 0])
+        ->and($cooldown->secondsLeft())->toBe(10);
+});
+
+it('SPEC-012 AC-2: stops with Unavailable at a fail-closed rule after a failed attempt, without trying the store again', function (): void {
+    $store = FailingStore::down();
+
+    $evaluation = (new RuleEvaluator($store))
+        ->evaluate([stackRule('a', 100, 10), stackRule('b', 100, 20), closedRule('c', 30)], oneClient());
+
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Unavailable)
+        ->and($evaluation->unavailable?->id)->toBe('c')
+        ->and(failureSummary($evaluation->failures))->toBe([['a', FailingStore::DOWN]])
+        ->and(uncheckedIds($evaluation->unchecked))->toBe(['b'])
+        ->and($store->attempts)->toBe(1);
+});
+
+it('SPEC-012 AC-1: calls no store while the cooldown runs, and lets fail-open rules go unchecked', function (): void {
+    $store = FailingStore::down();
+    $cooldown = stackCooldown();
+    $cooldown->start();
+
+    $evaluation = (new RuleEvaluator($store, 5, $cooldown))->evaluate([stackRule('a', 100, 10), stackRule('b', 100, 20)], oneClient());
+
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Allowed)
+        ->and(uncheckedIds($evaluation->unchecked))->toBe(['a', 'b'])
+        ->and([$evaluation->attempts, $evaluation->failures, $evaluation->unavailable])->toBe([[], [], null])
+        ->and($store->attempts)->toBe(0);
+});
+
+it('SPEC-012 AC-2: stops with Unavailable at a fail-closed rule while the cooldown runs, and calls no store', function (): void {
+    $store = FailingStore::down();
+    $cooldown = stackCooldown();
+    $cooldown->start();
+
+    $evaluation = (new RuleEvaluator($store, 5, $cooldown))->evaluate([stackRule('a', 100, 10), closedRule('c', 20)], oneClient());
+
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Unavailable)
+        ->and($evaluation->unavailable?->id)->toBe('c')
+        ->and(uncheckedIds($evaluation->unchecked))->toBe(['a'])
+        ->and($evaluation->failures)->toBe([])
+        ->and($store->attempts)->toBe(0);
+});
+
+it('SPEC-012 AC-3: stops with Unavailable at a fail-closed rule whose identity fails, and releases the counts before it', function (): void {
+    $stack = stackStore();
+
+    $evaluation = (new RuleEvaluator($stack->store))
+        ->evaluate([stackRule('a', 100, 10), closedRule('c', 20), stackRule('d', 100, 30)], failingIdentities(['c']));
+
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Unavailable)
+        ->and($evaluation->unavailable?->id)->toBe('c')
+        ->and(failureSummary($evaluation->failures))->toBe([['c', 'The identity for custom:plan could not be resolved.']])
+        ->and(attemptSummary($evaluation->attempts))->toBe([['a', true]])
+        ->and([stackCount($stack->cache, 'a'), stackCount($stack->cache, 'd')])->toBe([0, 0]);
+});
+
+it('SPEC-012 AC-4: never stops at a dry-run fail-closed rule', function (): void {
+    $stack = stackStore();
+
+    $evaluation = (new RuleEvaluator(failingFor($stack->store, attemptsOf: 'd')))
+        ->evaluate([closedRule('d', 10, RuleMode::DryRun), stackRule('e', 100, 20)], oneClient());
+
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Failed)
+        ->and($evaluation->unavailable)->toBeNull()
+        ->and(uncheckedIds($evaluation->unchecked))->toBe(['e']);
+});
+
+it('SPEC-012 AC-4: gives a rule the store could not count its slot, so which rules apply never depends on the store', function (): void {
+    $stack = stackStore();
+
+    $evaluation = (new RuleEvaluator(failingFor($stack->store, attemptsOf: 'a'), 1))
+        ->evaluate([stackRule('a', 100, 10), closedRule('c', 20)], oneClient());
+
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Failed)
+        ->and(uncheckedIds($evaluation->ignored))->toBe(['c']);
+});
+
+it('SPEC-012 AC-1: starts the cooldown when an attempt fails', function (): void {
+    $stack = stackStore();
+    $cooldown = stackCooldown();
+
+    (new RuleEvaluator(failingFor($stack->store, attemptsOf: 'a'), 5, $cooldown))->evaluate([stackRule('a', 100, 10)], oneClient());
+
+    expect($cooldown->secondsLeft())->toBe(10);
+});
+
+it('SPEC-012 AC-6: starts the cooldown when a release fails, and still tries the other releases (ADR-0021)', function (): void {
+    $stack = stackStore();
+    $cooldown = stackCooldown();
+    $evaluator = new RuleEvaluator(failingFor($stack->store, releasesOf: 'a'), 5, $cooldown);
+    $rules = [stackRule('a', 100, 10), stackRule('b', 100, 20), stackRule('s', 1, 30)];
+
+    $evaluator->evaluate($rules, oneClient());
+    $second = $evaluator->evaluate($rules, oneClient());
+
+    expect($second->outcome)->toBe(EvaluationOutcome::Rejected)
+        ->and(attemptSummary($second->attempts))->toBe([['a', false], ['b', true]])
+        ->and($cooldown->secondsLeft())->toBe(10);
 });

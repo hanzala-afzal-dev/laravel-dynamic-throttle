@@ -52,3 +52,9 @@ it('SPEC-006: builds the manifest keys from the prefix, apart from every counter
     expect([$keys->manifest(), $keys->manifestLock(), $keys->manifestRebuild()])->toBe(['dt:m', 'dt:m:lock', 'dt:m:rebuild'])
         ->and($keys->counterBase(new CounterKey('1', hash('sha256', 'A')), 60))->toStartWith('dt:c:');
 });
+
+it('SPEC-012: builds the keys of the cooldown and of the reported causes under the prefix', function (): void {
+    $keys = new KeyBuilder('dt:');
+
+    expect([$keys->cooldown(), $keys->reported('0a1b')])->toBe(['dt:cooldown', 'dt:reported:0a1b']);
+});

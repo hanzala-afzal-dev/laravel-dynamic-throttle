@@ -26,3 +26,13 @@ it('SPEC-008 AC-12: works without a cause', function (): void {
     expect($exception->getPrevious())->toBeNull()
         ->and($exception->getCode())->toBe(0);
 });
+
+it('SPEC-012 AC-9: marks a client IP that cannot be read as the client\'s doing, which strict mode never rethrows', function (): void {
+    $cause = new RuntimeException('Conflicting forwarded headers.');
+
+    $client = IdentityUnavailableException::unreadableClientIp('The client IP could not be read.', $cause);
+    $app = IdentityUnavailableException::because('The identity for custom:plan could not be resolved.', $cause);
+
+    expect([$client->fromClient, $app->fromClient])->toBe([true, false])
+        ->and([$client->getMessage(), $client->getPrevious(), $client->getCode()])->toBe(['The client IP could not be read.', $cause, 0]);
+});
