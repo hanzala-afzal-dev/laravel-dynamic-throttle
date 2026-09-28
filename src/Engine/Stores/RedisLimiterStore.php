@@ -175,6 +175,18 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
         return 0
         LUA;
 
+    /**
+     * The scripts' SHA-1s, which EVALSHA sends on every call. Written out, because
+     * hashing the batch script costs about 5 µs per request. The stubbed-client
+     * tests check each one against scriptSha(), batchScriptSha() and
+     * releaseScriptSha(), which hash the scripts themselves.
+     */
+    private const string SCRIPT_SHA = '0d6a138de1be14ff1163308d4385c39eeadecae4';
+
+    private const string BATCH_SCRIPT_SHA = '175ee874c5dbaaa6bb0a4baf564e3dff579a1735';
+
+    private const string RELEASE_SCRIPT_SHA = 'b1e8534b2f07725a9d90be12c19efa55cf9f6631';
+
     public function __construct(
         private RedisFactory $redis,
         /** The Redis connection name; public so driver selection can be checked. */
@@ -189,7 +201,7 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
         // Same checks as the cache driver, before touching the store (SPEC-002 AC-16).
         AttemptGuard::check($maxAttempts, $windowSeconds);
 
-        $reply = $this->integers($this->run(self::SCRIPT, 'count', [$this->keys->counterBase($key, $windowSeconds)], [
+        $reply = $this->integers($this->run(self::SCRIPT, self::SCRIPT_SHA, 'count', [$this->keys->counterBase($key, $windowSeconds)], [
             (string) $maxAttempts,
             (string) $windowSeconds,
             $this->time(),
@@ -235,7 +247,7 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
         }
 
         try {
-            return $this->batch($attempts, $this->run(self::BATCH_SCRIPT, 'count', $keys, $arguments, $connection));
+            return $this->batch($attempts, $this->run(self::BATCH_SCRIPT, self::BATCH_SCRIPT_SHA, 'count', $keys, $arguments, $connection));
         } catch (StorageUnavailableException $exception) {
             // Nothing is known about the counts, so none is released: stricter, never looser.
             return new AttemptBatch(failure: $exception);
@@ -249,7 +261,7 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
             return;
         }
 
-        $reply = $this->run(self::RELEASE_SCRIPT, 'release', [$this->keys->counterBase($attempt->key, $attempt->windowSeconds)], [
+        $reply = $this->run(self::RELEASE_SCRIPT, self::RELEASE_SCRIPT_SHA, 'release', [$this->keys->counterBase($attempt->key, $attempt->windowSeconds)], [
             (string) $attempt->windowIndex,
         ]);
 
@@ -373,18 +385,19 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
      * connection (AC-16), but not through Laravel's phpredis evalsha(), which
      * sends SCRIPT LOAD on every call.
      *
+     * @param  string  $sha  the script's SHA-1, for EVALSHA
      * @param  'count'|'release'  $operation  for the message when Redis cannot be used
      * @param  non-empty-list<string>  $keys
      * @param  list<string>  $arguments
      */
-    private function run(string $script, string $operation, array $keys, array $arguments, ?Connection $connection = null): mixed
+    private function run(string $script, string $sha, string $operation, array $keys, array $arguments, ?Connection $connection = null): mixed
     {
         try {
             $connection ??= $this->redis->connection($this->connection);
 
             return match (true) {
-                $connection instanceof PhpRedisConnection => $this->runWithPhpRedis($connection, $script, $keys, $arguments),
-                $connection instanceof PredisConnection => $this->runWithPredis($connection, $script, $keys, $arguments),
+                $connection instanceof PhpRedisConnection => $this->runWithPhpRedis($connection, $script, $sha, $keys, $arguments),
+                $connection instanceof PredisConnection => $this->runWithPredis($connection, $script, $sha, $keys, $arguments),
                 default => throw new InvalidArgumentException('Unsupported Redis connection '.get_debug_type($connection).'; use phpredis or predis.'),
             };
         } catch (Throwable $exception) {
@@ -398,10 +411,10 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
      * @param  non-empty-list<string>  $keys
      * @param  list<string>  $arguments
      */
-    private function runWithPhpRedis(PhpRedisConnection $connection, string $script, array $keys, array $arguments): mixed
+    private function runWithPhpRedis(PhpRedisConnection $connection, string $script, string $sha, array $keys, array $arguments): mixed
     {
         $parameters = [...$keys, ...$arguments];
-        $reply = $connection->command('evalsha', [hash('sha1', $script), $parameters, count($keys)]);
+        $reply = $connection->command('evalsha', [$sha, $parameters, count($keys)]);
 
         if ($reply === false && str_starts_with($this->lastError($connection), 'NOSCRIPT')) {
             $reply = $connection->command('eval', [$script, $parameters, count($keys)]);
@@ -430,12 +443,12 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
      * @param  non-empty-list<string>  $keys
      * @param  list<string>  $arguments
      */
-    private function runWithPredis(PredisConnection $connection, string $script, array $keys, array $arguments): mixed
+    private function runWithPredis(PredisConnection $connection, string $script, string $sha, array $keys, array $arguments): mixed
     {
         $parameters = [count($keys), ...$keys, ...$arguments];
 
         try {
-            $reply = $connection->command('evalsha', [hash('sha1', $script), ...$parameters]);
+            $reply = $connection->command('evalsha', [$sha, ...$parameters]);
         } catch (PredisServerException $exception) {
             if ($exception->getErrorType() !== 'NOSCRIPT') {
                 throw $exception;
