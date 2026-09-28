@@ -37,7 +37,7 @@ final readonly class OneCallPerAttempt implements BatchLimiterStore
             } catch (StorageUnavailableException $exception) {
                 // The counts made so far stay: releasing them would only fail again, and a
                 // kept count is stricter, never looser (SPEC-004).
-                return new AttemptBatch($made, array_fill(0, count($made), false), failure: $exception);
+                return new AttemptBatch($made, $this->kept($made), failure: $exception);
             }
 
             $made[] = $attempt;
@@ -47,7 +47,18 @@ final readonly class OneCallPerAttempt implements BatchLimiterStore
             }
         }
 
-        return $releaseAll ? $this->release($made) : new AttemptBatch($made, array_fill(0, count($made), false));
+        return $releaseAll ? $this->release($made) : new AttemptBatch($made, $this->kept($made));
+    }
+
+    /**
+     * No count released.
+     *
+     * @param  list<Attempt>  $made
+     * @return list<bool>
+     */
+    private function kept(array $made): array
+    {
+        return array_map(static fn (): bool => false, $made);
     }
 
     /**

@@ -130,31 +130,20 @@ final readonly class RuleEvaluator
             $plan[] = new PlannedAttempt(new CounterKey($rule->id, $identity), $rule->maxAttempts, $rule->windowSeconds, $rule->mode === RuleMode::Enforce);
         }
 
-        // 2. Count. During the cooldown no rule tries the store, so an outage costs one
-        // failed call per cooldown. With a stop, the call only asks whether an earlier
-        // rule rejects, so it releases every count either way.
-        $storeDown = $plan !== [] && $this->cooldown instanceof Cooldown && $this->cooldown->secondsLeft() > 0;
-        $batch = $plan === [] || $storeDown ? new AttemptBatch : $this->counter->attemptAll($plan, $stop instanceof CompiledRule);
+        // 2. Count, unless the store is in its cooldown. With a stop, the call only asks
+        // whether an earlier rule rejects, so it releases every count either way.
+        $batch = $plan === [] || $this->inCooldown() ? new AttemptBatch : $this->counter->attemptAll($plan, $stop instanceof CompiledRule);
 
         if ($batch->failure instanceof StorageUnavailableException || $batch->releaseFailures !== []) {
             $this->cooldown?->start();
         }
-
-        // A count that cannot be released stays, which is stricter, never looser.
-        $releaseFailures = [];
-
-        foreach ($batch->releaseFailures as $index => $exception) {
-            $releaseFailures[$index] = new RuleFailure($planned[$index][1], $exception);
-        }
-
-        ksort($releaseFailures);
-        $releaseFailures = array_values($releaseFailures);
 
         // 3. Decide, in evaluation order: the first enforcing rejection gives the 429, then
         // the first fail-closed rule the store could not check, then the stop.
         $attempts = [];
         $wouldBlock = [];
         $unchecked = [];
+        $releaseFailures = [];
         $made = count($batch->attempts);
 
         foreach ($planned as $index => [$position, $rule]) {
@@ -163,6 +152,11 @@ final readonly class RuleEvaluator
 
                 if ($attempt->allowed) {
                     $attempts[] = new RuleAttempt($rule, $attempt, released: $batch->released[$index] ?? false);
+
+                    // A count that cannot be released stays, which is stricter, never looser.
+                    if (isset($batch->releaseFailures[$index])) {
+                        $releaseFailures[] = new RuleFailure($rule, $batch->releaseFailures[$index]);
+                    }
                 } elseif ($rule->mode === RuleMode::DryRun) {
                     // Not counted, and not enforced (ADR-0012).
                     $wouldBlock[] = new RuleAttempt($rule, $attempt);
@@ -199,6 +193,14 @@ final readonly class RuleEvaluator
         return $failures === []
             ? Evaluation::allowed($attempts, $wouldBlock, $skipped, $ignored, $exempted, $exemptionFailures, $unchecked)
             : Evaluation::failed($this->inOrder($failures), $attempts, $wouldBlock, $skipped, $ignored, $exempted, $exemptionFailures, $unchecked);
+    }
+
+    /**
+     * While the cooldown runs, the store is skipped, so an outage costs one failed call per cooldown.
+     */
+    private function inCooldown(): bool
+    {
+        return $this->cooldown instanceof Cooldown && $this->cooldown->secondsLeft() > 0;
     }
 
     /**
