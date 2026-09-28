@@ -92,3 +92,7 @@
   - Deleting the L2 key leads to fail-open behavior plus exactly one scheduled rebuild.
   - With L0 enabled, a change becomes visible within `refresh_seconds` (fake clock).
 - Query-count assertion: zero database queries during a throttled request with a warm manifest.
+
+## Decision record
+
+At the Phase 2 exit review, on 2026-09-28, the maintainer decided to build L1. On PHP-FPM, reading and decoding the manifest cost 0.3 to 0.6 ms per request (`benchmarks/results/phase-2-exit.md`). SPEC-028 builds L1 in APCu, as the read path's table above describes, in Phase 3.

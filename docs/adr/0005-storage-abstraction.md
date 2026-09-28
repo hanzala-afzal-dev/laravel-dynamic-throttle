@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-23
 - Roadmap phase: 1
+- Amended by: [ADR-0026](0026-one-round-trip-per-request.md) (one call counts all of a request's attempts)
 - Related: ADR-0006, ADR-0007, ADR-0010
 
 ## Context
