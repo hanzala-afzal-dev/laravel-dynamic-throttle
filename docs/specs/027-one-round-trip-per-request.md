@@ -90,6 +90,7 @@ Unit tests use the array store and the FakeClock. Driver tests run on Redis and 
 - **The reply is lost after the script ran.** The counts stay, as after a failed attempt today.
 - **A script error on some Redis-compatible server:** the batch fails, and the failure policy applies. The fallback, one call per attempt for everyone, is ADR-0026's.
 - **`NOSCRIPT` after a restart or failover:** the script is sent again with `EVAL`, as today's scripts are.
+- **An endpoint that requires a script's keys to share a hash slot** behind a plain connection, such as ElastiCache Serverless or a slot-aware proxy, refuses the batch script with `CROSSSLOT`. That is a failed call, and the error names `CROSSSLOT`. The README says to use a cluster connection there, which makes one call per attempt.
 
 ## End-to-end verification
 - `composer test`, `composer analyse`, `composer format:check`, `composer refactor:check`
@@ -103,3 +104,4 @@ Recorded as recommended (ADR-0027). The maintainer can veto them in the PR.
 2. **A batch failure is part of the result, not an exception.** Both paths report partial results the same way: the one-call-per-attempt path can fail after some attempts counted.
 3. **Identities are resolved before the store call** for every rule within the cap, as ADR-0026 accepts. Resolving lazily would need one round trip per rule again.
 4. **Cluster is detected from Laravel's cluster connection classes,** so there is nothing to configure.
+5. **No automatic fallback on `CROSSSLOT`.** Retrying one call per attempt would keep a misconfigured deployment working, but it would pay an extra round trip on every request, and nobody would learn why. The failed call is reported instead, and the fix is one config change.
