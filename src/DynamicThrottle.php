@@ -8,6 +8,7 @@ use Afzal\DynamicThrottle\Compiler\ManifestCompileFailed;
 use Afzal\DynamicThrottle\Compiler\ManifestCompiler;
 use Afzal\DynamicThrottle\Contracts\ScopeResolver;
 use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
+use Afzal\DynamicThrottle\Engine\Failure\ProcessFailureMemory;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
 use Afzal\DynamicThrottle\Manifest\ManifestCodec;
@@ -30,6 +31,10 @@ final class DynamicThrottle
 
     /** @var array<string, Closure|ScopeResolver|class-string<ScopeResolver>> */
     private array $scopes = [];
+
+    private bool $strict = false;
+
+    private bool $faked = false;
 
     /**
      * Registers a custom scope (ADR-0009). Rules with the custom scope $name count
@@ -69,6 +74,33 @@ final class DynamicThrottle
     }
 
     /**
+     * Strict mode (ADR-0020 point 1, SPEC-012), off by default. The middleware then
+     * rethrows programming mistakes instead of reporting them and letting the request
+     * through: config mistakes, such as an unknown driver, a custom scope or a guard
+     * that throws, and the package's own errors. Storage errors, the manifest and a
+     * client IP that cannot be read still follow the failure policy.
+     *
+     * For example, in a service provider: DynamicThrottle::strict(! app()->isProduction()).
+     */
+    public function strict(bool $strict = true): void
+    {
+        $this->strict = $strict;
+    }
+
+    public function isStrict(): bool
+    {
+        return $this->strict;
+    }
+
+    /**
+     * @internal whether fake() replaced the counter store
+     */
+    public function isFaked(): bool
+    {
+        return $this->faked;
+    }
+
+    /**
      * For the app's tests (ADR-0020 point 12, SPEC-010): moves the counters and the
      * manifest into a fresh in-memory cache store, so tests need no Redis and share
      * no counts. The counters read Laravel's clock, so travel() moves their windows.
@@ -78,11 +110,17 @@ final class DynamicThrottle
      * manifest again, so a rule saved later applies to the next request. The
      * manifest this process kept is forgotten, so a test never sees the rules of
      * the test before it. Without the package's tables, no rule applies.
+     *
+     * The fake's store never fails, and each fake() starts without a cooldown or a
+     * throttled report (SPEC-012): failures are then remembered in the process only,
+     * never in APCu, which would carry them from one test to the next.
      */
     public function fake(): void
     {
         $app = Container::getInstance();
         $config = $app->make(Config::class);
+        $this->faked = true;
+        $app->instance(ProcessFailureMemory::class, new ProcessFailureMemory);
 
         $config->set('cache.stores.'.self::FAKE_STORE, ['driver' => 'array', 'serialize' => false]);
         $config->set('dynamic-throttle.store', self::FAKE_STORE);

@@ -60,4 +60,22 @@ final readonly class KeyBuilder
     {
         return $this->manifest().':rebuild';
     }
+
+    /**
+     * When the counter store's cooldown started, in APCu (SPEC-012). The PHP-FPM pools
+     * of a server share APCu, so the key names the app: another app's outage is not
+     * this one's.
+     */
+    public function cooldown(string $app): string
+    {
+        return "{$this->prefix}cooldown:{$app}";
+    }
+
+    /**
+     * When a cause of a failure was last reported, in APCu, for one app (SPEC-012).
+     */
+    public function reported(string $app, string $cause): string
+    {
+        return "{$this->prefix}reported:{$app}:{$cause}";
+    }
 }

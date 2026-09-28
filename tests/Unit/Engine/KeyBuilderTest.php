@@ -52,3 +52,10 @@ it('SPEC-006: builds the manifest keys from the prefix, apart from every counter
     expect([$keys->manifest(), $keys->manifestLock(), $keys->manifestRebuild()])->toBe(['dt:m', 'dt:m:lock', 'dt:m:rebuild'])
         ->and($keys->counterBase(new CounterKey('1', hash('sha256', 'A')), 60))->toStartWith('dt:c:');
 });
+
+it('SPEC-012: builds the keys of the cooldown and of the reported causes under the prefix, for one app', function (): void {
+    $keys = new KeyBuilder('dt:');
+
+    // APCu is shared by the apps of a server, so its keys name the app too.
+    expect([$keys->cooldown('app1'), $keys->reported('app1', '0a1b')])->toBe(['dt:cooldown:app1', 'dt:reported:app1:0a1b']);
+});

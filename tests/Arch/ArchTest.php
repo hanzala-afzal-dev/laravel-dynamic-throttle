@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 use Afzal\DynamicThrottle\DynamicThrottle;
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
+use Afzal\DynamicThrottle\Engine\Failure\Cooldown;
+use Afzal\DynamicThrottle\Engine\Failure\ReportThrottle;
+use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
+use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
+use Afzal\DynamicThrottle\Support\ApcuFailureMemory;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -126,6 +131,33 @@ arch('events read no clock, not even the package\'s Clock (SPEC-011 AC-9)')
 arch('events carry plain values, never the request, so a queued listener can serialize them (SPEC-011 AC-9)')
     ->expect('Afzal\DynamicThrottle\Events')
     ->not->toUse([Request::class, SymfonyRequest::class, RequestFacade::class, 'request']);
+
+/*
+| SPEC-012 AC-11: what the process remembers about failures lives in the
+| failure memories (ProcessFailureMemory, and APCu through ApcuFailureMemory),
+| never in the classes that decide a request. A readonly class cannot hold
+| static state either.
+*/
+
+arch('the middleware keeps no state between requests (SPEC-012 AC-11)')
+    ->expect(DynamicThrottleMiddleware::class)
+    ->toBeReadonly();
+
+arch('the evaluator keeps no state between requests (SPEC-012 AC-11)')
+    ->expect(RuleEvaluator::class)
+    ->toBeReadonly();
+
+arch('the cooldown keeps its state in the failure memories (SPEC-012 AC-11)')
+    ->expect(Cooldown::class)
+    ->toBeReadonly();
+
+arch('the report throttle keeps its state in the failure memories (SPEC-012 AC-11)')
+    ->expect(ReportThrottle::class)
+    ->toBeReadonly();
+
+arch('only ApcuFailureMemory calls APCu, with keys from KeyBuilder (SPEC-012 AC-11)')
+    ->expect(['apcu_fetch', 'apcu_store', 'apcu_add', 'apcu_cas', 'apcu_inc', 'apcu_dec', 'apcu_entry', 'apcu_exists', 'apcu_delete', 'apcu_clear_cache'])
+    ->toOnlyBeUsedIn(ApcuFailureMemory::class);
 
 dataset('built-in classes the arch rules cannot see', [
     'a "now" date in the engine bypasses travel() (ADR-0006)' => [

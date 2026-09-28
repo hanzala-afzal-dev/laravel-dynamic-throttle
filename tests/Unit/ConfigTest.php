@@ -160,3 +160,29 @@ it('AC-6: excludes ADR-0020\'s paths by default, with the root pages and Livewir
         'up',
     ]);
 });
+
+/*
+| SPEC-012: the cooldown after a storage failure (ADR-0010 point 4).
+*/
+
+it('SPEC-012: skips the store for 10 seconds after a failure unless DYNAMIC_THROTTLE_COOLDOWN says otherwise, and 0 turns it off', function (): void {
+    expect(loadPackageConfig()['failure'])->toBe(['cooldown_seconds' => 10]);
+
+    $_SERVER['DYNAMIC_THROTTLE_COOLDOWN'] = '0';
+
+    try {
+        expect(loadPackageConfig()['failure']['cooldown_seconds'])->toBe(0);
+    } finally {
+        unset($_SERVER['DYNAMIC_THROTTLE_COOLDOWN']);
+    }
+});
+
+it('SPEC-012: falls back to 10 seconds for a cooldown that is not a whole number of seconds', function (string $value): void {
+    $_SERVER['DYNAMIC_THROTTLE_COOLDOWN'] = $value;
+
+    try {
+        expect(loadPackageConfig()['failure']['cooldown_seconds'])->toBe(10);
+    } finally {
+        unset($_SERVER['DYNAMIC_THROTTLE_COOLDOWN']);
+    }
+})->with(['-1', 'soon', '1.5', 'true', '(true)']);

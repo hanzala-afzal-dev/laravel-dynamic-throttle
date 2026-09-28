@@ -91,7 +91,7 @@ jobs:
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
           php-version: ${{ matrix.php }}
-          extensions: bcmath, intl, pdo_sqlite
+          extensions: apcu, bcmath, intl, pdo_sqlite
           coverage: none
           tools: composer:v2
 
@@ -114,6 +114,10 @@ jobs:
 
       - name: Run tests
         run: composer test
+
+      # With APCu enabled in the CLI, which the suite above leaves off (SPEC-012).
+      - name: Run the APCu tests
+        run: composer test:apcu
 
   drivers:
     name: Drivers · PHP ${{ matrix.php }} · Laravel ${{ matrix.laravel }}

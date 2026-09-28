@@ -10,16 +10,23 @@ use Afzal\DynamicThrottle\Engine\CounterKey;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 
 /**
- * A counter store that fails as a store that is down does (ADR-0010, ADR-0021).
+ * A counter store that fails as a store that is down does (ADR-0010, ADR-0021),
+ * and counts the calls it gets, so tests can see that a cooldown skips it (SPEC-012).
  */
-final readonly class FailingStore implements LimiterStore
+final class FailingStore implements LimiterStore
 {
     public const string DOWN = 'The store is down.';
 
     public const string RELEASE_FAILED = 'The store could not release the count.';
 
+    /** How many times attempt() was called. */
+    public int $attempts = 0;
+
+    /** How many times release() was called. */
+    public int $releases = 0;
+
     private function __construct(
-        private ?LimiterStore $inner,
+        private readonly ?LimiterStore $inner,
     ) {}
 
     /**
@@ -40,6 +47,8 @@ final readonly class FailingStore implements LimiterStore
 
     public function attempt(CounterKey $key, int $maxAttempts, int $windowSeconds): Attempt
     {
+        $this->attempts++;
+
         return $this->inner instanceof LimiterStore
             ? $this->inner->attempt($key, $maxAttempts, $windowSeconds)
             : throw StorageUnavailableException::because(self::DOWN);
@@ -47,6 +56,8 @@ final readonly class FailingStore implements LimiterStore
 
     public function release(Attempt $attempt): void
     {
+        $this->releases++;
+
         throw StorageUnavailableException::because(self::RELEASE_FAILED);
     }
 }

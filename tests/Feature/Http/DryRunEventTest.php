@@ -327,12 +327,11 @@ it('AC-8: dispatches the event when the evaluation failed, and reports the failu
     $afterTheFirst = wouldBlockRuleNames();
     $second = $this->get('api/x');
 
-    // Each request fails on the tenant rule, and reports it (SPEC-010 decision 2).
+    // Each request fails on the tenant rule, which is reported once per cooldown (SPEC-012 decision 5).
     expect([$first->status(), $second->status()])->toBe([200, 200])
         ->and($afterTheFirst)->toBe([])
         ->and(wouldBlockRuleNames())->toBe(['Dry run'])
         ->and(array_map(fn (Throwable $exception): string => $exception->getMessage(), Exceptions::reported()))->toBe([
-            'The identity for custom:tenant could not be resolved: The tenant lookup failed.',
             'The identity for custom:tenant could not be resolved: The tenant lookup failed.',
         ]);
 });

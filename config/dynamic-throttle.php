@@ -229,4 +229,30 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Failures
+    |--------------------------------------------------------------------------
+    |
+    | When the counter store fails, each rule's on_failure decides: "open"
+    | lets the request through, and "closed" answers 503 (docs/adr/0010).
+    | The package then skips the store for cooldown_seconds, so an outage
+    | costs one failed call per cooldown instead of one per request, and
+    | reports each cause of a failure at most once per cooldown. 0 turns
+    | the cooldown off.
+    |
+    | The cooldown lives in the process, for Octane and queue workers, and
+    | in APCu when the extension is enabled, where a server's PHP-FPM
+    | workers share it. Without APCu, PHP-FPM tries the store on every
+    | request, and reports every failure.
+    |
+    */
+
+    'failure' => [
+        // Read as written, like refresh_seconds above.
+        'cooldown_seconds' => filter_var(Env::getRepository()->get('DYNAMIC_THROTTLE_COOLDOWN') ?? 10, FILTER_VALIDATE_INT, [
+            'options' => ['min_range' => 0, 'default' => 10],
+        ]),
+    ],
+
 ];

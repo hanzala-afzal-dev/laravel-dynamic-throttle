@@ -8,7 +8,11 @@ use Afzal\DynamicThrottle\Compiler\ManifestCompiler;
 use Afzal\DynamicThrottle\Compiler\ManifestObserver;
 use Afzal\DynamicThrottle\Console\CompileCommand;
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
+use Afzal\DynamicThrottle\Engine\Contracts\FailureMemory;
 use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
+use Afzal\DynamicThrottle\Engine\Failure\Cooldown;
+use Afzal\DynamicThrottle\Engine\Failure\ProcessFailureMemory;
+use Afzal\DynamicThrottle\Engine\Failure\ReportThrottle;
 use Afzal\DynamicThrottle\Engine\Identity\IdentityHasher;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
@@ -17,9 +21,11 @@ use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Models\Exemption;
 use Afzal\DynamicThrottle\Models\Rule;
+use Afzal\DynamicThrottle\Support\ApcuFailureMemory;
 use Afzal\DynamicThrottle\Support\ConfigMerger;
 use Afzal\DynamicThrottle\Support\LaravelClock;
 use Afzal\DynamicThrottle\Support\LimiterStoreFactory;
+use Afzal\DynamicThrottle\Support\UnavailableLimiterStore;
 use Composer\InstalledVersions;
 use Illuminate\Auth\Middleware\AuthenticateWithBasicAuth;
 use Illuminate\Console\Scheduling\Schedule;
@@ -32,6 +38,7 @@ use Illuminate\Foundation\Console\AboutCommand;
 use Illuminate\Foundation\Http\Kernel;
 use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
+use Throwable;
 
 final class DynamicThrottleServiceProvider extends ServiceProvider
 {
@@ -72,8 +79,25 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
 
         // The cap lives in the evaluator, which knows which rules count a request (ADR-0025).
         $this->app->scoped(RuleEvaluator::class, fn (Application $app): RuleEvaluator => new RuleEvaluator(
-            $app->make(LimiterStore::class),
+            $this->limiterStore($app),
             $this->maxRulesPerRequest($app),
+            $app->make(Cooldown::class),
+        ));
+
+        // Made now, at boot, so it outlives each request on Octane and in queue workers (SPEC-012).
+        $this->app->instance(ProcessFailureMemory::class, new ProcessFailureMemory);
+
+        $this->app->bind(Cooldown::class, fn (Application $app): Cooldown => new Cooldown(
+            $app->make(Clock::class),
+            $this->cooldownSeconds($app),
+            ...$this->failureMemories($app),
+        ));
+
+        // Reports are throttled where the cooldown lives, for as long (SPEC-012 decision 5).
+        $this->app->bind(ReportThrottle::class, fn (Application $app): ReportThrottle => new ReportThrottle(
+            $app->make(Clock::class),
+            $this->cooldownSeconds($app),
+            ...$this->failureMemories($app),
         ));
 
         // Apps register their custom scopes once, at boot, so they live for the worker.
@@ -131,6 +155,54 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
         $cap = $app->make('config')->get('dynamic-throttle.matching.max_rules_per_request');
 
         return is_int($cap) && $cap >= 1 ? $cap : 5;
+    }
+
+    /**
+     * The counter store. One that cannot be built, such as for an unknown driver, is
+     * a store that fails every call, so the failure policy applies to it. Strict mode
+     * rethrows the config mistake instead (SPEC-012).
+     */
+    private function limiterStore(Application $app): LimiterStore
+    {
+        try {
+            return $app->make(LimiterStore::class);
+        } catch (Throwable $exception) {
+            if ($app->make(DynamicThrottle::class)->isStrict()) {
+                throw $exception;
+            }
+
+            return new UnavailableLimiterStore($exception);
+        }
+    }
+
+    private function cooldownSeconds(Application $app): int
+    {
+        $seconds = $app->make('config')->get('dynamic-throttle.failure.cooldown_seconds');
+
+        return is_int($seconds) && $seconds >= 0 ? $seconds : 10;
+    }
+
+    /**
+     * Where failures are remembered (SPEC-012 decision 1): in the process, and in APCu
+     * when the extension is enabled, where a server's PHP-FPM workers share them.
+     *
+     * @return list<FailureMemory>
+     */
+    private function failureMemories(Application $app): array
+    {
+        $memories = [$app->make(ProcessFailureMemory::class)];
+
+        // fake()'s failures stay in the process: APCu would carry them from one test to the next.
+        if (ApcuFailureMemory::available() && ! $app->make(DynamicThrottle::class)->isFaked()) {
+            try {
+                // Named by the app's path: the PHP-FPM pools of a server share APCu.
+                $memories[] = new ApcuFailureMemory($app->make(KeyBuilder::class), hash('xxh128', $app->basePath()));
+            } catch (Throwable) {
+                // An invalid prefix, reported where the counter store is built. The process still remembers.
+            }
+        }
+
+        return $memories;
     }
 
     private function ipv6Prefix(Application $app): int

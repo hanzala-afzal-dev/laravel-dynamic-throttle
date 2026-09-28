@@ -23,8 +23,9 @@ export DEBIAN_FRONTEND=noninteractive
 
 php_version="$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null)"
 
-# The extensions CI installs for the driver and mutation jobs (.github/workflows/ci.yml).
-required=(bcmath curl intl mbstring memcached pcov pdo_mysql pdo_pgsql pdo_sqlite redis xml zip)
+# The extensions CI installs for the driver and mutation jobs (.github/workflows/ci.yml),
+# and APCu for `composer test:apcu` (SPEC-012).
+required=(apcu bcmath curl intl mbstring memcached pcov pdo_mysql pdo_pgsql pdo_sqlite redis xml zip)
 
 # Same images as docker-compose.yml.
 images=(redis:7.4-alpine valkey/valkey:8-alpine memcached:1.6-alpine mysql:8.4 postgres:16-alpine)
@@ -57,6 +58,8 @@ build_from_source() {
     source="$work/$extension"
 
     case "$extension" in
+        apcu)
+            clone v5.1.28 https://github.com/krakjoe/apcu.git "$source" ;;
         pcov)
             clone v1.0.12 https://github.com/krakjoe/pcov.git "$source" ;;
         redis)
