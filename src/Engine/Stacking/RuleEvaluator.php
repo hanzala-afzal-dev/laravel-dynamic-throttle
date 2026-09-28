@@ -167,8 +167,9 @@ final readonly class RuleEvaluator
                 continue;
             }
 
-            // The store failed on this rule's attempt. The counts made before it stay:
-            // releasing them would only fail again, and a kept count is stricter (SPEC-004).
+            // Not counted: the store failed on this rule's attempt or an earlier one, or is in
+            // its cooldown. The counts made before a failure stay: releasing them would only
+            // fail again, and a kept count is stricter, never looser (SPEC-004).
             $failed = $index === $made && $batch->failure instanceof StorageUnavailableException;
 
             if ($failed) {
