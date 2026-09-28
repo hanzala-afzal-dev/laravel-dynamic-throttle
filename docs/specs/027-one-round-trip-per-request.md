@@ -52,6 +52,7 @@ Unit tests use the array store and the FakeClock. Driver tests run on Redis and 
   - The response is the 429, the tenant resolver's error is reported, and no 503 is sent.
   - With the first rule under its limit, the response is the 503, and the first rule's count is released.
   - On Redis, each of these requests is one round trip.
+  - In strict mode (SPEC-012 AC-9), the tenant resolver's error is rethrown instead of the 429, as any resolver error is.
 - **AC-9 (a failed call)** A store that counts in one call, and whose call fails, with two fail-open rules then a fail-closed rule:
   - One failure is listed, on the first rule, and reported once.
   - The second rule goes unchecked, and the fail-closed rule answers 503.
@@ -74,7 +75,9 @@ Unit tests use the array store and the FakeClock. Driver tests run on Redis and 
 - Tests:
   - `tests/Unit/Engine/Stacking/`: the evaluator's plan, count and decide steps, and `OneCallPerAttempt`;
   - `tests/Contract/`: the batch behavior on every store, AC-11 included;
-  - `tests/Drivers/`: AC-1, AC-2, AC-6, AC-8's round trips and AC-9's failed script on Redis and Valkey;
+  - `tests/Drivers/`: AC-1, AC-2, AC-6, AC-8's round trips and AC-9's failed script on Redis and Valkey, and the batch with Redis `TIME` and with Laravel's key prefix;
+  - `tests/Unit/Engine/Stores/`: the batch script's arguments and malformed replies, through stubbed clients;
+  - `tests/Feature/Http/StrictModeTest.php`: AC-8 in strict mode;
   - `tests/Feature/Http/FailurePolicyTest.php`: AC-9 through the middleware, with a store double whose one call fails;
   - the same file: SPEC-012's AC-4, changed, which is AC-8's 429 through the middleware. SPEC-012's AC-3 is its 503.
 
@@ -88,9 +91,10 @@ Unit tests use the array store and the FakeClock. Driver tests run on Redis and 
 - **An invalid limit or window** in the plan throws an `InvalidArgumentException` before anything is counted, as `attempt()` does (SPEC-002 AC-16). The compiler never writes one.
 - **Up to 10 attempts** per request, the cap's 5 enforcing and 5 dry-run, so the script stays small.
 - **The reply is lost after the script ran.** The counts stay, as after a failed attempt today.
+- **A store that breaks the contract,** such as one an app wrote: when `attemptAll()` throws, or answers fewer attempts than planned without stopping at an enforcing rejection, the call failed on the first attempt it did not answer, and the failure policy applies. The Redis driver refuses such a reply as unexpected.
 - **A script error on some Redis-compatible server:** the batch fails, and the failure policy applies. The fallback, one call per attempt for everyone, is ADR-0026's.
 - **`NOSCRIPT` after a restart or failover:** the script is sent again with `EVAL`, as today's scripts are.
-- **An endpoint that requires a script's keys to share a hash slot** behind a plain connection, such as ElastiCache Serverless or a slot-aware proxy, refuses the batch script with `CROSSSLOT`. That is a failed call, and the error names `CROSSSLOT`. The README says to use a cluster connection there, which makes one call per attempt.
+- **An endpoint that requires a script's keys to share a hash slot** behind a plain connection, such as ElastiCache Serverless or a slot-aware proxy, refuses the batch script with `CROSSSLOT`. That is a failed call, and the error names `CROSSSLOT`. The README says to use a cluster connection there, which makes one call per attempt, or, where the endpoint supports no cluster client, the cache driver.
 
 ## End-to-end verification
 - `composer test`, `composer analyse`, `composer format:check`, `composer refactor:check`

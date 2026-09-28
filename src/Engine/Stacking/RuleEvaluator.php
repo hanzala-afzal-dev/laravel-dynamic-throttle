@@ -132,7 +132,7 @@ final readonly class RuleEvaluator
 
         // 2. Count, unless the store is in its cooldown. With a stop, the call only asks
         // whether an earlier rule rejects, so it releases every count either way.
-        $batch = $plan === [] || $this->inCooldown() ? new AttemptBatch : $this->counter->attemptAll($plan, $stop instanceof CompiledRule);
+        $batch = $plan === [] || $this->inCooldown() ? new AttemptBatch : $this->count($plan, $stop instanceof CompiledRule);
 
         if ($batch->failure instanceof StorageUnavailableException || $batch->releaseFailures !== []) {
             $this->cooldown?->start();
@@ -194,6 +194,33 @@ final readonly class RuleEvaluator
         return $failures === []
             ? Evaluation::allowed($attempts, $wouldBlock, $skipped, $ignored, $exempted, $exemptionFailures, $unchecked)
             : Evaluation::failed($this->inOrder($failures), $attempts, $wouldBlock, $skipped, $ignored, $exempted, $exemptionFailures, $unchecked);
+    }
+
+    /**
+     * The store's one call for the plan. A store an app wrote may break the
+     * BatchLimiterStore contract, so the failure policy still applies (ADR-0010)
+     * when it throws, or when it answers fewer attempts than planned without
+     * stopping at an enforcing rejection: the call failed on the first attempt it
+     * did not answer.
+     *
+     * @param  non-empty-list<PlannedAttempt>  $plan
+     */
+    private function count(array $plan, bool $releaseAll): AttemptBatch
+    {
+        try {
+            $batch = $this->counter->attemptAll($plan, $releaseAll);
+        } catch (StorageUnavailableException $exception) {
+            return new AttemptBatch(failure: $exception);
+        }
+
+        $made = count($batch->attempts);
+        $stopped = $made > 0 && ! $batch->attempts[$made - 1]->allowed && $plan[$made - 1]->enforces;
+
+        if ($made >= count($plan) || $stopped || $batch->failure instanceof StorageUnavailableException) {
+            return $batch;
+        }
+
+        return new AttemptBatch($batch->attempts, $batch->released, $batch->releaseFailures, StorageUnavailableException::because('The counter store answered fewer attempts than it was given.'));
     }
 
     /**

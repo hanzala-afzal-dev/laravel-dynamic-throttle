@@ -333,7 +333,8 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
 
     /**
      * The batch script's reply: five integers per attempt made, at least one
-     * attempt, and never more than planned.
+     * attempt, never more than planned, and fewer only up to an enforcing
+     * rejection.
      *
      * @param  non-empty-list<PlannedAttempt>  $attempts
      *
@@ -354,6 +355,12 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
             $planned = $attempts[$index];
             $made[] = $this->result($planned->key, $planned->maxAttempts, $planned->windowSeconds, [$allowed, $estimate, $retryAfter, $windowIndex]);
             $released[] = $wasReleased === 1;
+        }
+
+        $last = count($made) - 1;
+
+        if ($last < count($attempts) - 1 && ($made[$last]->allowed || ! $attempts[$last]->enforces)) {
+            throw StorageUnavailableException::because('The Redis limiter store returned an unexpected reply.');
         }
 
         return new AttemptBatch($made, $released);
