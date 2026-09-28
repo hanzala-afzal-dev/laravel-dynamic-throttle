@@ -26,6 +26,7 @@ use Afzal\DynamicThrottle\Models\Rule;
 use Afzal\DynamicThrottle\Support\ApcuFailureMemory;
 use Afzal\DynamicThrottle\Support\ConfigMerger;
 use Afzal\DynamicThrottle\Support\LaravelClock;
+use Afzal\DynamicThrottle\Support\LazyManifestRebuilder;
 use Afzal\DynamicThrottle\Support\LimiterStoreFactory;
 use Afzal\DynamicThrottle\Support\UnavailableLimiterStore;
 use Composer\InstalledVersions;
@@ -77,7 +78,7 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
             $this->manifestCache($app),
             $app->make(KeyBuilder::class),
             $app->make(Clock::class),
-            $app->make(ManifestCompiler::class),
+            new LazyManifestRebuilder($app),
             $app,
             $this->refreshSeconds($app),
         ));
