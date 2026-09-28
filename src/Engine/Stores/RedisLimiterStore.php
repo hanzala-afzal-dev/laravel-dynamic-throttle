@@ -280,6 +280,16 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
     }
 
     /**
+     * The SHA-1 that EVALSHA uses for the batch script.
+     *
+     * @internal
+     */
+    public static function batchScriptSha(): string
+    {
+        return hash('sha1', self::BATCH_SCRIPT);
+    }
+
+    /**
      * The time argument: the test clock's, or '' for Redis TIME.
      */
     private function time(): string

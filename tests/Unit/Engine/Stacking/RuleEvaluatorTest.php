@@ -1005,3 +1005,18 @@ it('SPEC-027: lists the failures in evaluation order, when the store fails befor
         ['b', 'The identity for custom:plan could not be resolved.'],
     ]);
 });
+
+it('SPEC-027: never marks a dry-run rule that would block, or the rule that rejects, as released', function (): void {
+    $stack = stackStore();
+    $evaluator = new RuleEvaluator($stack->store);
+    $rules = [stackRule('d', 1, 10, RuleMode::DryRun), stackRule('a', 100, 20), stackRule('s', 1, 30)];
+    $evaluator->evaluate($rules, oneClient());
+
+    $evaluation = $evaluator->evaluate($rules, oneClient());
+
+    // Neither was counted, so neither can be released.
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Rejected)
+        ->and(attemptSummary($evaluation->wouldBlock))->toBe([['d', false]])
+        ->and(attemptSummary($evaluation->attempts))->toBe([['a', true]])
+        ->and($evaluation->rejection?->released)->toBeFalse();
+});

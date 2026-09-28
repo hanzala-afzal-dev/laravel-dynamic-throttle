@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use Afzal\DynamicThrottle\Engine\Attempt;
+use Afzal\DynamicThrottle\Engine\AttemptBatch;
 use Afzal\DynamicThrottle\Engine\CounterKey;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
+use Afzal\DynamicThrottle\Engine\PlannedAttempt;
 use Afzal\DynamicThrottle\Engine\Stores\RedisLimiterStore;
 use Afzal\DynamicThrottle\Tests\Support\FakeClock;
 use Illuminate\Contracts\Redis\Factory as RedisFactory;
@@ -286,3 +288,93 @@ it('SPEC-004 AC-12: reports a release reply that is not an integer as unavailabl
     'a list' => [[1]],
     'a numeric string' => ['1'],
 ]);
+
+/*
+| SPEC-027: the batch script, through the same EVALSHA/EVAL runner. A failure
+| is part of the result, never an exception.
+*/
+
+/**
+ * A batch of one enforcing attempt, 5 per 60 s, on the stubbed store.
+ */
+function stubbedBatch(Redis $client): AttemptBatch
+{
+    return stubbedRedisStore(new PhpRedisConnection($client))
+        ->attemptAll([new PlannedAttempt(new CounterKey('1', hash('sha256', 'A')), 5, 60, true)], false);
+}
+
+it('SPEC-027: sends every counter as a key, then the time, whether to release all, and each attempt\'s limit, window and mode', function (): void {
+    $client = scriptedPhpRedis(evalsha: [1, 4, 0, 30_000_000, 1, 1, 2, 0, 180_000_001, 1]);
+
+    $batch = stubbedRedisStore(new PhpRedisConnection($client))->attemptAll([
+        new PlannedAttempt(new CounterKey('1', hash('sha256', 'A')), 5, 60, true),
+        new PlannedAttempt(new CounterKey('2', hash('sha256', 'A')), 3, 10, false),
+    ], true);
+
+    expect($client->received)->toBe([[
+        'evalsha',
+        RedisLimiterStore::batchScriptSha(),
+        [
+            'dt:c:1:60:'.hash('sha256', 'A'), 'dt:c:2:10:'.hash('sha256', 'A'),
+            (string) ((FakeClock::T0 + 10) * 1_000_000), '1',
+            '5', '60', '1',
+            '3', '10', '0',
+        ],
+        2,
+    ]])
+        ->and(array_map(fn (Attempt $attempt, bool $released): array => [$attempt->key->ruleId, $attempt->remaining, $attempt->windowIndex, $released], $batch->attempts, $batch->released))
+        ->toBe([['1', 1, 30_000_000, true], ['2', 1, 180_000_001, true]]);
+});
+
+it('SPEC-027: falls back to EVAL of the batch script once when phpredis reports NOSCRIPT', function (): void {
+    $client = scriptedPhpRedis(evalsha: false, lastError: 'NOSCRIPT No matching script. Please use EVAL.', eval: [1, 4, 0, 30_000_000, 0]);
+
+    $batch = stubbedBatch($client);
+
+    expect(array_map(fn (array $call): array => [$call[0], $call[1]], $client->received))->toBe([
+        ['evalsha', RedisLimiterStore::batchScriptSha()],
+        ['eval', RedisLimiterStore::batchScriptSha()],
+    ])
+        ->and([$batch->attempts[0]->allowed, $batch->failure])->toBe([true, null]);
+});
+
+it('SPEC-027: returns a script error as the batch\'s failure, and names it', function (): void {
+    $batch = stubbedBatch(scriptedPhpRedis(evalsha: false, lastError: 'ERR Error running script'));
+
+    expect($batch->attempts)->toBe([])
+        ->and(exceptionChain($batch->failure ?? new LogicException('No failure.')))
+        ->toBe('The Redis limiter store could not count the request. <- Redis rejected the limiter script: ERR Error running script');
+});
+
+it('SPEC-027: returns a reply that is not five integers per attempt made, for at most the attempts planned, as a failure', function (mixed $reply): void {
+    $batch = stubbedBatch(scriptedPhpRedis(evalsha: $reply));
+
+    expect([$batch->attempts, $batch->failure?->getMessage()])->toBe([[], 'The Redis limiter store returned an unexpected reply.']);
+})->with([
+    'no attempt' => [[]],
+    'four integers' => [[1, 4, 0, 30_000_000]],
+    'six integers' => [[1, 4, 0, 30_000_000, 0, 1]],
+    'two attempts for a plan of one' => [[1, 4, 0, 30_000_000, 0, 1, 3, 0, 30_000_000, 0]],
+    'a string among them' => [[1, 4, 0, '30000000', 0]],
+    'not a list' => [[1 => 1, 2 => 4, 3 => 0, 4 => 30_000_000, 5 => 0]],
+    'a status reply' => ['OK'],
+]);
+
+it('SPEC-027: makes no call to Redis for an empty plan', function (): void {
+    $factory = new class implements RedisFactory
+    {
+        public int $connections = 0;
+
+        public function connection($name = null): Connection
+        {
+            $this->connections++;
+
+            throw new RuntimeException('Redis was called.');
+        }
+    };
+    $store = new RedisLimiterStore($factory, 'default', new KeyBuilder('dt:'), new FakeClock);
+
+    $batch = $store->attemptAll([], true);
+
+    expect([$batch->attempts, $batch->released, $batch->failure, $factory->connections])->toBe([[], [], null, 0]);
+});
