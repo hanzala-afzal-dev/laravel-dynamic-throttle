@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle\Engine\Stores;
 
 use Afzal\DynamicThrottle\Engine\Attempt;
+use Afzal\DynamicThrottle\Engine\AttemptBatch;
+use Afzal\DynamicThrottle\Engine\Contracts\BatchLimiterStore;
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
 use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
 use Afzal\DynamicThrottle\Engine\CounterKey;
@@ -15,6 +17,7 @@ use Illuminate\Contracts\Redis\Factory as RedisFactory;
 use Illuminate\Redis\Connections\PhpRedisConnection;
 use Illuminate\Redis\Connections\PredisConnection;
 use InvalidArgumentException;
+use LogicException;
 use Predis\Response\ErrorInterface as PredisError;
 use Predis\Response\ServerException as PredisServerException;
 use Redis;
@@ -29,7 +32,7 @@ use Throwable;
  * SlidingWindowCounter that does the same floating-point operations in the same
  * order, so both make identical decisions (checked by a model-based test).
  */
-final readonly class RedisLimiterStore implements LimiterStore
+final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStore
 {
     /**
      * KEYS[1]: the counter's hash. ARGV[1]: max attempts. ARGV[2]: window in seconds.
@@ -142,6 +145,11 @@ final readonly class RedisLimiterStore implements LimiterStore
             remaining: $allowed === 1 ? $maxAttempts - $estimate : 0,
             retryAfter: $retryAfter,
         );
+    }
+
+    public function attemptAll(array $attempts, bool $releaseAll): AttemptBatch
+    {
+        throw new LogicException('Not implemented yet (SPEC-027).');
     }
 
     public function release(Attempt $attempt): void

@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use Afzal\DynamicThrottle\Engine\Attempt;
+use Afzal\DynamicThrottle\Engine\AttemptBatch;
+use Afzal\DynamicThrottle\Engine\Contracts\BatchLimiterStore;
 use Afzal\DynamicThrottle\Engine\Contracts\IdentityResolver;
 use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
 use Afzal\DynamicThrottle\Engine\CounterKey;
@@ -12,8 +14,10 @@ use Afzal\DynamicThrottle\Engine\Failure\Cooldown;
 use Afzal\DynamicThrottle\Engine\Failure\ProcessFailureMemory;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Matching\RuleMatcher;
+use Afzal\DynamicThrottle\Engine\PlannedAttempt;
 use Afzal\DynamicThrottle\Engine\Stacking\Evaluation;
 use Afzal\DynamicThrottle\Engine\Stacking\EvaluationOutcome;
+use Afzal\DynamicThrottle\Engine\Stacking\OneCallPerAttempt;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleAttempt;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleExemption;
@@ -796,4 +800,208 @@ it('SPEC-012 AC-6: starts the cooldown when a release fails, and still tries the
     expect($second->outcome)->toBe(EvaluationOutcome::Rejected)
         ->and(attemptSummary($second->attempts))->toBe([['a', false], ['b', true]])
         ->and($cooldown->secondsLeft())->toBe(10);
+});
+
+/*
+| SPEC-027: the evaluator plans in PHP, counts the plan in one call, then
+| decides in evaluation order (ADR-0026).
+*/
+
+/**
+ * A store that counts in one call: it records each call's plan, and counts
+ * through one call per attempt on $inner.
+ *
+ * @return LimiterStore&BatchLimiterStore&object{calls: list<array{list<string>, list<bool>, bool}>, attempts: int, releases: int}
+ */
+function recordingBatch(LimiterStore $inner): LimiterStore&BatchLimiterStore
+{
+    return new class($inner) implements BatchLimiterStore, LimiterStore
+    {
+        /** @var list<array{list<string>, list<bool>, bool}> each call's rule ids, whether each enforces, and whether it released every count */
+        public array $calls = [];
+
+        public int $attempts = 0;
+
+        public int $releases = 0;
+
+        public function __construct(
+            private readonly LimiterStore $inner,
+        ) {}
+
+        public function attemptAll(array $attempts, bool $releaseAll): AttemptBatch
+        {
+            $this->calls[] = [
+                array_map(fn (PlannedAttempt $attempt): string => $attempt->key->ruleId, $attempts),
+                array_map(fn (PlannedAttempt $attempt): bool => $attempt->enforces, $attempts),
+                $releaseAll,
+            ];
+
+            return (new OneCallPerAttempt($this->inner))->attemptAll($attempts, $releaseAll);
+        }
+
+        public function attempt(CounterKey $key, int $maxAttempts, int $windowSeconds): Attempt
+        {
+            $this->attempts++;
+
+            return $this->inner->attempt($key, $maxAttempts, $windowSeconds);
+        }
+
+        public function release(Attempt $attempt): void
+        {
+            $this->releases++;
+
+            $this->inner->release($attempt);
+        }
+    };
+}
+
+/**
+ * A store whose one call fails as a whole, as a Redis script does when Redis is down.
+ */
+function failingBatch(): LimiterStore&BatchLimiterStore
+{
+    return new readonly class implements BatchLimiterStore, LimiterStore
+    {
+        public function attemptAll(array $attempts, bool $releaseAll): AttemptBatch
+        {
+            return new AttemptBatch(failure: StorageUnavailableException::because('The batch failed.'));
+        }
+
+        public function attempt(CounterKey $key, int $maxAttempts, int $windowSeconds): never
+        {
+            throw new LogicException('A store that counts in one call gets no attempt of its own.');
+        }
+
+        public function release(Attempt $attempt): never
+        {
+            throw new LogicException('A store that counts in one call gets no release of its own.');
+        }
+    };
+}
+
+/**
+ * One client for every rule, recording the rules whose identity was resolved.
+ *
+ * @return IdentityResolver&object{resolved: list<string>}
+ */
+function recordingClient(): IdentityResolver
+{
+    return new class implements IdentityResolver
+    {
+        /** @var list<string> */
+        public array $resolved = [];
+
+        public function exemption(CompiledRule $rule): ?string
+        {
+            return null;
+        }
+
+        public function resolve(CompiledRule $rule): string
+        {
+            $this->resolved[] = $rule->id;
+
+            return hash('sha256', 'client');
+        }
+    };
+}
+
+it('SPEC-027: resolves the identity of every rule within the cap before counting, even of a rule after the one that rejects', function (): void {
+    $stack = stackStore();
+    $evaluator = new RuleEvaluator($stack->store);
+    $rules = [stackRule('s', 1, 10), stackRule('t', 100, 20)];
+    $evaluator->evaluate($rules, oneClient());
+    $client = recordingClient();
+
+    $second = $evaluator->evaluate($rules, $client);
+
+    expect($second->outcome)->toBe(EvaluationOutcome::Rejected)
+        ->and($client->resolved)->toBe(['s', 't'])
+        // Resolved, but never counted: the rejection stops the counting.
+        ->and(stackCount($stack->cache, 't'))->toBe(1);
+});
+
+it('SPEC-027 AC-1: counts through one call on a store that counts in one call, with the plan in evaluation order', function (): void {
+    $stack = stackStore();
+    $store = recordingBatch($stack->store);
+
+    $evaluation = (new RuleEvaluator($store))
+        ->evaluate([stackRule('a', 100, 10), stackRule('d', 100, 20, RuleMode::DryRun), stackRule('b', 100, 30)], oneClient());
+
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Allowed)
+        ->and(attemptSummary($evaluation->attempts))->toBe([['a', false], ['d', false], ['b', false]])
+        ->and($store->calls)->toBe([[['a', 'd', 'b'], [true, false, true], false]])
+        ->and([$store->attempts, $store->releases])->toBe([0, 0]);
+});
+
+it('SPEC-027: makes no call when no rule applies', function (): void {
+    $store = recordingBatch(stackStore()->store);
+
+    $evaluation = (new RuleEvaluator($store))->evaluate([stackRule('a', 100, 10)], oneClient(['a']));
+
+    expect([$evaluation->outcome, $store->calls])->toBe([EvaluationOutcome::Allowed, []]);
+});
+
+it('SPEC-027 AC-8: asks in the same call whether a rule before a fail-closed one whose identity fails rejects, and keeps its 429', function (): void {
+    $stack = stackStore();
+    $store = recordingBatch($stack->store);
+    $evaluator = new RuleEvaluator($store);
+    $evaluator->evaluate([stackRule('s', 1, 10)], oneClient());
+
+    $evaluation = $evaluator->evaluate([stackRule('s', 1, 10), closedRule('c', 20), stackRule('d', 100, 30)], failingIdentities(['c']));
+
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Rejected)
+        ->and($evaluation->rejection?->rule->id)->toBe('s')
+        ->and($evaluation->unavailable)->toBeNull()
+        ->and(failureSummary($evaluation->failures))->toBe([['c', 'The identity for custom:plan could not be resolved.']])
+        // Only the rules before the fail-closed one, and their counts released whatever happens.
+        ->and($store->calls[1])->toBe([['s'], [true], true])
+        ->and(stackCount($stack->cache, 'd'))->toBe(0);
+});
+
+it('SPEC-027 AC-8: answers Unavailable when no rule before the fail-closed one rejects, with their counts released in the same call', function (): void {
+    $stack = stackStore();
+    $store = recordingBatch($stack->store);
+
+    $evaluation = (new RuleEvaluator($store))
+        ->evaluate([stackRule('a', 100, 10), closedRule('c', 20), stackRule('d', 100, 30)], failingIdentities(['c']));
+
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Unavailable)
+        ->and($evaluation->unavailable?->id)->toBe('c')
+        ->and(attemptSummary($evaluation->attempts))->toBe([['a', true]])
+        ->and($store->calls)->toBe([[['a'], [true], true]])
+        ->and([stackCount($stack->cache, 'a'), stackCount($stack->cache, 'd')])->toBe([0, 0]);
+});
+
+it('SPEC-027 AC-9: lists a failed call on the first planned rule, leaves the next ones unchecked, and stops at the first fail-closed one', function (): void {
+    $cooldown = stackCooldown();
+
+    $evaluation = (new RuleEvaluator(failingBatch(), 5, $cooldown))
+        ->evaluate([stackRule('a', 100, 10), stackRule('b', 100, 20), closedRule('c', 30), stackRule('e', 100, 40)], oneClient());
+
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Unavailable)
+        ->and($evaluation->unavailable?->id)->toBe('c')
+        ->and(failureSummary($evaluation->failures))->toBe([['a', 'The batch failed.']])
+        ->and(uncheckedIds($evaluation->unchecked))->toBe(['b'])
+        ->and($evaluation->attempts)->toBe([])
+        ->and($cooldown->secondsLeft())->toBe(10);
+});
+
+it('SPEC-027 AC-9: lets the request through after a failed call when no rule fails closed', function (): void {
+    $evaluation = (new RuleEvaluator(failingBatch()))->evaluate([stackRule('a', 100, 10), stackRule('b', 100, 20)], oneClient());
+
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Failed)
+        ->and(failureSummary($evaluation->failures))->toBe([['a', 'The batch failed.']])
+        ->and(uncheckedIds($evaluation->unchecked))->toBe(['b']);
+});
+
+it('SPEC-027: lists the failures in evaluation order, when the store fails before a rule whose identity fails', function (): void {
+    $stack = stackStore();
+
+    $evaluation = (new RuleEvaluator(failingFor($stack->store, attemptsOf: 'a')))
+        ->evaluate([stackRule('a', 100, 10), stackRule('b', 100, 20)], failingIdentities(['b']));
+
+    expect(failureSummary($evaluation->failures))->toBe([
+        ['a', 'The store is down.'],
+        ['b', 'The identity for custom:plan could not be resolved.'],
+    ]);
 });

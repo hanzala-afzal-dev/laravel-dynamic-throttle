@@ -42,7 +42,7 @@ Each rule that counts a request makes its own call to the counter store, one aft
 Unit tests use the array store and the FakeClock. Driver tests run on Redis and Valkey, with phpredis and predis.
 
 - **AC-1 (one round trip)** On the Redis driver, a request with 1, 3 or 10 planned attempts sends exactly one script call to Redis. A test counts the commands through Laravel's Redis command events.
-- **AC-2 (same decisions)** For 200 random plans, each with 1 to 10 attempts, random limits, windows, modes, prior counts and times, the batch script and the PHP reference give identical results: each attempt's decision, remaining, retry-after and window index, where the batch stopped, and which counts it released. This is the model-based test (ADR-0016).
+- **AC-2 (same decisions)** For 300 random plans, each with 1 to 10 attempts, random limits, windows, modes, prior counts and times, the batch script and the PHP reference give identical results: each attempt's decision, remaining, retry-after and window index, where the batch stopped, and which counts it released. This is the model-based test (ADR-0016).
 - **AC-3 (stop and release)** Plans `[a: 100, b: 100, s: 1]`, all enforcing, after one earlier request: `s` rejects, `a` and `b` are released, and a later rule `t` is never counted.
 - **AC-4 (dry-run)** A dry-run rule over its limit is reported as would-block and does not stop the batch. A dry-run count made before an enforcing rejection is released.
 - **AC-5 (release all)** With planning stopped at a fail-closed rule, the call counts `[a, b]`, releases both, and returns their results. `a`'s and `b`'s counts are unchanged afterwards.
@@ -52,12 +52,13 @@ Unit tests use the array store and the FakeClock. Driver tests run on Redis and 
   - The response is the 429, the tenant resolver's error is reported, and no 503 is sent.
   - With the first rule under its limit, the response is the 503, and the first rule's count is released.
   - On Redis, each of these requests is one round trip.
-- **AC-9 (a failed batch)** A Redis driver whose script fails, with an open rule then a closed rule:
-  - One failure is listed, on the first rule.
-  - The open rule goes unchecked, and the closed rule answers 503.
+- **AC-9 (a failed call)** A store that counts in one call, and whose call fails, with two fail-open rules then a fail-closed rule:
+  - One failure is listed, on the first rule, and reported once.
+  - The second rule goes unchecked, and the fail-closed rule answers 503.
   - The cooldown starts, and the next request makes no call.
+  - On the Redis driver, a script that cannot run returns its failure instead of throwing it.
 - **AC-10 (unchanged elsewhere)** Every existing evaluator, middleware, failure-policy and dry-run test passes, except SPEC-012's AC-4. That one now expects the tenant resolver's error to be reported, since the resolver runs before the store answers.
-- **AC-11 (arch)** Only the Redis driver sends scripts, and its keys come from `KeyBuilder`.
+- **AC-11 (same counters)** On every store, a count the batch keeps is seen by a later single attempt on the same counter: both use `KeyBuilder`'s counter keys.
 
 ## Interfaces and files
 - `src/Engine/Contracts/BatchLimiterStore.php`: an optional interface for stores that count a request's attempts in one call. It has one method, `attemptAll(list<PlannedAttempt> $attempts, bool $releaseAll): AttemptBatch`, which never throws a storage error: a failure is part of the result.
@@ -72,10 +73,10 @@ Unit tests use the array store and the FakeClock. Driver tests run on Redis and 
 - `src/Engine/Stores/RedisLimiterStore.php`: implements `BatchLimiterStore` with a batch script, and uses one call per attempt on cluster connections.
 - Tests:
   - `tests/Unit/Engine/Stacking/`: the evaluator's plan, count and decide steps, and `OneCallPerAttempt`;
-  - `tests/Contract/`: the batch behavior on every store;
-  - `tests/Drivers/`: AC-1, AC-2 and AC-6 on Redis and Valkey;
-  - `tests/Feature/Http/`: AC-8 and AC-9 through the middleware;
-  - `tests/Feature/Http/FailurePolicyTest.php`: SPEC-012's AC-4, changed.
+  - `tests/Contract/`: the batch behavior on every store, AC-11 included;
+  - `tests/Drivers/`: AC-1, AC-2, AC-6, AC-8's round trips and AC-9's failed script on Redis and Valkey;
+  - `tests/Feature/Http/FailurePolicyTest.php`: AC-9 through the middleware, with a store double whose one call fails;
+  - the same file: SPEC-012's AC-4, changed, which is AC-8's 429 through the middleware. SPEC-012's AC-3 is its 503.
 
 ## Out of scope
 - **Grouping a request's attempts by hash slot on Redis Cluster.** It would not be atomic across slots, so Cluster keeps one call per attempt.
@@ -84,6 +85,7 @@ Unit tests use the array store and the FakeClock. Driver tests run on Redis and 
 
 ## Edge cases and failure modes
 - **An empty plan** (no rule applies) makes no call.
+- **An invalid limit or window** in the plan throws an `InvalidArgumentException` before anything is counted, as `attempt()` does (SPEC-002 AC-16). The compiler never writes one.
 - **Up to 10 attempts** per request, the cap's 5 enforcing and 5 dry-run, so the script stays small.
 - **The reply is lost after the script ran.** The counts stay, as after a failed attempt today.
 - **A script error on some Redis-compatible server:** the batch fails, and the failure policy applies. The fallback, one call per attempt for everyone, is ADR-0026's.

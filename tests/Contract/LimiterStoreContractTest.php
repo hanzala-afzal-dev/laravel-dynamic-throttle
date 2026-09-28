@@ -3,8 +3,12 @@
 declare(strict_types=1);
 
 use Afzal\DynamicThrottle\Engine\Attempt;
+use Afzal\DynamicThrottle\Engine\AttemptBatch;
+use Afzal\DynamicThrottle\Engine\Contracts\BatchLimiterStore;
 use Afzal\DynamicThrottle\Engine\CounterKey;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
+use Afzal\DynamicThrottle\Engine\PlannedAttempt;
+use Afzal\DynamicThrottle\Engine\Stacking\OneCallPerAttempt;
 use Afzal\DynamicThrottle\Engine\Stores\CacheLimiterStore;
 use Afzal\DynamicThrottle\Engine\Stores\RedisLimiterStore;
 use Afzal\DynamicThrottle\Tests\Support\FakeClock;
@@ -18,7 +22,7 @@ use Illuminate\Redis\RedisManager;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 
-covers(CacheLimiterStore::class, RedisLimiterStore::class);
+covers(CacheLimiterStore::class, RedisLimiterStore::class, OneCallPerAttempt::class);
 
 /*
 |--------------------------------------------------------------------------
@@ -402,3 +406,80 @@ it('AC-8: puts window edges exactly on the microsecond', function (StoreUnderTes
         ->and($nextWindow->windowIndex)->toBe(30_000_001)
         ->and($nextWindow->allowed)->toBeFalse();
 })->with('limiter stores');
+
+/*
+| SPEC-027 AC-3 to AC-5 and AC-7: a request's attempts counted in one call,
+| on every store. The Redis driver runs them in one script; the other stores
+| through one call per attempt, with the same behavior.
+*/
+
+function contractBatch(StoreUnderTest $subject): BatchLimiterStore
+{
+    return $subject->store instanceof BatchLimiterStore ? $subject->store : new OneCallPerAttempt($subject->store);
+}
+
+function contractPlan(string $rule, int $max, bool $enforces = true): PlannedAttempt
+{
+    return new PlannedAttempt(contractKey($rule), $max, 60, $enforces);
+}
+
+/**
+ * @return list<array{string, bool, int, bool}> each attempt's rule, whether it was allowed, its remaining, and whether its count was released
+ */
+function contractBatchSummary(AttemptBatch $batch): array
+{
+    return array_map(
+        fn (Attempt $attempt, bool $released): array => [$attempt->key->ruleId, $attempt->allowed, $attempt->remaining, $released],
+        $batch->attempts,
+        $batch->released,
+    );
+}
+
+it('SPEC-027 AC-3: stops a batch at the first enforcing rejection, releases every count made before it, and never counts after it', function (StoreUnderTest $subject): void {
+    $subject->store->attempt(contractKey('s'), 1, 60);
+
+    $batch = contractBatch($subject)->attemptAll([contractPlan('a', 100), contractPlan('b', 100), contractPlan('s', 1), contractPlan('t', 100)], false);
+
+    expect(contractBatchSummary($batch))->toBe([['a', true, 99, true], ['b', true, 99, true], ['s', false, 0, false]])
+        ->and([$batch->releaseFailures, $batch->failure])->toBe([[], null])
+        // Released, or never counted: each next attempt sees the whole limit again.
+        ->and(contractAttempts($subject, 1, 100, contractKey('a')))->toBe([[true, 99]])
+        ->and(contractAttempts($subject, 1, 100, contractKey('b')))->toBe([[true, 99]])
+        ->and(contractAttempts($subject, 1, 100, contractKey('t')))->toBe([[true, 99]]);
+})->with('limiter stores');
+
+it('SPEC-027 AC-4: goes on past a dry-run rejection, and releases a dry-run count made before an enforcing rejection', function (StoreUnderTest $subject): void {
+    $subject->store->attempt(contractKey('d'), 1, 60);
+    $subject->store->attempt(contractKey('s'), 1, 60);
+
+    $batch = contractBatch($subject)->attemptAll([contractPlan('d', 1, enforces: false), contractPlan('e', 100, enforces: false), contractPlan('s', 1)], false);
+
+    expect(contractBatchSummary($batch))->toBe([['d', false, 0, false], ['e', true, 99, true], ['s', false, 0, false]])
+        ->and(contractAttempts($subject, 1, 100, contractKey('e')))->toBe([[true, 99]]);
+})->with('limiter stores');
+
+it('SPEC-027 AC-5: releases every count at the end when asked, and still returns the results', function (StoreUnderTest $subject): void {
+    $batch = contractBatch($subject)->attemptAll([contractPlan('a', 5), contractPlan('b', 5, enforces: false)], true);
+
+    expect(contractBatchSummary($batch))->toBe([['a', true, 4, true], ['b', true, 4, true]])
+        ->and(contractAttempts($subject, 1, 5, contractKey('a')))->toBe([[true, 4]])
+        ->and(contractAttempts($subject, 1, 5, contractKey('b')))->toBe([[true, 4]]);
+})->with('limiter stores');
+
+it('SPEC-027 AC-11: keeps every count of a batch that no enforcing rule rejects, where a single attempt sees it', function (StoreUnderTest $subject): void {
+    $batch = contractBatch($subject)->attemptAll([contractPlan('a', 5), contractPlan('b', 5, enforces: false)], false);
+
+    expect(contractBatchSummary($batch))->toBe([['a', true, 4, false], ['b', true, 4, false]])
+        ->and(contractAttempts($subject, 1, 5, contractKey('a')))->toBe([[true, 3]]);
+})->with('limiter stores');
+
+it('SPEC-027: rejects an invalid limit or window in a batch before counting any attempt', function (StoreUnderTest $subject, int $max, int $window): void {
+    $plan = [contractPlan('a', 5), new PlannedAttempt(contractKey('b'), $max, $window, true)];
+
+    expect(fn (): AttemptBatch => contractBatch($subject)->attemptAll($plan, false))->toThrow(InvalidArgumentException::class)
+        ->and(contractAttempts($subject, 1, 5, contractKey('a')))->toBe([[true, 4]]);
+})->with('limiter stores')->with([
+    'a limit of 0' => [0, 60],
+    'a window of 0' => [5, 0],
+    'a window over a day' => [5, 86_401],
+]);
