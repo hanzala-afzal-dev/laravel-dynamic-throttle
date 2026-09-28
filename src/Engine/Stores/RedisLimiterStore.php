@@ -13,11 +13,15 @@ use Afzal\DynamicThrottle\Engine\CounterKey;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Engine\Internal\AttemptGuard;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
+use Afzal\DynamicThrottle\Engine\PlannedAttempt;
+use Afzal\DynamicThrottle\Engine\Stacking\OneCallPerAttempt;
 use Illuminate\Contracts\Redis\Factory as RedisFactory;
+use Illuminate\Redis\Connections\Connection;
+use Illuminate\Redis\Connections\PhpRedisClusterConnection;
 use Illuminate\Redis\Connections\PhpRedisConnection;
+use Illuminate\Redis\Connections\PredisClusterConnection;
 use Illuminate\Redis\Connections\PredisConnection;
 use InvalidArgumentException;
-use LogicException;
 use Predis\Response\ErrorInterface as PredisError;
 use Predis\Response\ServerException as PredisServerException;
 use Redis;
@@ -25,73 +29,135 @@ use RedisCluster;
 use Throwable;
 
 /**
- * The Redis and Valkey driver: one Lua script per attempt (ADR-0005, SPEC-003).
+ * The Redis and Valkey driver (ADR-0005, SPEC-003): one Lua script per request
+ * (ADR-0026, SPEC-027), or per attempt through attempt().
  *
- * One hash per counter, one field per window index, so every script touches a
- * single key and is safe on Redis Cluster. The script is a port of
- * SlidingWindowCounter that does the same floating-point operations in the same
- * order, so both make identical decisions (checked by a model-based test).
+ * One hash per counter, one field per window index. The counting function is a
+ * port of SlidingWindowCounter that does the same floating-point operations in
+ * the same order, so both make identical decisions (checked by model-based
+ * tests). On Redis Cluster a script may only touch keys in one hash slot, so
+ * there a request makes one call per attempt, each touching a single key.
  */
 final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStore
 {
     /**
-     * KEYS[1]: the counter's hash. ARGV[1]: max attempts. ARGV[2]: window in seconds.
-     * ARGV[3]: the time in microseconds, or '' to read Redis TIME (the argument is for tests).
-     * Returns {allowed (1 or 0), the rounded-up estimate with this request (0 when
-     * rejected), retry after, window index}, integers only, because Redis truncates
-     * Lua numbers in replies. PHP computes remaining from the estimate: a Lua number
-     * is a double, so max - estimate would be inexact above 2^53 (AC-20).
+     * The time in microseconds, from the argument, or from Redis TIME when it is ''
+     * (the argument is for tests). Then count(key, max, window, now), which counts
+     * an attempt when it fits and returns allowed (1 or 0), the rounded-up estimate
+     * with this request (0 when rejected), retry after, and the window index.
+     * Integers only, because Redis truncates Lua numbers in replies. PHP computes
+     * remaining from the estimate: a Lua number is a double, so max - estimate
+     * would be inexact above 2^53 (AC-20).
      */
-    private const string SCRIPT = <<<'LUA'
-        local max = tonumber(ARGV[1])
-        local window = tonumber(ARGV[2])
-        local now
-        if ARGV[3] == '' then
-            local time = redis.call('TIME')
-            now = tonumber(time[1]) * 1000000 + tonumber(time[2])
-        else
-            now = tonumber(ARGV[3])
-        end
-
-        local window_us = window * 1000000
-        local index = math.floor(now / window_us)
-        if index * window_us > now then index = index - 1 end
-        if (index + 1) * window_us <= now then index = index + 1 end
-        local elapsed = (now - index * window_us) / 1000000
-
-        local current = tonumber(redis.call('HGET', KEYS[1], string.format('%d', index))) or 0
-        local previous = tonumber(redis.call('HGET', KEYS[1], string.format('%d', index - 1))) or 0
-        if current < 0 then current = 0 end
-        if previous < 0 then previous = 0 end
-
-        local estimate = previous * (window - elapsed) / window + current
-
-        if estimate + 1 <= max then
-            redis.call('HINCRBY', KEYS[1], string.format('%d', index), 1)
-            for _, field in ipairs(redis.call('HKEYS', KEYS[1])) do
-                if tonumber(field) < index - 1 then
-                    redis.call('HDEL', KEYS[1], field)
-                end
+    private const string FUNCTIONS = <<<'LUA'
+        local function time_from(argument)
+            if argument == '' then
+                local time = redis.call('TIME')
+                return tonumber(time[1]) * 1000000 + tonumber(time[2])
             end
-            redis.call('EXPIRE', KEYS[1], 2 * window + 5)
-            return {1, math.ceil(estimate + 1), 0, index}
+            return tonumber(argument)
         end
 
-        local until_next_window = window - elapsed
-        local headroom = max - current - 1
-        local wait
-        if headroom > 0 then
-            wait = until_next_window - headroom * window / previous
-        elseif current == 0 then
-            wait = until_next_window
-        else
-            wait = until_next_window + window - (max - 1) * window / current
+        local function count(key, max, window, now)
+            local window_us = window * 1000000
+            local index = math.floor(now / window_us)
+            if index * window_us > now then index = index - 1 end
+            if (index + 1) * window_us <= now then index = index + 1 end
+            local elapsed = (now - index * window_us) / 1000000
+
+            local current = tonumber(redis.call('HGET', key, string.format('%d', index))) or 0
+            local previous = tonumber(redis.call('HGET', key, string.format('%d', index - 1))) or 0
+            if current < 0 then current = 0 end
+            if previous < 0 then previous = 0 end
+
+            local estimate = previous * (window - elapsed) / window + current
+
+            if estimate + 1 <= max then
+                redis.call('HINCRBY', key, string.format('%d', index), 1)
+                for _, field in ipairs(redis.call('HKEYS', key)) do
+                    if tonumber(field) < index - 1 then
+                        redis.call('HDEL', key, field)
+                    end
+                end
+                redis.call('EXPIRE', key, 2 * window + 5)
+                return 1, math.ceil(estimate + 1), 0, index
+            end
+
+            local until_next_window = window - elapsed
+            local headroom = max - current - 1
+            local wait
+            if headroom > 0 then
+                wait = until_next_window - headroom * window / previous
+            elseif current == 0 then
+                wait = until_next_window
+            else
+                wait = until_next_window + window - (max - 1) * window / current
+            end
+
+            local retry_after = math.ceil(wait)
+            if retry_after < 1 then retry_after = 1 end
+
+            return 0, 0, retry_after, index
         end
 
-        local retry_after = math.ceil(wait)
-        if retry_after < 1 then retry_after = 1 end
+        LUA;
 
-        return {0, 0, retry_after, index}
+    /**
+     * One attempt. KEYS[1]: the counter's hash. ARGV[1]: max attempts. ARGV[2]:
+     * window in seconds. ARGV[3]: the time in microseconds, or ''. Returns count()'s
+     * four integers.
+     */
+    private const string SCRIPT = self::FUNCTIONS.<<<'LUA'
+        local allowed, estimate, retry_after, index = count(KEYS[1], tonumber(ARGV[1]), tonumber(ARGV[2]), time_from(ARGV[3]))
+        return {allowed, estimate, retry_after, index}
+        LUA;
+
+    /**
+     * A request's attempts, in order, at one time (ADR-0026). KEYS: the counters'
+     * hashes. ARGV[1]: the time in microseconds, or ''. ARGV[2]: '1' to release
+     * every count at the end. Then for attempt i, from 1: ARGV[3i] max attempts,
+     * ARGV[3i + 1] window in seconds, ARGV[3i + 2] '1' when the rule enforces.
+     *
+     * Stops at the first enforcing rejection, and then, or with ARGV[2], releases
+     * every count it made as the release script does. Returns five integers per
+     * attempt made: count()'s four, then 1 when its count was released.
+     */
+    private const string BATCH_SCRIPT = self::FUNCTIONS.<<<'LUA'
+        local now = time_from(ARGV[1])
+        local reply = {}
+        local counted = {}
+        local rejected = false
+
+        for i = 1, #KEYS do
+            local allowed, estimate, retry_after, index = count(KEYS[i], tonumber(ARGV[3 * i]), tonumber(ARGV[3 * i + 1]), now)
+            local at = 5 * (i - 1)
+            reply[at + 1] = allowed
+            reply[at + 2] = estimate
+            reply[at + 3] = retry_after
+            reply[at + 4] = index
+            reply[at + 5] = 0
+
+            if allowed == 1 then
+                counted[#counted + 1] = {i, index}
+            elseif ARGV[3 * i + 2] == '1' then
+                rejected = true
+                break
+            end
+        end
+
+        if rejected or ARGV[2] == '1' then
+            for _, attempt in ipairs(counted) do
+                local key = KEYS[attempt[1]]
+                local field = string.format('%d', attempt[2])
+                local current = tonumber(redis.call('HGET', key, field))
+                if current and current > 0 then
+                    redis.call('HINCRBY', key, field, -1)
+                end
+                reply[5 * attempt[1]] = 1
+            end
+        end
+
+        return reply
         LUA;
 
     /**
@@ -123,33 +189,57 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
         // Same checks as the cache driver, before touching the store (SPEC-002 AC-16).
         AttemptGuard::check($maxAttempts, $windowSeconds);
 
-        $reply = $this->run(self::SCRIPT, 'count', $this->keys->counterBase($key, $windowSeconds), [
+        $reply = $this->integers($this->run(self::SCRIPT, 'count', [$this->keys->counterBase($key, $windowSeconds)], [
             (string) $maxAttempts,
             (string) $windowSeconds,
-            $this->testClock instanceof Clock ? (string) $this->testClock->microseconds() : '',
-        ]);
+            $this->time(),
+        ]));
 
-        if (! is_array($reply) || ! array_is_list($reply) || count($reply) !== 4 || count(array_filter($reply, is_int(...))) !== 4) {
+        if ($reply === null || count($reply) !== 4) {
             throw StorageUnavailableException::because('The Redis limiter store returned an unexpected reply.');
         }
 
-        /** @var array{int, int, int, int} $reply */
-        [$allowed, $estimate, $retryAfter, $windowIndex] = $reply;
-
-        return new Attempt(
-            key: $key,
-            limit: $maxAttempts,
-            windowSeconds: $windowSeconds,
-            windowIndex: $windowIndex,
-            allowed: $allowed === 1,
-            remaining: $allowed === 1 ? $maxAttempts - $estimate : 0,
-            retryAfter: $retryAfter,
-        );
+        return $this->result($key, $maxAttempts, $windowSeconds, $reply);
     }
 
     public function attemptAll(array $attempts, bool $releaseAll): AttemptBatch
     {
-        throw new LogicException('Not implemented yet (SPEC-027).');
+        // The checks each attempt makes, before anything is counted (SPEC-002 AC-16).
+        foreach ($attempts as $planned) {
+            AttemptGuard::check($planned->maxAttempts, $planned->windowSeconds);
+        }
+
+        if ($attempts === []) {
+            return new AttemptBatch;
+        }
+
+        try {
+            $connection = $this->redis->connection($this->connection);
+        } catch (Throwable $exception) {
+            return new AttemptBatch(failure: StorageUnavailableException::because('The Redis limiter store could not count the request.', $exception));
+        }
+
+        // A script may only touch keys in one hash slot on Redis Cluster (ADR-0005).
+        if ($connection instanceof PhpRedisClusterConnection || $connection instanceof PredisClusterConnection) {
+            return (new OneCallPerAttempt($this))->attemptAll($attempts, $releaseAll);
+        }
+
+        $keys = [];
+        $arguments = [$this->time(), $releaseAll ? '1' : '0'];
+
+        foreach ($attempts as $planned) {
+            $keys[] = $this->keys->counterBase($planned->key, $planned->windowSeconds);
+            $arguments[] = (string) $planned->maxAttempts;
+            $arguments[] = (string) $planned->windowSeconds;
+            $arguments[] = $planned->enforces ? '1' : '0';
+        }
+
+        try {
+            return $this->batch($attempts, $this->run(self::BATCH_SCRIPT, 'count', $keys, $arguments, $connection));
+        } catch (StorageUnavailableException $exception) {
+            // Nothing is known about the counts, so none is released: stricter, never looser.
+            return new AttemptBatch(failure: $exception);
+        }
     }
 
     public function release(Attempt $attempt): void
@@ -159,7 +249,7 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
             return;
         }
 
-        $reply = $this->run(self::RELEASE_SCRIPT, 'release', $this->keys->counterBase($attempt->key, $attempt->windowSeconds), [
+        $reply = $this->run(self::RELEASE_SCRIPT, 'release', [$this->keys->counterBase($attempt->key, $attempt->windowSeconds)], [
             (string) $attempt->windowIndex,
         ]);
 
@@ -190,6 +280,76 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
     }
 
     /**
+     * The time argument: the test clock's, or '' for Redis TIME.
+     */
+    private function time(): string
+    {
+        return $this->testClock instanceof Clock ? (string) $this->testClock->microseconds() : '';
+    }
+
+    /**
+     * @param  list<int>  $reply  count()'s allowed, estimate, retry after and window index
+     */
+    private function result(CounterKey $key, int $maxAttempts, int $windowSeconds, array $reply): Attempt
+    {
+        [$allowed, $estimate, $retryAfter, $windowIndex] = $reply;
+
+        return new Attempt(
+            key: $key,
+            limit: $maxAttempts,
+            windowSeconds: $windowSeconds,
+            windowIndex: $windowIndex,
+            allowed: $allowed === 1,
+            remaining: $allowed === 1 ? $maxAttempts - $estimate : 0,
+            retryAfter: $retryAfter,
+        );
+    }
+
+    /**
+     * A script's reply, when it is a list of integers.
+     *
+     * @return list<int>|null
+     */
+    private function integers(mixed $reply): ?array
+    {
+        if (! is_array($reply) || ! array_is_list($reply)) {
+            return null;
+        }
+
+        $integers = array_values(array_filter($reply, is_int(...)));
+
+        return count($integers) === count($reply) ? $integers : null;
+    }
+
+    /**
+     * The batch script's reply: five integers per attempt made, at least one
+     * attempt, and never more than planned.
+     *
+     * @param  non-empty-list<PlannedAttempt>  $attempts
+     *
+     * @throws StorageUnavailableException for any other reply
+     */
+    private function batch(array $attempts, mixed $reply): AttemptBatch
+    {
+        $reply = $this->integers($reply);
+
+        if ($reply === null || $reply === [] || count($reply) % 5 !== 0 || count($reply) > 5 * count($attempts)) {
+            throw StorageUnavailableException::because('The Redis limiter store returned an unexpected reply.');
+        }
+
+        $made = [];
+        $released = [];
+
+        foreach (array_chunk($reply, 5) as $index => [$allowed, $estimate, $retryAfter, $windowIndex, $wasReleased]) {
+            $planned = $attempts[$index];
+            $made[] = $this->result($planned->key, $planned->maxAttempts, $planned->windowSeconds, [$allowed, $estimate, $retryAfter, $windowIndex]);
+            $released[] = $wasReleased === 1;
+        }
+
+        return new AttemptBatch($made, $released);
+    }
+
+    /**
      * Runs the script with EVALSHA and falls back to EVAL when Redis no longer
      * has it (NOSCRIPT, after a restart or failover). Both go through the
      * connection's command(), which rebuilds a phpredis client after a lost
@@ -197,16 +357,17 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
      * sends SCRIPT LOAD on every call.
      *
      * @param  'count'|'release'  $operation  for the message when Redis cannot be used
+     * @param  non-empty-list<string>  $keys
      * @param  list<string>  $arguments
      */
-    private function run(string $script, string $operation, string $key, array $arguments): mixed
+    private function run(string $script, string $operation, array $keys, array $arguments, ?Connection $connection = null): mixed
     {
         try {
-            $connection = $this->redis->connection($this->connection);
+            $connection ??= $this->redis->connection($this->connection);
 
             return match (true) {
-                $connection instanceof PhpRedisConnection => $this->runWithPhpRedis($connection, $script, $key, $arguments),
-                $connection instanceof PredisConnection => $this->runWithPredis($connection, $script, $key, $arguments),
+                $connection instanceof PhpRedisConnection => $this->runWithPhpRedis($connection, $script, $keys, $arguments),
+                $connection instanceof PredisConnection => $this->runWithPredis($connection, $script, $keys, $arguments),
                 default => throw new InvalidArgumentException('Unsupported Redis connection '.get_debug_type($connection).'; use phpredis or predis.'),
             };
         } catch (Throwable $exception) {
@@ -217,14 +378,16 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
     /**
      * phpredis answers an error with false and keeps the message as its last error.
      *
+     * @param  non-empty-list<string>  $keys
      * @param  list<string>  $arguments
      */
-    private function runWithPhpRedis(PhpRedisConnection $connection, string $script, string $key, array $arguments): mixed
+    private function runWithPhpRedis(PhpRedisConnection $connection, string $script, array $keys, array $arguments): mixed
     {
-        $reply = $connection->command('evalsha', [hash('sha1', $script), [$key, ...$arguments], 1]);
+        $parameters = [...$keys, ...$arguments];
+        $reply = $connection->command('evalsha', [hash('sha1', $script), $parameters, count($keys)]);
 
         if ($reply === false && str_starts_with($this->lastError($connection), 'NOSCRIPT')) {
-            $reply = $connection->command('eval', [$script, [$key, ...$arguments], 1]);
+            $reply = $connection->command('eval', [$script, $parameters, count($keys)]);
         }
 
         if ($reply === false) {
@@ -247,12 +410,15 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
     }
 
     /**
+     * @param  non-empty-list<string>  $keys
      * @param  list<string>  $arguments
      */
-    private function runWithPredis(PredisConnection $connection, string $script, string $key, array $arguments): mixed
+    private function runWithPredis(PredisConnection $connection, string $script, array $keys, array $arguments): mixed
     {
+        $parameters = [count($keys), ...$keys, ...$arguments];
+
         try {
-            $reply = $connection->command('evalsha', [hash('sha1', $script), 1, $key, ...$arguments]);
+            $reply = $connection->command('evalsha', [hash('sha1', $script), ...$parameters]);
         } catch (PredisServerException $exception) {
             if ($exception->getErrorType() !== 'NOSCRIPT') {
                 throw $exception;
@@ -263,7 +429,7 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
 
         // Without the "exceptions" option, predis returns errors instead of throwing them.
         if ($reply === null || ($reply instanceof PredisError && $reply->getErrorType() === 'NOSCRIPT')) {
-            $reply = $connection->command('eval', [$script, 1, $key, ...$arguments]);
+            $reply = $connection->command('eval', [$script, ...$parameters]);
         }
 
         if ($reply instanceof PredisError) {

@@ -16,7 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The counter engine:
   - a sliding-window counter, with an exact `Retry-After`
   - the `LimiterStore` contract: `attempt()` counts a request, `release()` uncounts it when a later rule rejects it
-  - a Redis and Valkey driver (one Lua script per call, time from Redis `TIME`) and a driver for any Laravel cache store
+  - a Redis and Valkey driver (Lua scripts, time from Redis `TIME`) and a driver for any Laravel cache store
   - config keys `driver` (`auto`, `redis`, `cache`), `store`, `redis_connection` and `prefix`
   - `StorageUnavailableException` for every storage failure
 - Config key `database.connection` (`DYNAMIC_THROTTLE_DB_CONNECTION`): the connection for the package's tables.
@@ -30,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Rule matching and stacking:
   - A rule matches by method and by a pattern on the URL-decoded path. `*` matches every method, and `GET` rules also match `HEAD`. In patterns, `*` matches any characters, and a leading slash is ignored.
   - Every matching rule counts the request, in priority order. The first one that rejects it stops, and the others' counts are released. Dry-run rules never reject.
+  - A request is counted in one call to the counter store. On Redis and Valkey that is one Lua script, so one round trip, however many rules match. Redis Cluster, and the other cache stores, make one call per rule.
   - Config key `matching.max_rules_per_request` (`DYNAMIC_THROTTLE_MAX_RULES`, default 5): at most this many enforcing rules count a request, and as many dry-run rules. Rules that do not apply to the request take no slot, and adding a dry-run rule never switches off an enforcing one. Rules beyond the cap are ignored.
 - Scopes decide who a rule counts a request for:
   - `ip`, `user`, `api_token`, `header` and `global`, plus custom scopes that you register with `DynamicThrottle::scope('tenant', fn (Request $request) => ...)` or a `ScopeResolver` class. Per-tenant limits are one rule with a custom scope.
@@ -57,7 +58,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - It carries plain values, so queued listeners work: the rule's id, name, limit, window and scope, the client's identity hash, the `Retry-After` it would have got, and the request's method and path.
   - A listener that throws is reported, and the other events are still dispatched.
 - The failure policy:
-  - A rule with `on_failure: closed` answers 503 (`ServiceUnavailableHttpException`, rendered by your exception handler) with a `Retry-After` when its counter cannot be checked: the counter store fails, or the rule's identity cannot be resolved. The counts made before it are released when the store works. Dry-run rules never answer 503.
+  - A rule with `on_failure: closed` answers 503 (`ServiceUnavailableHttpException`, rendered by your exception handler) with a `Retry-After` when its counter cannot be checked: the counter store fails, or the rule's identity cannot be resolved. The counts made before it are released when the store works. Dry-run rules never answer 503, and an earlier rule's 429 wins.
+  - Every matching rule's identity is resolved before the store is called, so a scope resolver's error is reported even when an earlier rule rejects the request.
   - Config key `failure.cooldown_seconds` (`DYNAMIC_THROTTLE_COOLDOWN`, default 10): after the counter store fails, it is skipped for that long, so an outage costs one failed call per cooldown. The cooldown lives in the process, and in APCu when the extension is enabled, where a server's PHP-FPM workers share it.
   - Each cause of a failure is reported at most once per cooldown.
   - A counter store that cannot be built, such as for an unknown `driver`, counts as a store that failed.

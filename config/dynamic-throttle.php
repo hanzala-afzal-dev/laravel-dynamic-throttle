@@ -88,10 +88,11 @@ return [
     | Counter driver
     |--------------------------------------------------------------------------
     |
-    | "auto" uses the Redis driver (one atomic Lua script per rule) when the
-    | cache store below uses Laravel's redis driver, and the generic cache
-    | driver on any other store. "redis" forces the Redis driver; "cache"
-    | forces the cache driver (docs/adr/0005).
+    | "auto" uses the Redis driver (one atomic Lua script per request, or per
+    | rule on Redis Cluster) when the cache store below uses Laravel's redis
+    | driver, and the generic cache driver on any other store. "redis" forces
+    | the Redis driver; "cache" forces the cache driver (docs/adr/0005,
+    | docs/adr/0026).
     |
     */
 

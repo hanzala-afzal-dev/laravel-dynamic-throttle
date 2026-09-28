@@ -4,29 +4,40 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle\Engine\Stacking;
 
+use Afzal\DynamicThrottle\Engine\AttemptBatch;
+use Afzal\DynamicThrottle\Engine\Contracts\BatchLimiterStore;
 use Afzal\DynamicThrottle\Engine\Contracts\IdentityResolver;
 use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
 use Afzal\DynamicThrottle\Engine\CounterKey;
 use Afzal\DynamicThrottle\Engine\Exceptions\IdentityUnavailableException;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Engine\Failure\Cooldown;
+use Afzal\DynamicThrottle\Engine\PlannedAttempt;
 use Afzal\DynamicThrottle\Enums\FailurePolicy;
 use Afzal\DynamicThrottle\Enums\RuleMode;
 use Afzal\DynamicThrottle\Manifest\CompiledRule;
 
 /**
- * Counts a request on each of its matched rules, in order (ADR-0008, SPEC-007).
- * The first enforcing rule that rejects it stops evaluation, and every count
- * made so far is released, so a rejected request counts nowhere. A rule the
- * client is exempt from counts nothing (SPEC-009).
+ * Counts a request on its matched rules (ADR-0008, SPEC-007) in three steps
+ * (ADR-0026, SPEC-027):
+ * 1. Plans, without the store: the cap, the exemptions and each rule's identity,
+ *    for every rule, in order. A rule the client is exempt from counts nothing
+ *    (SPEC-009).
+ * 2. Counts the plan in one store call. The first enforcing rule that rejects the
+ *    request stops it, and every count made so far is released, so a rejected
+ *    request counts nowhere.
+ * 3. Decides, in evaluation order.
  *
- * Once the store fails, or while its cooldown runs, no rule tries it, and the
+ * Once the store fails, or while its cooldown runs, no rule is checked, and the
  * first fail-closed rule that applies stops evaluation (SPEC-012).
  */
 final readonly class RuleEvaluator
 {
+    /** The store, or one call per attempt on a store that cannot count a request in one call. */
+    private BatchLimiterStore $counter;
+
     public function __construct(
-        private LimiterStore $store,
+        LimiterStore $store,
         /**
          * matching.max_rules_per_request: store attempts per request for enforcing
          * rules, and as many again for dry-run rules (ADR-0025).
@@ -34,35 +45,42 @@ final readonly class RuleEvaluator
         private int $maxRulesPerRequest = 5,
         /** Keeps the store out of the next requests once it fails (ADR-0010 point 4). Without one, each request tries it. */
         private ?Cooldown $cooldown = null,
-    ) {}
+    ) {
+        $this->counter = $store instanceof BatchLimiterStore ? $store : new OneCallPerAttempt($store);
+    }
 
     /**
      * Never throws a StorageUnavailableException or an IdentityUnavailableException.
      * An identity that cannot be resolved fails only its own rule (SPEC-008), a
-     * failed attempt keeps the later rules off the store, and a failed release is
-     * listed (ADR-0021). So is a failed exemption check, which exempts nothing
-     * (SPEC-009). A fail-closed rule that cannot be checked stops evaluation with
-     * the Unavailable outcome (SPEC-012).
+     * failed store call leaves the rules it did not answer unchecked, and a failed
+     * release is listed (ADR-0021). So is a failed exemption check, which exempts
+     * nothing (SPEC-009). A fail-closed rule that cannot be checked stops
+     * evaluation with the Unavailable outcome (SPEC-012), unless an earlier rule
+     * rejects the request.
      *
      * @param  list<CompiledRule>  $rules  the matched rules, in manifest order
      */
     public function evaluate(array $rules, IdentityResolver $identities): Evaluation
     {
-        $attempts = [];
+        // By position in $rules, so a store failure lands between the identity failures in evaluation order.
         $failures = [];
-        $wouldBlock = [];
         $skipped = [];
         $ignored = [];
         $exempted = [];
         $exemptionFailures = [];
-        $unchecked = [];
+        // The rules that apply, and the attempts they plan, in the same order.
+        $planned = [];
+        $plan = [];
+        // An enforcing fail-closed rule whose identity cannot be resolved ends the plan (SPEC-012).
+        $stop = null;
         // Attempts left for each mode: a rule that does not apply takes none, and a
         // dry-run rule never takes an enforcing rule's (ADR-0025).
         $slots = [RuleMode::Enforce->value => $this->maxRulesPerRequest, RuleMode::DryRun->value => $this->maxRulesPerRequest];
-        // During the cooldown no rule tries the store, so an outage costs one failed call per cooldown.
-        $storeDown = $this->cooldown instanceof Cooldown && $this->cooldown->secondsLeft() > 0;
 
-        foreach ($rules as $rule) {
+        // 1. Plan. Every rule's identity is resolved before the store answers, even a
+        // rule's after the one that will reject: counting them one call at a time
+        // would cost a round trip per rule again (ADR-0026).
+        foreach ($rules as $position => $rule) {
             if ($slots[$rule->mode->value] === 0) {
                 $ignored[] = $rule;
 
@@ -88,16 +106,15 @@ final readonly class RuleEvaluator
                 $identity = $identities->resolve($rule);
             } catch (IdentityUnavailableException $exception) {
                 // Only this rule fails, so a client that breaks one scope is still counted by the others.
-                $failures[] = new RuleFailure($rule, $exception);
+                $failures[$position] = new RuleFailure($rule, $exception);
 
-                if (! $this->failsClosed($rule)) {
-                    continue;
+                if ($this->failsClosed($rule)) {
+                    $stop = $rule;
+
+                    break;
                 }
 
-                // As at a rejection, the request counts nowhere. Releases on a store that is down would only fail again.
-                [$settled, $releaseFailures] = $storeDown ? [$attempts, []] : $this->release($attempts);
-
-                return Evaluation::unavailable($rule, $settled, $failures, $wouldBlock, $skipped, $releaseFailures, $ignored, $exempted, $exemptionFailures, $unchecked);
+                continue;
             }
 
             if ($identity === null) {
@@ -109,49 +126,79 @@ final readonly class RuleEvaluator
             // Taken before the attempt: a rule the store cannot count still applies, so
             // which rules apply never depends on the store's health.
             $slots[$rule->mode->value]--;
+            $planned[] = [$position, $rule];
+            $plan[] = new PlannedAttempt(new CounterKey($rule->id, $identity), $rule->maxAttempts, $rule->windowSeconds, $rule->mode === RuleMode::Enforce);
+        }
 
-            if ($storeDown) {
-                if ($this->failsClosed($rule)) {
-                    return Evaluation::unavailable($rule, $attempts, $failures, $wouldBlock, $skipped, [], $ignored, $exempted, $exemptionFailures, $unchecked);
+        // 2. Count. During the cooldown no rule tries the store, so an outage costs one
+        // failed call per cooldown. With a stop, the call only asks whether an earlier
+        // rule rejects, so it releases every count either way.
+        $storeDown = $plan !== [] && $this->cooldown instanceof Cooldown && $this->cooldown->secondsLeft() > 0;
+        $batch = $plan === [] || $storeDown ? new AttemptBatch : $this->counter->attemptAll($plan, $stop instanceof CompiledRule);
+
+        if ($batch->failure instanceof StorageUnavailableException || $batch->releaseFailures !== []) {
+            $this->cooldown?->start();
+        }
+
+        // A count that cannot be released stays, which is stricter, never looser.
+        $releaseFailures = [];
+
+        foreach ($batch->releaseFailures as $index => $exception) {
+            $releaseFailures[$index] = new RuleFailure($planned[$index][1], $exception);
+        }
+
+        ksort($releaseFailures);
+        $releaseFailures = array_values($releaseFailures);
+
+        // 3. Decide, in evaluation order: the first enforcing rejection gives the 429, then
+        // the first fail-closed rule the store could not check, then the stop.
+        $attempts = [];
+        $wouldBlock = [];
+        $unchecked = [];
+        $made = count($batch->attempts);
+
+        foreach ($planned as $index => [$position, $rule]) {
+            if ($index < $made) {
+                $attempt = $batch->attempts[$index];
+
+                if ($attempt->allowed) {
+                    $attempts[] = new RuleAttempt($rule, $attempt, released: $batch->released[$index] ?? false);
+                } elseif ($rule->mode === RuleMode::DryRun) {
+                    // Not counted, and not enforced (ADR-0012).
+                    $wouldBlock[] = new RuleAttempt($rule, $attempt);
+                } else {
+                    return Evaluation::rejected(new RuleAttempt($rule, $attempt), $attempts, $this->inOrder($failures), $wouldBlock, $skipped, $releaseFailures, $ignored, $exempted, $exemptionFailures);
                 }
 
+                continue;
+            }
+
+            // The store failed on this rule's attempt. The counts made before it stay:
+            // releasing them would only fail again, and a kept count is stricter (SPEC-004).
+            $failed = $index === $made && $batch->failure instanceof StorageUnavailableException;
+
+            if ($failed) {
+                $failures[$position] = new RuleFailure($rule, $batch->failure);
+            }
+
+            if ($this->failsClosed($rule)) {
+                return Evaluation::unavailable($rule, $attempts, $this->inOrder($failures), $wouldBlock, $skipped, [], $ignored, $exempted, $exemptionFailures, $unchecked);
+            }
+
+            // The later rules count on the same store, so they go unchecked too.
+            if (! $failed) {
                 $unchecked[] = $rule;
-
-                continue;
             }
+        }
 
-            try {
-                $attempt = $this->store->attempt(new CounterKey($rule->id, $identity), $rule->maxAttempts, $rule->windowSeconds);
-            } catch (StorageUnavailableException $exception) {
-                $failures[] = new RuleFailure($rule, $exception);
-                // The later rules count on the same store, so they would fail too. The counts
-                // made so far stay: releasing them would only fail again, and a kept count is
-                // stricter, never looser (SPEC-004).
-                $storeDown = true;
-                $this->cooldown?->start();
-
-                if ($this->failsClosed($rule)) {
-                    return Evaluation::unavailable($rule, $attempts, $failures, $wouldBlock, $skipped, [], $ignored, $exempted, $exemptionFailures, $unchecked);
-                }
-
-                continue;
-            }
-
-            if ($attempt->allowed) {
-                $attempts[] = new RuleAttempt($rule, $attempt);
-            } elseif ($rule->mode === RuleMode::DryRun) {
-                // Not counted, and not enforced (ADR-0012).
-                $wouldBlock[] = new RuleAttempt($rule, $attempt);
-            } else {
-                [$settled, $releaseFailures] = $this->release($attempts);
-
-                return Evaluation::rejected(new RuleAttempt($rule, $attempt), $settled, $failures, $wouldBlock, $skipped, $releaseFailures, $ignored, $exempted, $exemptionFailures);
-            }
+        if ($stop instanceof CompiledRule) {
+            // As at a rejection, the request counts nowhere: the call released every count.
+            return Evaluation::unavailable($stop, $attempts, $this->inOrder($failures), $wouldBlock, $skipped, $releaseFailures, $ignored, $exempted, $exemptionFailures, $unchecked);
         }
 
         return $failures === []
             ? Evaluation::allowed($attempts, $wouldBlock, $skipped, $ignored, $exempted, $exemptionFailures, $unchecked)
-            : Evaluation::failed($failures, $attempts, $wouldBlock, $skipped, $ignored, $exempted, $exemptionFailures, $unchecked);
+            : Evaluation::failed($this->inOrder($failures), $attempts, $wouldBlock, $skipped, $ignored, $exempted, $exemptionFailures, $unchecked);
     }
 
     /**
@@ -164,30 +211,13 @@ final readonly class RuleEvaluator
     }
 
     /**
-     * Releases every counted attempt, dry-run rules' included (ADR-0021). A count
-     * that cannot be released stays, which is stricter, never looser, and the
-     * request stays rejected. A failed release starts the cooldown, and the other
-     * releases are still tried: the store just counted for this request.
-     *
-     * @param  list<RuleAttempt>  $attempts
-     * @return array{list<RuleAttempt>, list<RuleFailure>} the attempts, marked if released, and the releases that failed
+     * @param  array<int, RuleFailure>  $failures  by the rule's position in evaluation order
+     * @return ($failures is non-empty-array ? non-empty-list<RuleFailure> : list<RuleFailure>)
      */
-    private function release(array $attempts): array
+    private function inOrder(array $failures): array
     {
-        $settled = [];
-        $releaseFailures = [];
+        ksort($failures);
 
-        foreach ($attempts as $counted) {
-            try {
-                $this->store->release($counted->attempt);
-                $settled[] = new RuleAttempt($counted->rule, $counted->attempt, released: true);
-            } catch (StorageUnavailableException $exception) {
-                $settled[] = $counted;
-                $releaseFailures[] = new RuleFailure($counted->rule, $exception);
-                $this->cooldown?->start();
-            }
-        }
-
-        return [$settled, $releaseFailures];
+        return array_values($failures);
     }
 }
