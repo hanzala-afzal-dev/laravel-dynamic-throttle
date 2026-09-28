@@ -298,3 +298,37 @@ it('SPEC-027 AC-8: decides in one round trip when a fail-closed rule\'s identity
         ->and(array_map(fn (RuleAttempt $counted): array => [$counted->rule->id, $counted->attempt->allowed, $counted->released], $unavailable->attempts))->toBe([['u', true, true]])
         ->and($sent)->toBe([['evalsha'], ['evalsha'], ['evalsha']]);
 })->with('batch clients and services');
+
+it('SPEC-027: takes the time from Redis TIME when there is no test clock', function (string $client, string $host, int $port): void {
+    batchSkipWithoutClient($client);
+    $manager = new RedisManager(new Container, $client, [
+        'default' => ['host' => $host, 'port' => $port, 'database' => 0, 'timeout' => 2.0, 'read_timeout' => 2.0],
+    ]);
+    $redis = new RedisLimiterStore($manager, 'default', new KeyBuilder('dt-batch-'.bin2hex(random_bytes(4)).':'));
+
+    $before = (int) $manager->connection()->time()[0];
+    $batch = $redis->attemptAll([batchPlan('a', 5), batchPlan('b', 5, window: 7)], false);
+    $after = (int) $manager->connection()->time()[0];
+
+    expect(array_map(fn (Attempt $attempt): bool => $attempt->allowed, $batch->attempts))->toBe([true, true])
+        ->and($batch->attempts[0]->windowIndex)->toBeIn([intdiv($before, 60), intdiv($after, 60)])
+        ->and($batch->attempts[1]->windowIndex)->toBeIn([intdiv($before, 7), intdiv($after, 7)]);
+})->with('batch clients and services');
+
+it('SPEC-027: applies Laravel\'s Redis key prefix to every key of the batch', function (string $client, string $host, int $port): void {
+    batchSkipWithoutClient($client);
+    $laravelPrefix = 'dt-app-'.bin2hex(random_bytes(4)).':';
+    $keys = new KeyBuilder('dt-batch-'.bin2hex(random_bytes(4)).':');
+    $server = ['host' => $host, 'port' => $port, 'database' => 0, 'timeout' => 2.0, 'read_timeout' => 2.0];
+    $redis = new RedisLimiterStore(new RedisManager(new Container, $client, ['options' => ['prefix' => $laravelPrefix], 'default' => $server]), 'default', $keys, new FakeClock);
+    $unprefixed = (new RedisManager(new Container, $client, ['default' => $server]))->connection();
+
+    $redis->attemptAll([batchPlan('a', 5), batchPlan('b', 5)], false);
+
+    $exists = fn (string $rule): array => [
+        (int) $unprefixed->exists($laravelPrefix.$keys->counterBase(batchPlan($rule, 5)->key, 60)),
+        (int) $unprefixed->exists($keys->counterBase(batchPlan($rule, 5)->key, 60)),
+    ];
+
+    expect([$exists('a'), $exists('b')])->toBe([[1, 0], [1, 0]]);
+})->with('batch clients and services');

@@ -378,3 +378,25 @@ it('SPEC-027: makes no call to Redis for an empty plan', function (): void {
 
     expect([$batch->attempts, $batch->released, $batch->failure, $factory->connections])->toBe([[], [], null, 0]);
 });
+
+it('SPEC-027: returns a reply that stops before the plan\'s end without an enforcing rejection as a failure', function (bool $firstEnforces, array $reply): void {
+    $batch = stubbedRedisStore(new PhpRedisConnection(scriptedPhpRedis(evalsha: $reply)))->attemptAll([
+        new PlannedAttempt(new CounterKey('1', hash('sha256', 'A')), 5, 60, $firstEnforces),
+        new PlannedAttempt(new CounterKey('2', hash('sha256', 'A')), 5, 60, true),
+    ], false);
+
+    expect([$batch->attempts, $batch->failure?->getMessage()])->toBe([[], 'The Redis limiter store returned an unexpected reply.']);
+})->with([
+    'after an allowed attempt' => [true, [1, 4, 0, 30_000_000, 0]],
+    'after a dry-run rejection' => [false, [0, 0, 12, 30_000_000, 0]],
+]);
+
+it('SPEC-027: accepts a reply that stops at an enforcing rejection', function (): void {
+    $batch = stubbedRedisStore(new PhpRedisConnection(scriptedPhpRedis(evalsha: [0, 0, 12, 30_000_000, 0])))->attemptAll([
+        new PlannedAttempt(new CounterKey('1', hash('sha256', 'A')), 5, 60, true),
+        new PlannedAttempt(new CounterKey('2', hash('sha256', 'A')), 5, 60, true),
+    ], false);
+
+    expect(array_map(fn (Attempt $attempt): array => [$attempt->key->ruleId, $attempt->allowed, $attempt->retryAfter], $batch->attempts))->toBe([['1', false, 12]])
+        ->and($batch->failure)->toBeNull();
+});

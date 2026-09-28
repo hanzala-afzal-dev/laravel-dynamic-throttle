@@ -1020,3 +1020,82 @@ it('SPEC-027: never marks a dry-run rule that would block, or the rule that reje
         ->and(attemptSummary($evaluation->attempts))->toBe([['a', true]])
         ->and($evaluation->rejection?->released)->toBeFalse();
 });
+
+/**
+ * A store that counts in one call, and answers every call with $answer, or throws it.
+ */
+function answeringBatch(AttemptBatch|StorageUnavailableException $answer): LimiterStore&BatchLimiterStore
+{
+    return new readonly class($answer) implements BatchLimiterStore, LimiterStore
+    {
+        public function __construct(
+            private AttemptBatch|StorageUnavailableException $answer,
+        ) {}
+
+        public function attemptAll(array $attempts, bool $releaseAll): AttemptBatch
+        {
+            return $this->answer instanceof AttemptBatch ? $this->answer : throw $this->answer;
+        }
+
+        public function attempt(CounterKey $key, int $maxAttempts, int $windowSeconds): never
+        {
+            throw new LogicException('A store that counts in one call gets no attempt of its own.');
+        }
+
+        public function release(Attempt $attempt): never
+        {
+            throw new LogicException('A store that counts in one call gets no release of its own.');
+        }
+    };
+}
+
+/**
+ * An attempt of the client on a rule, 100 per 60 s: allowed, or rejected.
+ */
+function answeredAttempt(string $rule, bool $allowed): Attempt
+{
+    return new Attempt(new CounterKey($rule, hash('sha256', 'client')), 100, 60, 30_000_000, $allowed, $allowed ? 99 : 0, $allowed ? 0 : 60);
+}
+
+it('SPEC-027: fails the call of a store that throws, as it fails a call that returns its failure', function (): void {
+    $cooldown = stackCooldown();
+
+    $evaluation = (new RuleEvaluator(answeringBatch(StorageUnavailableException::because('The batch threw.')), 5, $cooldown))
+        ->evaluate([stackRule('a', 100, 10), closedRule('c', 20)], oneClient());
+
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Unavailable)
+        ->and($evaluation->unavailable?->id)->toBe('c')
+        ->and(failureSummary($evaluation->failures))->toBe([['a', 'The batch threw.']])
+        ->and($cooldown->secondsLeft())->toBe(10);
+});
+
+it('SPEC-027: fails a call that answers fewer attempts than planned without an enforcing rejection, on the first rule it left out', function (): void {
+    $cooldown = stackCooldown();
+
+    $evaluation = (new RuleEvaluator(answeringBatch(new AttemptBatch([answeredAttempt('a', true)], [false])), 5, $cooldown))
+        ->evaluate([stackRule('a', 100, 10), closedRule('c', 20)], oneClient());
+
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Unavailable)
+        ->and($evaluation->unavailable?->id)->toBe('c')
+        ->and(failureSummary($evaluation->failures))->toBe([['c', 'The counter store answered fewer attempts than it was given.']])
+        ->and(attemptSummary($evaluation->attempts))->toBe([['a', false]])
+        ->and($cooldown->secondsLeft())->toBe(10);
+});
+
+it('SPEC-027: fails a call that stops at a dry-run rejection, which never stops a batch', function (): void {
+    $evaluation = (new RuleEvaluator(answeringBatch(new AttemptBatch([answeredAttempt('d', false)], [false]))))
+        ->evaluate([stackRule('d', 100, 10, RuleMode::DryRun), stackRule('b', 100, 20)], oneClient());
+
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Failed)
+        ->and(attemptSummary($evaluation->wouldBlock))->toBe([['d', false]])
+        ->and(failureSummary($evaluation->failures))->toBe([['b', 'The counter store answered fewer attempts than it was given.']]);
+});
+
+it('SPEC-027: counts a store that leaves out the released flags as having released nothing', function (): void {
+    $evaluation = (new RuleEvaluator(answeringBatch(new AttemptBatch([answeredAttempt('a', true), answeredAttempt('s', false)]))))
+        ->evaluate([stackRule('a', 100, 10), stackRule('s', 100, 20)], oneClient());
+
+    // Stricter, never looser: a count nobody said was released is taken as kept.
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Rejected)
+        ->and(attemptSummary($evaluation->attempts))->toBe([['a', false]]);
+});

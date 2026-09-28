@@ -188,3 +188,18 @@ it('AC-9: still applies the policy to a client IP that cannot be read in strict 
         ->and(Exceptions::reported())->toHaveCount(1)
         ->and(Exceptions::reported()[0])->toBeInstanceOf(IdentityUnavailableException::class);
 });
+
+it('SPEC-027: rethrows the resolver error of a rule after the one that rejects, since every identity is resolved before the store answers', function (): void {
+    DynamicThrottle::strict();
+    DynamicThrottle::scope('tenant', fn (): string => throw new RuntimeException('The tenant lookup failed.'));
+    Throttling::rule(['pattern' => 'api/*', 'max_attempts' => 1, 'priority' => 1]);
+    Throttling::rule(['pattern' => 'api/login', 'scope' => Scope::Custom, 'scope_parameter' => 'tenant', 'priority' => 2]);
+    Throttling::route('api/login');
+    Throttling::route('api/other');
+    $this->get('api/other');
+    $this->withoutExceptionHandling();
+
+    // Outside strict mode the request gets the 429, and the error is reported (SPEC-012 AC-4).
+    expect(fn () => $this->get('api/login'))
+        ->toThrow(IdentityUnavailableException::class, 'The identity for custom:tenant could not be resolved: The tenant lookup failed.');
+});
