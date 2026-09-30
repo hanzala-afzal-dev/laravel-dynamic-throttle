@@ -144,11 +144,13 @@ it('SPEC-027 AC-1: stops, releases and answers in the same script call', functio
 
     $batch = $redis->attemptAll([batchPlan('a', 100), batchPlan('b', 100), batchPlan('s', 1), batchPlan('t', 100)], false);
 
+    // s's count, made at the start of a window, still weighs on the next window, so a
+    // limit of 1 lets the client in again only after two windows: 120 seconds.
     expect($commands)->toBe(['evalsha'])
         ->and(batchSummary($batch)[0])->toBe([
             ['a', true, 99, 0, 30_000_000, true],
             ['b', true, 99, 0, 30_000_000, true],
-            ['s', false, 0, 60, 30_000_000, false],
+            ['s', false, 0, 120, 30_000_000, false],
         ]);
 })->with('batch clients and services');
 
@@ -233,12 +235,12 @@ it('SPEC-027 AC-6: makes one call per attempt and per release on a Redis Cluster
 
     $batch = $redis->attemptAll([batchPlan('a', 100), batchPlan('b', 100), batchPlan('s', 1), batchPlan('t', 100)], false);
 
-    // Three attempts and two releases, each its own script call.
+    // Three attempts and two releases, each its own script call, with AC-1's results.
     expect($commands)->toBe(['evalsha', 'evalsha', 'evalsha', 'evalsha', 'evalsha'])
         ->and(batchSummary($batch)[0])->toBe([
             ['a', true, 99, 0, 30_000_000, true],
             ['b', true, 99, 0, 30_000_000, true],
-            ['s', false, 0, 60, 30_000_000, false],
+            ['s', false, 0, 120, 30_000_000, false],
         ]);
 })->with('batch clients and services');
 
