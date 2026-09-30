@@ -49,3 +49,7 @@ The rest of ADR-0002 (PHP `^8.3`, Laravel 12 and 13, the support policy) is unch
 
 - The `prefer-lowest` CI jobs run `scripts/check-laravel-floor.php` and fail if the installed floor differs from the declared one.
 - Verified locally on 2026-09-23: PHP 8.3 and 8.5 with `--prefer-lowest` install exactly 12.61.1 and 13.12.0, and the suite passes on both.
+
+## Decision record
+
+- 2026-09-30: the floors are now `^12.69.0 || ^13.30.0`. Packagist published the advisory PKSA-d5tc-s1qs-h781 ("Laravel: XSS in Debug Page Information") for `laravel/framework` below 12.69.0, and 13.0.0 to 13.29.x. Composer in CI no longer installs those versions, so `prefer-lowest` installed 12.69.0 and 13.30.0, and the floor check failed, as this ADR intends. The earlier floors, 12.61.1 and 13.12.0, were set by an advisory the same way (PKSA-m5cs-t1y6-qpcs).

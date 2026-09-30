@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- Package skeleton for Laravel 12.61.1+ and 13.12+ on PHP 8.3+:
+- Package skeleton for Laravel 12.69+ and 13.30+ on PHP 8.3+:
   - an auto-discovered service provider
   - a publishable config file (`dynamic-throttle-config` tag)
   - the `DYNAMIC_THROTTLE_ENABLED` kill switch
