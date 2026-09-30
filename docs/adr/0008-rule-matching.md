@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-23
 - Roadmap phase: 2
-- Amended by: [ADR-0020](0020-laravel-ecosystem-coexistence.md) (rules with equal priorities run in id order), [ADR-0023](0023-pre-index-built-at-load.md) (the pre-index is built when the manifest loads), [ADR-0025](0025-cap-counts-attempts-per-mode.md) (the cap counts attempts, per mode)
+- Amended by: [ADR-0020](0020-laravel-ecosystem-coexistence.md) (rules with equal priorities run in id order), [ADR-0023](0023-pre-index-built-at-load.md) (the pre-index is built when the manifest loads), [ADR-0025](0025-cap-counts-attempts-per-mode.md) (the cap counts attempts, per mode), [ADR-0026](0026-one-round-trip-per-request.md) (one store round trip per request)
 - Related: ADR-0005, ADR-0007, ADR-0012
 
 ## Context

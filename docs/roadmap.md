@@ -5,7 +5,7 @@
 - **Risk first.** The engine (correctness, concurrency, failure handling) is built and proven before any UI. UI bugs are visible; engine bugs are silent.
 - **Always releasable.** Each phase ends in a state that could ship. The first public release (0.1) happens before the dashboard exists.
 - **Exit criteria are commands, not feelings.** A phase is done when its checks pass in CI.
-- **Every feature goes through the ADR-0003 loop:** spec → plan → failing tests → code → review.
+- **Every feature goes through the ADR-0003 loop:** spec → plan → failing tests → code → review. Since the Phase 2 exit, ADR-0027 shortens the waits in it.
 
 Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of focused work.
 
@@ -100,11 +100,26 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 - Matching is slow → tighten the pre-index, or add route-name matching.
 - Manifest reads are slow on FPM → make APCu the documented recommendation.
 
+**Exit review (2026-09-28)**
+- Every spec is merged, and the first two exit criteria hold.
+- The benchmark missed the 1 ms target on local Redis: 1.25 ms at p95 with the manifest in memory, and 2.3 ms with the manifest read per request (`benchmarks/results/phase-2-exit.md`). Most of it is one Redis round trip per matched rule, and, on PHP-FPM, reading the manifest on every request.
+- The maintainer accepted four decisions, now in Phase 3:
+  1. one store round trip per request (ADR-0026, SPEC-027);
+  2. the manifest's APCu cache on PHP-FPM (ADR-0007's L1, SPEC-028);
+  3. explicit container bindings for the request path, in a `perf:` PR;
+  4. a restated target, which mostly measured the network: one store round trip per request, and under 0.5 ms of the package's own time at p95. It is a Phase 3 exit criterion.
+- The maintainer also accepted a faster loop: ADR-0027.
+
 ---
 
 ## Phase 3 — Operability (M) → release 0.1.0
 
 **Goal:** the package is safe to run in production without a UI.
+
+**First, from the Phase 2 exit review**
+- A `perf:` PR: explicit container bindings for the request path's services, measured with `MiddlewareBench`.
+- SPEC-027: one store round trip per request (ADR-0026)
+- SPEC-028: the manifest's APCu cache on PHP-FPM (ADR-0007's L1)
 
 **Specs**
 - SPEC-013: emergency controls + CLI (`status`, `bypass`, `scale`, `list`, `compile`) (ADR-0011)
@@ -113,6 +128,9 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 - SPEC-016: health checks (store type warnings, middleware order, scheduler, dominant IP)
 
 **Exit criteria**
+- Benchmark, with 100 active rules and 3 matched, restated at the Phase 2 exit:
+  - the Redis driver makes one round trip per request, outside Redis Cluster, which a test counts;
+  - the package's own time, measured on the array store, is under 0.5 ms at p95, on Octane and on PHP-FPM with APCu.
 - `docs/runbook.md` covers "Redis down", "manifest evicted", "a bad rule blocks /api" and "forgot to undo an emergency change". Each scenario has a test.
 - 0.1.0 is tagged and on Packagist (CLI-only), and the README states the pitch and non-goals (ADR-0001).
 

@@ -20,12 +20,15 @@ Decisions live in docs/adr/ (index: docs/adr/README.md). Feature specs live in d
 - `docker compose up -d`: Redis, Valkey, Memcached, MySQL, PostgreSQL for driver tests (`composer test:drivers`)
 - `scripts/verify-install.sh 12|13`: installs the package into a fresh Laravel app and boots it
 
-## Workflow (IMPORTANT, see ADR-0003)
+## Workflow (IMPORTANT, see ADR-0003 and ADR-0027)
 - Features: spec → plan → failing tests → implementation → review. Do not skip the failing-tests step.
 - While implementing, never edit files under tests/. If a test looks wrong, stop and explain why.
 - Before saying a task is done, run `composer test` and `composer analyse`, and show the output.
 - One-sentence changes may skip spec and plan. Bug fixes always start with a failing regression test.
 - If a spec conflicts with an ADR, stop and ask. Do not silently pick one.
+- A spec's open questions: record your recommendation as the decision and carry on; the maintainer vetoes in the PR. Ask first only when a question conflicts with an ADR, fixes a public API that would be hard to change after a release, or has no clearly best option.
+- One PR per spec, opened when the spec is done, listing its decisions. While it is in review, start the next spec on a stacked branch `phase-N/spec-NNN`, and rebase it onto main once the first merges.
+- Right-size the checks: `composer test:mutate` when src/Engine changes, `composer test:drivers` when the stores or their use change, benchmarks when the request path's cost can move, and the review subagent for src/Engine, security-relevant code and the public API.
 - Pace: stop for the maintainer's review at the end of each roadmap phase.
 - Commit failing tests (`test: …`) before the implementation, and check they fail for the right reason.
 - A Stop hook (`.claude/hooks/verify.sh`) runs `composer test` and `composer analyse` when code changed, and blocks the turn while they fail. At the Red step (only tests/ changed since the last green run) it warns instead of blocking.

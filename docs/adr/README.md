@@ -43,6 +43,8 @@ This folder records the important decisions for `laravel-dynamic-throttle`: what
 | [0023](0023-pre-index-built-at-load.md) | The rule pre-index is built when the manifest loads | Accepted | 2 |
 | [0024](0024-keyed-identity-hashing.md) | Identities are hashed with a key derived from APP_KEY | Accepted | 2 |
 | [0025](0025-cap-counts-attempts-per-mode.md) | The per-request cap counts attempts, per mode | Accepted | 2 |
+| [0026](0026-one-round-trip-per-request.md) | One counter-store round trip per request | Accepted | 3 |
+| [0027](0027-faster-loop-after-phase-2.md) | A faster loop after Phase 2 | Accepted | 3 onward |
 
 ## Template
 
