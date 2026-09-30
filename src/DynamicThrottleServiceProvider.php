@@ -10,6 +10,7 @@ use Afzal\DynamicThrottle\Console\CompileCommand;
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
 use Afzal\DynamicThrottle\Engine\Contracts\FailureMemory;
 use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
+use Afzal\DynamicThrottle\Engine\Exemptions\ExemptionSet;
 use Afzal\DynamicThrottle\Engine\Failure\Cooldown;
 use Afzal\DynamicThrottle\Engine\Failure\ProcessFailureMemory;
 use Afzal\DynamicThrottle\Engine\Failure\ReportThrottle;
@@ -18,12 +19,14 @@ use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
 use Afzal\DynamicThrottle\Http\IdentitySettings;
 use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
+use Afzal\DynamicThrottle\Http\RequestIdentityResolver;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Models\Exemption;
 use Afzal\DynamicThrottle\Models\Rule;
 use Afzal\DynamicThrottle\Support\ApcuFailureMemory;
 use Afzal\DynamicThrottle\Support\ConfigMerger;
 use Afzal\DynamicThrottle\Support\LaravelClock;
+use Afzal\DynamicThrottle\Support\LazyManifestRebuilder;
 use Afzal\DynamicThrottle\Support\LimiterStoreFactory;
 use Afzal\DynamicThrottle\Support\UnavailableLimiterStore;
 use Composer\InstalledVersions;
@@ -36,6 +39,7 @@ use Illuminate\Contracts\Foundation\CachesConfiguration;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Foundation\Console\AboutCommand;
 use Illuminate\Foundation\Http\Kernel;
+use Illuminate\Http\Request;
 use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
 use Throwable;
@@ -59,6 +63,8 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
         // Scoped: Octane builds it once per request, so config changes apply on the next request.
         $this->app->scoped(LimiterStore::class, fn (Application $app): LimiterStore => $app->make(LimiterStoreFactory::class)->make());
 
+        $this->registerRequestPath();
+
         // Exemption values are hashed as requests hash them (ADR-0024).
         $this->app->bind(ManifestCompiler::class, fn (Application $app): ManifestCompiler => new ManifestCompiler(
             $this->manifestCache($app),
@@ -72,7 +78,7 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
             $this->manifestCache($app),
             $app->make(KeyBuilder::class),
             $app->make(Clock::class),
-            $app->make(ManifestCompiler::class),
+            new LazyManifestRebuilder($app),
             $app,
             $this->refreshSeconds($app),
         ));
@@ -112,6 +118,46 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
         $this->app->bind(IdentitySettings::class, fn (Application $app): IdentitySettings => new IdentitySettings(
             $this->ipv6Prefix($app),
             $this->guards($app),
+        ));
+    }
+
+    /**
+     * What every limited request builds, bound explicitly: Laravel's container would
+     * reflect on each class again on every request (the Phase 2 exit review). The
+     * middleware is built twice per request, for handle() and for terminate().
+     */
+    private function registerRequestPath(): void
+    {
+        $this->app->bind(DynamicThrottleMiddleware::class, fn (Application $app): DynamicThrottleMiddleware => new DynamicThrottleMiddleware(
+            $app,
+            $app->make('config'),
+            $app->make(Clock::class),
+            $app->make(DynamicThrottle::class),
+        ));
+
+        // make(RequestIdentityResolver::class, ['request' => ..., 'exemptions' => ...]), as the middleware does.
+        $this->app->bind(RequestIdentityResolver::class, function (Application $app, array $parameters): RequestIdentityResolver {
+            $request = $parameters['request'] ?? null;
+            $exemptions = $parameters['exemptions'] ?? null;
+
+            return new RequestIdentityResolver(
+                $request instanceof Request ? $request : $app->make('request'),
+                $app->make('auth'),
+                $app->make(DynamicThrottle::class),
+                $app,
+                $app->make(IdentityHasher::class),
+                $app->make(IdentitySettings::class),
+                $app->make(Clock::class),
+                $exemptions instanceof ExemptionSet ? $exemptions : new ExemptionSet,
+            );
+        });
+
+        $this->app->bind(LimiterStoreFactory::class, fn (Application $app): LimiterStoreFactory => new LimiterStoreFactory(
+            $app->make('config'),
+            $app->make('cache'),
+            $app->make('redis'),
+            $app->make(KeyBuilder::class),
+            $app->make(Clock::class),
         ));
     }
 

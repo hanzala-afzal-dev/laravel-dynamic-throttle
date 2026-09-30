@@ -14,14 +14,14 @@ final readonly class Evaluation
 {
     /**
      * @param  list<RuleAttempt>  $attempts  every attempt that counted, in order; released ones are marked
-     * @param  list<RuleFailure>  $failures  failed rules, in order: identities that could not be resolved (SPEC-008), and the failed attempt that marked the store down
+     * @param  list<RuleFailure>  $failures  failed rules, in order: identities that could not be resolved (SPEC-008), and the first rule the failed store call could not check (SPEC-027)
      * @param  list<RuleAttempt>  $wouldBlock  dry-run rules that would have rejected (not counted)
      * @param  list<CompiledRule>  $skipped  rules that did not apply to this request
      * @param  list<RuleFailure>  $releaseFailures  counts that could not be released (ADR-0021)
      * @param  list<CompiledRule>  $ignored  rules over their mode's cap: not attempted (ADR-0025)
      * @param  list<RuleExemption>  $exempted  rules an exemption freed the client from: not attempted (SPEC-009)
      * @param  list<RuleFailure>  $exemptionFailures  exemption checks that failed, and so exempted nothing (SPEC-009)
-     * @param  list<CompiledRule>  $unchecked  rules that applied, but the store was down or in its cooldown: not attempted (SPEC-012)
+     * @param  list<CompiledRule>  $unchecked  rules that applied, but the store failed before them or was in its cooldown: not checked (SPEC-012, SPEC-027)
      */
     private function __construct(
         public EvaluationOutcome $outcome,
@@ -57,7 +57,7 @@ final readonly class Evaluation
      * Nothing is unchecked: a rejection needs a store that works, and once it fails no rule tries it.
      *
      * @param  list<RuleAttempt>  $attempts
-     * @param  list<RuleFailure>  $failures  identities that could not be resolved before the rejection
+     * @param  list<RuleFailure>  $failures  identities that could not be resolved, after the rejecting rule's too: they are resolved before the store is called (ADR-0026)
      * @param  list<RuleAttempt>  $wouldBlock
      * @param  list<CompiledRule>  $skipped
      * @param  list<RuleFailure>  $releaseFailures

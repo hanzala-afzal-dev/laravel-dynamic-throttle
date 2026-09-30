@@ -16,6 +16,7 @@ use Afzal\DynamicThrottle\Facades\DynamicThrottle;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Models\Exemption;
 use Afzal\DynamicThrottle\Tests\Support\Auth\TestUser;
+use Afzal\DynamicThrottle\Tests\Support\FailingBatchStore;
 use Afzal\DynamicThrottle\Tests\Support\FailingStore;
 use Afzal\DynamicThrottle\Tests\Support\FakeClock;
 use Afzal\DynamicThrottle\Tests\Support\Throttling;
@@ -31,8 +32,9 @@ use Symfony\Component\HttpFoundation\Response;
 
 /*
 | SPEC-012 AC-1 to AC-8: the failure policy (ADR-0010, ADR-0020 point 1,
-| ADR-0021). The clock starts at T0, the cooldown is the default 10 seconds,
-| the events are faked, and reports are recorded.
+| ADR-0021), and SPEC-027 AC-9, a store whose one call fails. The clock
+| starts at T0, the cooldown is the default 10 seconds, the events are faked,
+| and reports are recorded.
 */
 
 beforeEach(function (): void {
@@ -236,7 +238,7 @@ it('AC-4: never answers 503 from a fail-closed rule over the cap, even when the 
     expect($this->get('api/x')->status())->toBe(200);
 });
 
-it('AC-4: keeps the 429 of an earlier rule, and never runs the fail-closed rule after it', function (): void {
+it('AC-4: keeps the 429 of an earlier rule over the 503 of a fail-closed rule after it, and reports that rule\'s resolver error (SPEC-027 AC-8)', function (): void {
     DynamicThrottle::scope('tenant', fn (): string => throw new RuntimeException('The tenant lookup failed.'));
     Throttling::rule(['pattern' => 'api/*', 'max_attempts' => 1, 'priority' => 1]);
     Throttling::rule(['pattern' => 'api/login', 'scope' => Scope::Custom, 'scope_parameter' => 'tenant', 'on_failure' => FailurePolicy::Closed, 'priority' => 2]);
@@ -246,9 +248,10 @@ it('AC-4: keeps the 429 of an earlier rule, and never runs the fail-closed rule 
     $this->get('api/other');
     $login = $this->get('api/login');
 
-    // The tenant rule never ran, so its resolver never failed.
+    // Every identity is resolved before the store answers (ADR-0026), so the tenant resolver ran and failed.
     expect($login->status())->toBe(429)
-        ->and(policyReports())->toBe([]);
+        ->and(policyReports())->toBe([[IdentityUnavailableException::class, 'The identity for custom:tenant could not be resolved: The tenant lookup failed.']])
+        ->and(storageEvents())->toBe([]);
 });
 
 it('AC-4: never answers 503 without a manifest, since then no rule is known (ADR-0010 point 3)', function (): void {
@@ -427,4 +430,27 @@ it('starts each test without a cooldown: fake() counts on its own store after an
     DynamicThrottle::fake();
 
     expect(Throttling::headers($this->get('api/x')))->toBe(['X-RateLimit-Limit' => '5', 'X-RateLimit-Remaining' => '4']);
+});
+
+it('SPEC-027 AC-9: answers 503 when a store that counts in one call fails, reports it once, and skips the store until the cooldown ends', function (): void {
+    Throttling::rule(['max_attempts' => 5, 'priority' => 1]);
+    Throttling::rule(['max_attempts' => 5, 'priority' => 2]);
+    Throttling::rule(['on_failure' => FailurePolicy::Closed, 'max_attempts' => 5, 'priority' => 3]);
+    Throttling::route('api/x');
+    $store = new FailingBatchStore;
+    app()->instance(LimiterStore::class, $store);
+
+    $first = $this->get('api/x');
+    atSecond(3);
+    $during = $this->get('api/x');
+    $callsDuring = $store->calls;
+    atSecond(10);
+    $this->get('api/x');
+
+    // The one call failed for the three rules: one report and one event, not three.
+    expect([statusAndRetry($first), statusAndRetry($during)])->toBe([[503, '10'], [503, '7']])
+        ->and($callsDuring)->toBe(1)
+        ->and(array_map(fn (StorageUnavailable $event): array => [$event->message, $event->release], storageEvents()))->toBe([[FailingBatchStore::DOWN, false], [FailingBatchStore::DOWN, false]])
+        ->and(policyReports())->toBe([[StorageUnavailableException::class, FailingBatchStore::DOWN], [StorageUnavailableException::class, FailingBatchStore::DOWN]])
+        ->and($store->calls)->toBe(2);
 });

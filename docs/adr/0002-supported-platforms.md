@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-23
 - Roadmap phase: 0
-- Amended by: [ADR-0019](0019-tested-laravel-floors.md) (the Laravel constraint is `^12.61.1 || ^13.12.0`, the versions CI tests)
+- Amended by: [ADR-0019](0019-tested-laravel-floors.md) (the Laravel constraint is the lowest versions CI tests, `^12.69.0 || ^13.30.0` since 2026-09-30)
 
 ## Context
 
