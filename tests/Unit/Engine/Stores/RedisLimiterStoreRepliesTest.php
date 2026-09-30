@@ -400,3 +400,12 @@ it('SPEC-027: accepts a reply that stops at an enforcing rejection', function ()
     expect(array_map(fn (Attempt $attempt): array => [$attempt->key->ruleId, $attempt->allowed, $attempt->retryAfter], $batch->attempts))->toBe([['1', false, 12]])
         ->and($batch->failure)->toBeNull();
 });
+
+it('SPEC-027: returns a reply with more attempts than planned as a failure', function (): void {
+    $plan = array_map(fn (int $rule): PlannedAttempt => new PlannedAttempt(new CounterKey((string) $rule, hash('sha256', 'A')), 5, 60, true), range(1, 5));
+    $sixAttempts = array_merge(...array_fill(0, 6, [1, 4, 0, 30_000_000, 0]));
+
+    $batch = stubbedRedisStore(new PhpRedisConnection(scriptedPhpRedis(evalsha: $sixAttempts)))->attemptAll($plan, false);
+
+    expect([$batch->attempts, $batch->failure?->getMessage()])->toBe([[], 'The Redis limiter store returned an unexpected reply.']);
+});

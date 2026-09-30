@@ -1099,3 +1099,19 @@ it('SPEC-027: counts a store that leaves out the released flags as having releas
     expect($evaluation->outcome)->toBe(EvaluationOutcome::Rejected)
         ->and(attemptSummary($evaluation->attempts))->toBe([['a', false]]);
 });
+
+it('SPEC-027: starts no cooldown and lists no failure when the first of several rules rejects the request', function (): void {
+    $stack = stackStore();
+    $cooldown = stackCooldown();
+    $evaluator = new RuleEvaluator($stack->store, 5, $cooldown);
+    $rules = [stackRule('s', 1, 10), stackRule('a', 100, 20)];
+    $evaluator->evaluate($rules, oneClient());
+
+    $evaluation = $evaluator->evaluate($rules, oneClient());
+
+    // The call stopped early at an enforcing rejection, which is no failure: the store stays in use.
+    expect($evaluation->outcome)->toBe(EvaluationOutcome::Rejected)
+        ->and($evaluation->rejection?->rule->id)->toBe('s')
+        ->and($evaluation->failures)->toBe([])
+        ->and($cooldown->secondsLeft())->toBe(0);
+});
