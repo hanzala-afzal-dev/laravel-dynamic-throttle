@@ -1,6 +1,6 @@
 # SPEC-027: One store round trip per request
 
-- Status: In progress
+- Status: Done
 - ADRs: ADR-0026, ADR-0005, ADR-0008, ADR-0010, ADR-0012, ADR-0021, ADR-0025
 - Roadmap phase: 3
 
@@ -24,7 +24,7 @@ Each rule that counts a request makes its own call to the counter store, one aft
 3. **Decide, in PHP, in evaluation order.** The first enforcing rejection gives the 429. Otherwise, a fail-closed rule that stopped planning gives the 503. Otherwise, the request goes through. Nothing else about the outcome, the headers, the events or the failure policy changes.
 
 ### The stores
-- **The Redis driver** counts all the attempts in one Lua script, which is one round trip and atomic. Each attempt runs the same arithmetic as today's script, so both make identical decisions.
+- **The Redis driver** counts all the attempts in one Lua script, which is one round trip and atomic. Each attempt runs the same arithmetic as today's script, so both make identical decisions: the two scripts share one counting function.
   - The script reads Redis `TIME` once, so every attempt of a request uses the same time.
 - **On Redis Cluster**, a script may only touch keys in one hash slot (ADR-0005). There the Redis driver makes one call per attempt, as the cache driver does.
 - **The cache driver, and any other `LimiterStore`**, keep one call per attempt. The evaluator runs them in order, with the same behavior as the batch: it stops at the first enforcing rejection, releases, and still tries every release after one fails (ADR-0021).
@@ -72,6 +72,8 @@ Unit tests use the array store and the FakeClock. Driver tests run on Redis and 
 - `src/Engine/Stacking/OneCallPerAttempt.php`: the batch's behavior for any `LimiterStore`, with one call per attempt. It is today's loop, moved out of the evaluator.
 - `src/Engine/Stacking/RuleEvaluator.php`: plans, counts, then decides. It uses the store's `attemptAll()` when the store is a `BatchLimiterStore`, and `OneCallPerAttempt` otherwise.
 - `src/Engine/Stores/RedisLimiterStore.php`: implements `BatchLimiterStore` with a batch script, and uses one call per attempt on cluster connections.
+  - The attempt script and the batch script share their counting function, so their arithmetic cannot drift apart.
+  - The three scripts' SHA-1s are constants: hashing the batch script on every call cost 5 µs. The stubbed-client tests check each constant against its script.
 - Tests:
   - `tests/Unit/Engine/Stacking/`: the evaluator's plan, count and decide steps, and `OneCallPerAttempt`;
   - `tests/Contract/`: the batch behavior on every store, AC-11 included;
@@ -100,7 +102,7 @@ Unit tests use the array store and the FakeClock. Driver tests run on Redis and 
 - `composer test`, `composer analyse`, `composer format:check`, `composer refactor:check`
 - `docker compose up -d && composer test:drivers`
 - `composer test:mutate`, since the evaluator and the stores are in `src/Engine`
-- `composer bench`: `MiddlewareBench` on local Redis, recorded in `benchmarks/results/`
+- `composer bench`: `MiddlewareBench` on local Redis, recorded in `benchmarks/results/phase-3-one-round-trip.md`. With 3 matched rules, a request on local Redis is 150 to 220 µs faster at p50, and the array store shows no cost.
 
 ## Decisions
 Recorded as recommended (ADR-0027). The maintainer can veto them in the PR.
