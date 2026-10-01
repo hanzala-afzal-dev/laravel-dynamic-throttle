@@ -122,7 +122,7 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 - SPEC-028: the manifest's APCu cache on PHP-FPM (ADR-0007's L1)
 
 **Specs**
-- SPEC-013: emergency controls + CLI (`status`, `bypass`, `scale`, `list`, `compile`) (ADR-0011)
+- SPEC-013: emergency controls + CLI (`status`, `bypass`, `scale`, `list`, `disable-rule`, `enable-rule`, `compile`) (ADR-0011), and the audit log's table with the CLI's entries (decided on 2026-10-01, ADR-0015's decision record)
 - SPEC-014: `dynamic-throttle:explain` (simulate a request and show matched rules, identity and decision)
 - SPEC-015: telemetry buffer, flush, prune, events (ADR-0013)
 - SPEC-016: health checks (store type warnings, middleware order, scheduler, dominant IP)
@@ -145,7 +145,7 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 **Specs**
 - SPEC-017: JSON API (rules, exemptions, settings, metrics, audit, health, explain)
 - SPEC-018: gates, middleware, validation, guardrails (ADR-0015)
-- SPEC-019: audit log
+- SPEC-019: audit log: the JSON API's and the dashboard's entries, and reading them. The table ships with SPEC-013.
 
 **Exit criteria**
 - An authorization test for every endpoint × role.
