@@ -53,7 +53,7 @@ APCu may be full or fail, a fetch may throw, or an entry may not have the shape 
 - a bad entry is deleted;
 - nothing throws.
 
-An entry holding an object anywhere is not a snapshot: APCu reads it back, so it is released and deleted inside the fetch, where even an object whose destructor throws cannot escape. A manifest that cannot be written to L1 is still served.
+An entry holding an object anywhere is not a snapshot either. APCu reads it back, so it is released and deleted inside the fetch, where even an object whose destructor throws cannot escape. A manifest that cannot be written to L1 is still served.
 
 A rule's JSON is only checked when a request matches the rule and builds it. A rule that cannot be built fails that request's matching, which the middleware reports, and the request goes through, as for any error of the manifest (ADR-0010), in strict mode too. Only something other than the package can write such an entry.
 
@@ -73,7 +73,7 @@ The APCu tests run in `tests/Apcu` with `apc.enable_cli=1` (`composer test:apcu`
 - **AC-6 (apps)** Two apps with different base paths never read each other's entry.
 - **AC-7 (versions)** An entry written under another package version is never read. The provider keys the entry by the app's base path and the commit Composer installed.
 - **AC-8 (off)** With `refresh_seconds` 0, or with `DynamicThrottle::fake()`, nothing is written to APCu, and the read path is today's.
-- **AC-9 (bad entries)** An entry that is not a snapshot is ignored and replaced by the store's manifest, and nothing throws. One without a snapshot's fields and types is also deleted at once. The cases:
+- **AC-9 (bad entries)** An entry that is not a snapshot is ignored, deleted and replaced by the store's manifest, and nothing throws. The cases:
   - a string;
   - an array;
   - an object of another class;
@@ -91,8 +91,8 @@ The APCu tests run in `tests/Apcu` with `apc.enable_cli=1` (`composer test:apcu`
 
 ## Interfaces and files
 - `src/Manifest/ManifestSnapshot.php` (new, internal): what L1 holds.
-  - Fields: the manifest's version, index, each rule's JSON, its exemptions as arrays, its state, and the read time in microseconds.
-  - It turns into a `Manifest` and into the entry's plain values, and comes from either.
+  - Fields: the manifest's version, index, each rule's JSON, its exemptions, its state, and the read time in microseconds.
+  - It turns into a `Manifest` and into the entry's plain values, and comes from either. From an entry, it builds the index and the exemptions at once, so an entry that cannot build them is no snapshot.
 - `src/Manifest/ManifestRules.php` (new, internal): a manifest's rules by position. Decoded from the store, they are all built. From L1, each one is built from its JSON the first time it is read, then kept.
 - `src/Manifest/Manifest.php`: `rule(int $position)` and `rules()` take the place of the public `$rules` array. The constructor takes the rules as a list or as `ManifestRules`, and an index stored with them.
 - `src/Manifest/ManifestCodec.php`: `encodeRule()` and `decodeRule()`, one rule's JSON, as the manifest writes it.

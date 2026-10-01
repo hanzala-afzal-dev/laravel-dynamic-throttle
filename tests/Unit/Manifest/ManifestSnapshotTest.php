@@ -106,10 +106,8 @@ it('AC-9: is no snapshot without a snapshot\'s fields and types', function (mixe
     ];
 });
 
-it('AC-9: builds no manifest from an index or exemptions that are not what they should be', function (array $replace): void {
-    $snapshot = ManifestSnapshot::fromArray([...ManifestSnapshot::of(snapshotManifest(), FakeClock::T0 * 1_000_000)->toArray(), ...$replace]);
-
-    expect(fn (): Manifest => $snapshot?->manifest() ?? throw new LogicException('Not a snapshot.'))->toThrow(InvalidArgumentException::class);
+it('AC-9: is no snapshot with an index or exemptions that cannot be built, so the fetch deletes the entry', function (array $replace): void {
+    expect(ManifestSnapshot::fromArray([...ManifestSnapshot::of(snapshotManifest(), FakeClock::T0 * 1_000_000)->toArray(), ...$replace]))->toBeNull();
 })->with([
     'an index that points past its rules' => [['index' => ['literal' => [], 'wildcard' => ['*' => [0, 1, 2]], 'patterns' => ['api/*', 'web/*']]]],
     'an index with a pattern for a rule it does not have' => [['index' => ['literal' => [], 'wildcard' => ['*' => [0, 1]], 'patterns' => ['api/*', 'web/*', 'x/*']]]],
