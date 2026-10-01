@@ -37,11 +37,12 @@ All are in the `dynamic-throttle:` namespace. They need the database, except `st
 | `compile` | Unchanged (SPEC-006) |
 
 **Every command that changes something:**
-- writes the change, and one audit entry with it, in one transaction;
-- then compiles the manifest once, and reports the result. The model observer compiles changes made through the models directly; the commands compile themselves, so they can tell whether it worked. When the compile fails, the change stays saved, and the command says so, says that servers keep the previous manifest until a compile succeeds (the five-minute schedule retries it), and exits 1;
-- prints what servers will apply and until when, and that they pick it up within `refresh_seconds`;
+- writes the change, and one audit entry with it, in one transaction, retried after a deadlock, and once when another process inserted the same setting first;
+- lets the model observer compile the manifest once, after the commit, as for any change (ADR-0007), and reports that compile (decision 10). When it fails, the change stays saved, and the command says so, without saying servers apply it, says that servers keep the previous manifest until a compile succeeds (the five-minute schedule retries it, when it runs), and exits 1;
+- once compiled, prints what servers will apply and until when, and that they pick it up within `refresh_seconds`;
 - in production, asks for confirmation before a dangerous change, as ADR-0015's guardrails list them: bypass on, a factor below 1, and disabling an enforcing rule. `--force` skips the question, as `migrate --force` does. Without a terminal and without `--force`, the command changes nothing and exits 1.
-- A command that changes nothing, such as `bypass off` while bypass is off, says so, writes no audit entry, and exits 0.
+- A command that changes nothing, such as `bypass off` while bypass is off or has ended, says so, writes no audit entry, and exits 0.
+- Names and messages from the database print as text: a rule's name can neither style the output, which could stop the command, nor drive the terminal.
 
 **`--for`** takes a whole number and a unit: `90s`, `30m`, `2h` or `1d`, from 1 second to 365 days. The end time is the command's time plus that. **Without `--for`, a change ends after one hour** (decision 2). `--forever` sets no end time, and cannot be combined with `--for`.
 
@@ -49,8 +50,8 @@ All are in the `dynamic-throttle:` namespace. They need the database, except `st
 - the kill switch, the driver and the store it uses;
 - the manifest that servers read from the cache store: its version and how many rules and exemptions it holds, or that it is missing or cannot be read;
 - the settings in that manifest, with their end time and the time left, or that a setting has ended;
-- the settings in the database, when they differ from the manifest's: a change no compile has written yet;
-- **exits 1 when the config is invalid** (ADR-0020 point 1): an unknown driver, an undefined store, or an invalid prefix, with the error. Otherwise it exits 0, even when the manifest is missing or the database is down. SPEC-016 adds its warnings to this output, and they do not change the exit code.
+- the settings in the database, when they differ from the manifest's, or there is no manifest: a change no compile has written yet;
+- **exits 1 when the config is invalid** (ADR-0020 point 1): an unknown driver, an undefined store, an invalid prefix, or a Redis connection the config does not define, with the error. Otherwise it exits 0, even when the manifest is missing or the database is down. SPEC-016 adds its warnings to this output, and they do not change the exit code.
 
 **`list`** shows the rules in the database, enabled or not, in the manifest's order (priority, then id): id, name, method, pattern, scope, limit per window, mode, failure policy, and whether each is enabled.
 
@@ -102,7 +103,9 @@ Feature tests run on SQLite with the array cache store and Laravel's time travel
 - `src/Http/Middleware/DynamicThrottleMiddleware.php`: bypass, and the factor, from the manifest and the clock.
 - `src/Console/StatusCommand.php`, `BypassCommand.php`, `ScaleCommand.php`, `ListCommand.php`, `DisableRuleCommand.php` and `EnableRuleCommand.php`. The four that change something extend `ChangeCommand`, which holds `--for`, the confirmation and the messages. `CliActor` names the system user.
 - `src/Support/LimiterStoreFactory.php`: `describe()`, the driver it picks and where it counts, for `status`.
-- `src/Support/EmergencyControls.php` (new, internal): each change with its audit entry, in one transaction, then the compile, for the commands now and the JSON API (SPEC-017) and the dashboard (SPEC-021) later. It returns a `ChangeOutcome`, and throws `TableMissing` before writing when a table is missing.
+- `src/Support/EmergencyControls.php` (new, internal): each change with its audit entry, in one transaction, for the commands now and the JSON API (SPEC-017) and the dashboard (SPEC-021) later. It returns a `ChangeOutcome`: unchanged, compiled, failed to compile, or pending in a surrounding transaction. It throws `TableMissing` before writing when a table is missing.
+- `src/Compiler/LastCompile.php` (new, internal, scoped): the outcome of the observer's last compile, which `ManifestObserver` records and `EmergencyControls` reads back.
+- `src/Console/Printable.php` (new, internal): text from the database or an exception, as the commands print it.
 - `src/Console/Duration.php` and `src/Support/ScaleFactor.php` (new, internal): `--for` and the factor, parsed with the messages above. The compiler parses the stored factor with `ScaleFactor` too.
 
 ## Out of scope
@@ -118,12 +121,15 @@ Feature tests run on SQLite with the array cache store and Laravel's time travel
 - **The servers' clocks differ:** each server ends a setting by its own clock, so they disagree by their skew. NTP keeps that to milliseconds.
 - **The end time is exact:** a setting applies while the time is before its end, and not at it.
 - **Time zones:** `expires_at` is written in the app's time zone, which the compiler reads back, as for exemptions (SPEC-009).
+  - **Daylight saving time** (found by the review): when the clocks go back, an hour repeats, and an end time in it reads back as its later occurrence, so a setting can last up to an hour longer. Exemptions share it. Storing the package's times in UTC would fix both, and is proposed for before 0.1.0 (the roadmap).
 - **A huge limit:** a scaled limit beyond PHP's largest integer stays at that integer.
 - **The settings table is missing,** because the app has not run the new migration: the compiler compiles no settings and reports it, as for exemptions (SPEC-009). The change commands print how to publish and run the migration, and exit 1.
-- **Two admins at once:** the last write wins, each writes its own audit entry, and the compile lock orders the compiles (SPEC-006).
+- **Two admins at once:** the last write wins, and each writes its own audit entry. A deadlock is retried, and so is an insert another process made first, as MySQL and PostgreSQL report two concurrent first writes. A rule is read again, locked, in the transaction, so the same change is never made and audited twice. The compile lock orders the compiles (SPEC-006).
+- **A surrounding transaction:** a change made inside one compiles only when it commits, and not at all when it rolls back, since the observer compiles after the commit.
+- **A rolling deploy** (found by the review): servers of format 2 and of format 3 share the cache store, and each reads the other's manifest as corrupt and rebuilds it. Putting the format in the manifest's key would keep them apart, and is proposed for before 0.1.0 (the roadmap).
 - **A stale manifest** (ADR-0010) keeps its settings until their end time, so a bypass set before an outage keeps working through it.
 - **The kill switch** is unchanged. It is the last resort when both the database and the cache are down (ADR-0011 point 4).
-- **The system user cannot be read,** without the `posix` extension: the actor falls back to the `USER` environment variable, then to `cli:unknown`.
+- **The system user cannot be read,** without the `posix` extension: the actor falls back to the `USER` environment variable, then to `cli:unknown`. Through sudo, it also names the user who ran sudo: `cli:root (sudo by alice)`.
 
 ## End-to-end verification
 - `composer test -- --filter=SPEC-013` and the files below, `composer test:apcu` for AC-10, and `composer analyse`, `format:check` and `refactor:check`
@@ -147,4 +153,4 @@ Recorded as recommended (ADR-0027), except the first two, which the maintainer d
 7. **Confirmation follows ADR-0015's list of dangerous actions, in production only,** with `--force`, as Laravel's own commands do. An incident script passes `--force`.
 8. **`status` exits 1 only for an invalid config** (ADR-0020 point 1). A missing manifest or an unreachable database is shown, but does not fail a deploy script.
 9. **`--for` stops at 365 days,** so a typo cannot overflow the end time.
-10. **A change and its audit entry commit together,** and the compile runs after the commit, as for rules (ADR-0007).
+10. **A change and its audit entry commit together, and the model observer compiles once, after the commit** (revised after the review). The observer records the outcome in a scoped `LastCompile`, which the change reads back. The draft had `EmergencyControls` compile itself with the models' events silenced, which also silenced the app's listeners, compiled inside a surrounding transaction that could still roll back, and went against ADR-0007's "controllers never compile directly".

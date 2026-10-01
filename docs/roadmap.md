@@ -127,6 +127,10 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 - SPEC-015: telemetry buffer, flush, prune, events (ADR-0013)
 - SPEC-016: health checks (store type warnings, middleware order, scheduler, dominant IP)
 
+**Before 0.1.0, from the SPEC-013 review (2026-10-01)**, proposed for the maintainer to decide:
+- The manifest's cache key names its format, such as `dt:m:3`, so servers of two versions never rebuild each other's manifest during a rolling deploy.
+- The package's tables store times in UTC, the exemptions' and the settings' end times and the audit log's, so a daylight-saving change cannot stretch an end time by the repeated hour.
+
 **Exit criteria**
 - Benchmark, with 100 active rules and 3 matched, restated at the Phase 2 exit:
   - the Redis driver makes one round trip per request, outside Redis Cluster, which a test counts;
