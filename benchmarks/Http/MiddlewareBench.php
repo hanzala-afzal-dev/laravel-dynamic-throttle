@@ -31,7 +31,7 @@ use Symfony\Component\HttpFoundation\Response;
  * distribution gives the p95 (benchmarks/percentiles.php).
  *
  * phpbench.json enables APCu in the CLI, for SPEC-028's case. Each process
- * has an APCu of its own, as each PHP-FPM server has.
+ * starts with an APCu of its own, as each PHP-FPM server has.
  */
 #[Bench\Revs(1)]
 #[Bench\Iterations(200)]
@@ -98,10 +98,6 @@ final class MiddlewareBench
         $config->set('dynamic-throttle.manifest.refresh_seconds', $params['refresh']);
         $this->emptyMemory = $params['empty_memory'];
         ManifestRepository::flushState();
-
-        if (function_exists('apcu_clear_cache')) {
-            apcu_clear_cache();
-        }
 
         $rules = $this->rules();
 
