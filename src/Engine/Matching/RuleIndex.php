@@ -6,6 +6,7 @@ namespace Afzal\DynamicThrottle\Engine\Matching;
 
 use Afzal\DynamicThrottle\Enums\RequestMethod;
 use Afzal\DynamicThrottle\Manifest\CompiledRule;
+use LogicException;
 
 /**
  * Narrows the rules a request tests to the ones that can match (ADR-0008).
@@ -52,6 +53,22 @@ final readonly class RuleIndex
         }
 
         return new self($literal, $wildcard, $patterns);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function toArray(): array
+    {
+        throw new LogicException('Not implemented yet (SPEC-028): '.count($this->patterns));
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $parts
+     */
+    public static function fromArray(array $parts, int $count): self
+    {
+        throw new LogicException('Not implemented yet (SPEC-028): '.count($parts).' '.$count);
     }
 
     /**

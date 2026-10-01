@@ -82,7 +82,7 @@ final class Exemptions
      */
     public static function compiled(Manifest $manifest, Rule $rule): CompiledRule
     {
-        foreach ($manifest->rules as $compiled) {
+        foreach ($manifest->rules() as $compiled) {
             if ($compiled->id === (string) $rule->id) {
                 return $compiled;
             }
@@ -98,7 +98,7 @@ final class Exemptions
     public static function check(Request $request, ?Rule $rule = null): ?string
     {
         $manifest = self::manifest();
-        $compiled = $rule instanceof Rule ? self::compiled($manifest, $rule) : $manifest->rules[0];
+        $compiled = $rule instanceof Rule ? self::compiled($manifest, $rule) : $manifest->rule(0);
 
         return Identities::resolver($request, $manifest->exemptions)->exemption($compiled);
     }

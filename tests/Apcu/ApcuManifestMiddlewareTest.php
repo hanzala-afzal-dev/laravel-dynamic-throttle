@@ -8,6 +8,7 @@ use Afzal\DynamicThrottle\Engine\Failure\ProcessFailureMemory;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Enums\FailurePolicy;
 use Afzal\DynamicThrottle\Facades\DynamicThrottle;
+use Afzal\DynamicThrottle\Manifest\InvalidManifest;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Manifest\ManifestSnapshot;
 use Afzal\DynamicThrottle\Support\ApcuManifestCache;
@@ -71,6 +72,17 @@ function nextPhpFpmRequest(): void
     app()->instance(ProcessFailureMemory::class, new ProcessFailureMemory);
 }
 
+/**
+ * The key the provider keeps this app's entry under: the app's base path, and the
+ * commit Composer installed, else the package's version (AC-7).
+ */
+function providerManifestKey(): string
+{
+    $version = InstalledVersions::getReference(DynamicThrottleServiceProvider::PACKAGE) ?? InstalledVersions::getPrettyVersion(DynamicThrottleServiceProvider::PACKAGE);
+
+    return app(KeyBuilder::class)->localManifest(hash('xxh128', app()->basePath()), (string) $version);
+}
+
 it('AC-2: fills L1 through a request, so the next PHP-FPM request reads nothing from the store', function (): void {
     $store = countingPackageStore();
     Throttling::rule(['max_attempts' => 5]);
@@ -109,10 +121,30 @@ it('AC-7: keys the entry by the app\'s base path and the commit Composer install
 
     $this->get('api/x');
 
-    $commit = InstalledVersions::getReference(DynamicThrottleServiceProvider::PACKAGE) ?? InstalledVersions::getPrettyVersion(DynamicThrottleServiceProvider::PACKAGE);
-    $key = app(KeyBuilder::class)->localManifest(hash('xxh128', app()->basePath()), (string) $commit);
+    expect(ManifestSnapshot::fromArray(apcu_fetch(providerManifestKey()))?->version)->toBeInt();
+});
 
-    expect(apcu_fetch($key))->toBeInstanceOf(ManifestSnapshot::class);
+it('AC-14: builds from L1 only the rules a request matches, and reports a matched rule it cannot build', function (): void {
+    Exceptions::fake();
+    Throttling::rule(['pattern' => 'api/*', 'max_attempts' => 5]);
+    Throttling::rule(['pattern' => 'web/*', 'max_attempts' => 5]);
+    Throttling::route('api/x');
+    Throttling::route('web/x');
+    $this->get('api/x');
+
+    // Something other than the package spoils the web rule's JSON in L1.
+    $entry = apcu_fetch(providerManifestKey());
+    $entry['rules'][array_search('web/*', $entry['index']['patterns'], true)] = '{"id": "2"';
+    apcu_store(providerManifestKey(), $entry);
+    nextPhpFpmRequest();
+    $api = $this->get('api/x');
+    nextPhpFpmRequest();
+    $web = $this->get('web/x');
+
+    expect([$api->status(), Throttling::headers($api)['X-RateLimit-Remaining'] ?? null])->toBe([200, '3'])
+        ->and([$web->status(), Throttling::headers($web)])->toBe([200, []]);
+    Exceptions::assertReportedCount(1);
+    Exceptions::assertReported(fn (InvalidManifest $exception): bool => str_starts_with($exception->getMessage(), 'A rule is not JSON'));
 });
 
 it('AC-8: writes nothing to APCu, and reads the store on every request, with refresh_seconds 0', function (): void {

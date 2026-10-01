@@ -87,7 +87,7 @@ it('AC-12: reads the stored manifest when memory is empty', function (): void {
 
     $manifest = manifestRepository($cache, new FakeClock, fakeRebuilder())->current();
 
-    expect([$manifest->version, $manifest->state, count($manifest->rules)])->toBe([7, ManifestState::Fresh, 1]);
+    expect([$manifest->version, $manifest->state, count($manifest->rules())])->toBe([7, ManifestState::Fresh, 1]);
 });
 
 it('AC-13: answers from memory within refresh_seconds, then reads the store again', function (): void {
@@ -166,7 +166,7 @@ it('AC-15: serves no rules, and rebuilds once, after the response', function ():
     app()->terminate();
     $rebuilt = $repository->current();
 
-    expect(array_map(fn (Manifest $manifest): array => [$manifest->state, $manifest->rules], $manifests))
+    expect(array_map(fn (Manifest $manifest): array => [$manifest->state, $manifest->rules()], $manifests))
         ->toBe(array_fill(0, 3, [ManifestState::Missing, []]))
         ->and([$beforeTerminate, $rebuilder->calls])->toBe([0, 1])
         ->and([$rebuilt->version, $rebuilt->state])->toBe([9, ManifestState::Fresh]);

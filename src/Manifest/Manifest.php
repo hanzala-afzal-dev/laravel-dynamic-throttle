@@ -6,6 +6,7 @@ namespace Afzal\DynamicThrottle\Manifest;
 
 use Afzal\DynamicThrottle\Engine\Exemptions\ExemptionSet;
 use Afzal\DynamicThrottle\Engine\Matching\RuleIndex;
+use LogicException;
 
 /**
  * The compiled rules and exemptions every request reads (ADR-0007, SPEC-006, SPEC-009).
@@ -24,12 +25,36 @@ final readonly class Manifest
      */
     public function __construct(
         public int $version,
-        public array $rules,
+        public array|ManifestRules $rules,
         array $exemptions = [],
         public ManifestState $state = ManifestState::Fresh,
+        ?RuleIndex $index = null,
     ) {
-        $this->index = RuleIndex::of($rules);
+        $this->index = $index instanceof RuleIndex || $rules instanceof ManifestRules
+            ? throw new LogicException('Not implemented yet (SPEC-028)')
+            : RuleIndex::of($rules);
         $this->exemptions = new ExemptionSet($exemptions);
+    }
+
+    public function rule(int $position): CompiledRule
+    {
+        throw new LogicException('Not implemented yet (SPEC-028): '.$position);
+    }
+
+    /**
+     * @return list<CompiledRule>
+     */
+    public function rules(): array
+    {
+        throw new LogicException('Not implemented yet (SPEC-028)');
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function rulesJson(): array
+    {
+        throw new LogicException('Not implemented yet (SPEC-028)');
     }
 
     /**

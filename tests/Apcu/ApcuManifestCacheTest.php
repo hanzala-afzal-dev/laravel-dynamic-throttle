@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
-use Afzal\DynamicThrottle\Manifest\CompiledRule;
 use Afzal\DynamicThrottle\Manifest\ManifestSnapshot;
 use Afzal\DynamicThrottle\Manifest\ManifestState;
 use Afzal\DynamicThrottle\Support\ApcuManifestCache;
@@ -89,32 +88,40 @@ it('AC-9: ignores and deletes an entry that is not a snapshot, and throws nothin
     'an array' => [['version' => 7, 'rules' => [], 'exemptions' => []]],
     'an object of another class' => [fn (): ArrayObject => new ArrayObject(['version' => 7])],
     'an object that throws when APCu reads it' => [fn (): UnreadableEntry => new UnreadableEntry],
-    'a snapshot whose rules are not compiled rules' => [fn (): ManifestSnapshot => new ManifestSnapshot(
-        version: 7, rules: [ManifestFixtures::rule()], exemptions: [], state: ManifestState::Fresh, readAt: FakeClock::T0 * 1_000_000,
-    )],
-    'a snapshot whose rules are not a list' => [fn (): ManifestSnapshot => new ManifestSnapshot(
-        version: 7, rules: ['api' => CompiledRule::fromArray(ManifestFixtures::rule())], exemptions: [], state: ManifestState::Fresh, readAt: FakeClock::T0 * 1_000_000,
-    )],
-    'a snapshot whose exemptions are not compiled exemptions' => [fn (): ManifestSnapshot => new ManifestSnapshot(
-        version: 7, rules: [], exemptions: [ManifestFixtures::exemption()], state: ManifestState::Fresh, readAt: FakeClock::T0 * 1_000_000,
-    )],
+    'a snapshot object, which L1 never stores' => [fn (): ManifestSnapshot => LocalManifests::snapshot(7)],
+    'an entry whose rules are not JSON strings' => [fn (): array => [...LocalManifests::snapshot(7)->toArray(), 'rules' => [ManifestFixtures::rule()]]],
+    'an entry with an unknown state' => [fn (): array => [...LocalManifests::snapshot(7)->toArray(), 'state' => 'warm']],
 ]);
 
-it('AC-10: keeps nothing, and throws nothing, when APCu cannot store the entry', function (array $responseOverride): void {
-    $snapshot = new ManifestSnapshot(
-        version: 7,
-        rules: [CompiledRule::fromArray(ManifestFixtures::rule(['response_override' => $responseOverride]))],
-        exemptions: [],
-        state: ManifestState::Fresh,
-        readAt: FakeClock::T0 * 1_000_000,
-    );
-
+it('AC-10: keeps nothing, and throws nothing, when APCu cannot store the entry', function (ManifestSnapshot $snapshot): void {
     LocalManifests::cache()->store($snapshot);
 
     expect(apcu_exists(LocalManifests::key()))->toBeFalse();
 })->with([
     // APCu refuses an entry larger than its memory: apcu_store() returns false.
-    'larger than APCu\'s memory' => [fn (): array => ['message' => str_repeat('x', (int) apcu_sma_info(true)['seg_size'])]],
-    // apcu_store() throws on a value PHP cannot serialize.
-    'that APCu cannot serialize' => [fn (): array => ['message' => fn (): string => 'Slow down']],
+    'larger than APCu\'s memory' => [fn (): ManifestSnapshot => new ManifestSnapshot(
+        version: 7,
+        index: LocalManifests::snapshot(7)->index,
+        rules: [str_repeat('x', (int) apcu_sma_info(true)['seg_size'])],
+        exemptions: [],
+        state: ManifestState::Fresh,
+        readAt: FakeClock::T0 * 1_000_000,
+    )],
+    // apcu_store() throws on a value PHP cannot serialize, which only a snapshot built by hand holds.
+    'that APCu cannot serialize' => [fn (): ManifestSnapshot => new ManifestSnapshot(
+        version: 7,
+        index: LocalManifests::snapshot(7)->index,
+        rules: LocalManifests::snapshot(7)->rules,
+        exemptions: [['id' => fn (): string => '1']],
+        state: ManifestState::Fresh,
+        readAt: FakeClock::T0 * 1_000_000,
+    )],
 ]);
+
+it('AC-11: keeps the snapshot as plain values, which APCu copies without unserializing objects', function (): void {
+    $snapshot = LocalManifests::snapshot(7);
+
+    LocalManifests::cache()->store($snapshot);
+
+    expect(apcu_fetch(LocalManifests::key()))->toBe($snapshot->toArray());
+});

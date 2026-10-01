@@ -2,13 +2,10 @@
 
 declare(strict_types=1);
 
-use Afzal\DynamicThrottle\Engine\Exemptions\ExemptionSet;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Matching\RuleIndex;
-use Afzal\DynamicThrottle\Manifest\CompiledRule;
 use Afzal\DynamicThrottle\Manifest\ManifestCodec;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
-use Afzal\DynamicThrottle\Manifest\ManifestSnapshot;
 use Afzal\DynamicThrottle\Manifest\ManifestState;
 use Afzal\DynamicThrottle\Manifest\ManifestUnavailable;
 use Afzal\DynamicThrottle\Support\ApcuManifestCache;
@@ -112,7 +109,7 @@ it('AC-3: uses the entry until refresh_seconds after its read, then reads the st
     emptyL0();
     $afterRefresh = repositoryWithL1($store, $clock)->current();
 
-    expect([$withinRefresh->version, $afterRefresh->version, $afterRefresh->rules[0]->maxAttempts, $store->reads('dt:m')])
+    expect([$withinRefresh->version, $afterRefresh->version, $afterRefresh->rule(0)->maxAttempts, $store->reads('dt:m')])
         ->toBe([7, 8, 5, 2]);
 });
 
@@ -200,7 +197,7 @@ it('AC-4: serves no rules when neither L0 nor L1 holds a manifest, and keeps not
 
     $manifest = repositoryWithL1($store, new FakeClock)->current();
 
-    expect([$manifest->state, $manifest->rules, LocalManifests::cache()->fetch()])->toBe([ManifestState::Missing, [], null]);
+    expect([$manifest->state, $manifest->rules(), LocalManifests::cache()->fetch()])->toBe([ManifestState::Missing, [], null]);
 });
 
 it('AC-9: reads the store over an entry that is not a snapshot, replaces the entry, and throws nothing', function (): void {
@@ -213,32 +210,29 @@ it('AC-9: reads the store over an entry that is not a snapshot, replaces the ent
     expect([$manifest->version, $manifest->state, LocalManifests::cache()->fetch()?->version])->toBe([7, ManifestState::Fresh, 7]);
 });
 
-it('AC-9: reads the store over an entry whose rules cannot build a manifest, and throws nothing', function (): void {
-    // A rule of the right class without its properties, as a class that changed since it was stored leaves one.
-    $broken = (new ReflectionClass(CompiledRule::class))->newInstanceWithoutConstructor();
-    LocalManifests::cache()->store(new ManifestSnapshot(
-        version: 7, rules: [$broken], exemptions: [], state: ManifestState::Fresh, readAt: FakeClock::T0 * 1_000_000,
-    ));
+it('AC-9: reads the store over an entry that cannot build a manifest, replaces the entry, and throws nothing', function (array $replace): void {
+    apcu_store(LocalManifests::key(), [...LocalManifests::snapshot(7)->toArray(), ...$replace]);
     $store = new CountingCacheStore;
     $store->forever('dt:m', ManifestFixtures::json(8));
 
     $manifest = repositoryWithL1($store, new FakeClock)->current();
 
     expect([$manifest->version, $manifest->state, LocalManifests::cache()->fetch()?->version])->toBe([8, ManifestState::Fresh, 8]);
-});
+})->with([
+    'an index that points past its rules' => [['index' => ['literal' => [], 'wildcard' => ['*' => [0, 1]], 'patterns' => ['api/*']]]],
+    'an exemption that is not an exemption' => [['exemptions' => [ManifestFixtures::exemption(['match' => 'not a range'])]]],
+]);
 
 it('AC-9: serves no rules, and throws nothing, when the store fails and L1\'s entry cannot build a manifest', function (): void {
     Exceptions::fake();
-    $broken = (new ReflectionClass(CompiledRule::class))->newInstanceWithoutConstructor();
-    LocalManifests::cache()->store(new ManifestSnapshot(
-        version: 7, rules: [$broken], exemptions: [], state: ManifestState::Fresh, readAt: (FakeClock::T0 - 3) * 1_000_000,
-    ));
+    $entry = LocalManifests::snapshot(7, readAt: (FakeClock::T0 - 3) * 1_000_000)->toArray();
+    apcu_store(LocalManifests::key(), [...$entry, 'index' => [...$entry['index'], 'patterns' => []]]);
     $store = new CountingCacheStore;
     $store->failing = true;
 
     $manifest = repositoryWithL1($store, new FakeClock)->current();
 
-    expect([$manifest->state, $manifest->rules])->toBe([ManifestState::Missing, []]);
+    expect([$manifest->state, $manifest->rules()])->toBe([ManifestState::Missing, []]);
 });
 
 it('AC-10: serves the store\'s rules when APCu cannot hold them, and throws nothing', function (): void {
@@ -250,7 +244,7 @@ it('AC-10: serves the store\'s rules when APCu cannot hold them, and throws noth
     expect([$manifest->version, $manifest->state, apcu_exists(LocalManifests::key())])->toBe([7, ManifestState::Fresh, false]);
 });
 
-it('AC-11: keeps no rule index in L1, and builds from it a manifest equal to the decoded one', function (): void {
+it('AC-11: keeps in L1 the index built from the rules, and builds from it the manifest the store holds', function (): void {
     $json = ManifestFixtures::json(7, [
         [],
         ['id' => '2', 'method' => 'POST', 'pattern' => 'api/orders', 'scope' => 'user', 'on_missing_identity' => 'skip', 'priority' => 10],
@@ -267,8 +261,10 @@ it('AC-11: keeps no rule index in L1, and builds from it a manifest equal to the
 
     emptyL0();
     $fromL1 = repositoryWithL1($store, $clock)->current();
+    $decoded = ManifestCodec::decode($json);
 
     expect($store->reads('dt:m'))->toBe(1)
-        ->and($fromL1)->toEqual(ManifestCodec::decode($json))
-        ->and(serialize(apcu_fetch(LocalManifests::key())))->not->toContain(RuleIndex::class)->not->toContain(ExemptionSet::class);
+        ->and(apcu_fetch(LocalManifests::key())['index'] ?? null)->toBe(RuleIndex::of($decoded->rules())->toArray())
+        ->and([$fromL1->version, $fromL1->state, $fromL1->rules(), $fromL1->index, $fromL1->exemptions])
+        ->toEqual([$decoded->version, $decoded->state, $decoded->rules(), $decoded->index, $decoded->exemptions]);
 });

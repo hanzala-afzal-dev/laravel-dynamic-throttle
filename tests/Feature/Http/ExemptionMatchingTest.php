@@ -58,7 +58,7 @@ afterEach(function (): void {
  */
 function exemptionFor(Manifest $manifest, Request $request, ?Rule $rule = null): ?string
 {
-    $compiled = $rule instanceof Rule ? Exemptions::compiled($manifest, $rule) : $manifest->rules[0];
+    $compiled = $rule instanceof Rule ? Exemptions::compiled($manifest, $rule) : $manifest->rule(0);
 
     return Identities::resolver($request, $manifest->exemptions)->exemption($compiled);
 }
@@ -199,7 +199,7 @@ it('AC-15: calls a custom resolver once per request, for three rules and two exe
     $manifest = Exemptions::manifest();
     $resolver = Identities::resolver(Identities::request('203.0.113.7', ['X-Tenant' => 'initech']), $manifest->exemptions);
 
-    $exempted = array_map(fn (CompiledRule $rule): ?string => $resolver->exemption($rule), $manifest->rules);
+    $exempted = array_map(fn (CompiledRule $rule): ?string => $resolver->exemption($rule), $manifest->rules());
     $identity = $resolver->resolve(Exemptions::compiled($manifest, $rules[2]));
 
     expect($exempted)->toBe([null, null, null])
@@ -291,14 +291,14 @@ it('AC-20: counts the request on a rule whose ip exemption cannot be checked, li
     Exemption::forIp('203.0.113.0/24')->save();
     $manifest = Exemptions::manifest();
 
-    $evaluation = (new RuleEvaluator(Identities::store()))->evaluate($manifest->rules, Identities::resolver(Identities::unreadableIpRequest(), $manifest->exemptions));
+    $evaluation = (new RuleEvaluator(Identities::store()))->evaluate($manifest->rules(), Identities::resolver(Identities::unreadableIpRequest(), $manifest->exemptions));
     $failure = $evaluation->exemptionFailures[0] ?? null;
 
     expect($evaluation->outcome)->toBe(EvaluationOutcome::Allowed)
         ->and($evaluation->exempted)->toBe([])
-        ->and(array_map(fn (RuleAttempt $attempt): string => $attempt->rule->id, $evaluation->attempts))->toBe([$manifest->rules[0]->id])
+        ->and(array_map(fn (RuleAttempt $attempt): string => $attempt->rule->id, $evaluation->attempts))->toBe([$manifest->rule(0)->id])
         ->and($evaluation->exemptionFailures)->toHaveCount(1)
-        ->and($failure?->rule->id)->toBe($manifest->rules[0]->id)
+        ->and($failure?->rule->id)->toBe($manifest->rule(0)->id)
         ->and($failure?->exception)->toBeInstanceOf(IdentityUnavailableException::class)
         ->and($failure?->exception->getPrevious())->toBeInstanceOf(ConflictingHeadersException::class);
 });
@@ -309,7 +309,7 @@ it('AC-20: counts the request on a rule whose custom exemption cannot be checked
     Exemption::forCustom('plan', 'gold')->save();
     $manifest = Exemptions::manifest();
 
-    $evaluation = (new RuleEvaluator(Identities::store()))->evaluate($manifest->rules, Identities::resolver(Identities::request(), $manifest->exemptions));
+    $evaluation = (new RuleEvaluator(Identities::store()))->evaluate($manifest->rules(), Identities::resolver(Identities::request(), $manifest->exemptions));
     $failure = $evaluation->exemptionFailures[0] ?? null;
 
     expect($evaluation->outcome)->toBe(EvaluationOutcome::Allowed)
@@ -333,7 +333,7 @@ it('AC-20: exempts the client when an ip exemption matches, and never asks the f
     Exemption::forCustom('plan', 'gold')->save();
     $manifest = Exemptions::manifest();
 
-    $evaluation = (new RuleEvaluator(Identities::store()))->evaluate($manifest->rules, Identities::resolver(Identities::request('203.0.113.7'), $manifest->exemptions));
+    $evaluation = (new RuleEvaluator(Identities::store()))->evaluate($manifest->rules(), Identities::resolver(Identities::request('203.0.113.7'), $manifest->exemptions));
 
     expect(exemptedIds($evaluation))->toBe([(string) $ip->id])
         ->and([$evaluation->exemptionFailures, $evaluation->attempts, $calls])->toBe([[], [], 0]);
@@ -349,7 +349,7 @@ it('AC-20: exempts the client when a later check matches after the IP and custom
     $tenant->save();
     $manifest = Exemptions::manifest();
 
-    $evaluation = (new RuleEvaluator(Identities::store()))->evaluate($manifest->rules, Identities::resolver(Identities::unreadableIpRequest(), $manifest->exemptions));
+    $evaluation = (new RuleEvaluator(Identities::store()))->evaluate($manifest->rules(), Identities::resolver(Identities::unreadableIpRequest(), $manifest->exemptions));
 
     expect(exemptedIds($evaluation))->toBe([(string) $tenant->id])
         ->and([$evaluation->exemptionFailures, $evaluation->attempts])->toBe([[], []]);
@@ -361,7 +361,7 @@ it('AC-20: lists one exception for every rule whose ip exemption the unreadable 
     Exemption::forIp('203.0.113.0/24')->save();
     $manifest = Exemptions::manifest();
 
-    $evaluation = (new RuleEvaluator(Identities::store()))->evaluate($manifest->rules, Identities::resolver(Identities::unreadableIpRequest(), $manifest->exemptions));
+    $evaluation = (new RuleEvaluator(Identities::store()))->evaluate($manifest->rules(), Identities::resolver(Identities::unreadableIpRequest(), $manifest->exemptions));
     $exceptions = array_map(fn (RuleFailure $failure): Throwable => $failure->exception, $evaluation->exemptionFailures);
 
     expect($exceptions)->toHaveCount(2)
@@ -374,7 +374,7 @@ it('counts a client IP holding a NUL byte on its own, exempts it from nothing, a
     Exemption::forIp('203.0.113.7')->save();
     $manifest = Exemptions::manifest();
 
-    $evaluation = (new RuleEvaluator(Identities::store()))->evaluate($manifest->rules, Identities::resolver(Identities::request("203.0.113.7\0"), $manifest->exemptions));
+    $evaluation = (new RuleEvaluator(Identities::store()))->evaluate($manifest->rules(), Identities::resolver(Identities::request("203.0.113.7\0"), $manifest->exemptions));
 
     expect($evaluation->outcome)->toBe(EvaluationOutcome::Allowed)
         ->and([$evaluation->exempted, $evaluation->exemptionFailures, $evaluation->failures])->toBe([[], [], []])
@@ -399,13 +399,13 @@ it('reads the clock once per request for exemptions, and not at all when there a
     Exemptions::rule();
     $withoutExemptions = Exemptions::manifest();
     $resolver = Identities::resolver(Identities::request(), $withoutExemptions->exemptions);
-    array_map($resolver->exemption(...), $withoutExemptions->rules);
+    array_map($resolver->exemption(...), $withoutExemptions->rules());
     $readsWithout = $clock->reads;
 
     Exemption::forIp('198.51.100.0/24')->save();
     $withExemptions = Exemptions::manifest();
     $resolver = Identities::resolver(Identities::request(), $withExemptions->exemptions);
-    $exempted = array_map($resolver->exemption(...), $withExemptions->rules);
+    $exempted = array_map($resolver->exemption(...), $withExemptions->rules());
 
     expect($exempted)->toBe([null, null, null])
         ->and([$readsWithout, $clock->reads])->toBe([0, 1]);
@@ -438,8 +438,8 @@ it('AC-22: checks a request against 100 exemptions from a warm manifest with no 
 
     $manifest = $repository->current();
     $evaluator = new RuleEvaluator(Identities::store());
-    $counted = $evaluator->evaluate($manifest->rules, Identities::resolver(Identities::request('203.0.113.7'), $manifest->exemptions));
-    $exempt = $evaluator->evaluate($manifest->rules, Identities::resolver(Identities::request('10.7.1.1'), $manifest->exemptions));
+    $counted = $evaluator->evaluate($manifest->rules(), Identities::resolver(Identities::request('203.0.113.7'), $manifest->exemptions));
+    $exempt = $evaluator->evaluate($manifest->rules(), Identities::resolver(Identities::request('10.7.1.1'), $manifest->exemptions));
 
     expect($manifest->exemptions->all())->toHaveCount(100)
         ->and([$counted->exempted, count($counted->attempts)])->toBe([[], 1])

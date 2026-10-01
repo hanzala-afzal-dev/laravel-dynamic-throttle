@@ -6,6 +6,7 @@ namespace Afzal\DynamicThrottle\Manifest;
 
 use InvalidArgumentException;
 use JsonException;
+use LogicException;
 
 /**
  * The manifest's JSON (SPEC-006). Decoding is strict: a manifest that decoded
@@ -31,6 +32,19 @@ final class ManifestCodec
             'rules' => array_map(fn (CompiledRule $rule): array => $rule->toArray(), $rules),
             'exemptions' => array_map(fn (CompiledExemption $exemption): array => $exemption->toArray(), $exemptions),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    }
+
+    public static function encodeRule(CompiledRule $rule): string
+    {
+        throw new LogicException('Not implemented yet (SPEC-028): '.$rule->id);
+    }
+
+    /**
+     * @throws InvalidManifest
+     */
+    public static function decodeRule(string $json): CompiledRule
+    {
+        throw new LogicException('Not implemented yet (SPEC-028): '.$json);
     }
 
     /**

@@ -180,7 +180,7 @@ it('AC-5: compiles zero enabled rules to a manifest with no rules, which readers
 
     expect(storedManifest()['rules'])->toBe([])
         ->and($manifest->state)->toBe(ManifestState::Fresh)
-        ->and($manifest->rules)->toBe([]);
+        ->and($manifest->rules())->toBe([]);
 });
 
 it('AC-6: leaves the stored manifest untouched when reading the rules fails', function (): void {
