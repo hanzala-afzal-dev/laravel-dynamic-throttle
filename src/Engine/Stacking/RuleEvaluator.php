@@ -58,9 +58,14 @@ final readonly class RuleEvaluator
      * evaluation with the Unavailable outcome (SPEC-012), unless an earlier rule
      * rejects the request.
      *
+     * Each rule counts the request against its limit times the scale factor, dry-run
+     * rules too (SPEC-013). Counts made before the factor changed are kept, since the
+     * window does not change (ADR-0011 point 5).
+     *
      * @param  list<CompiledRule>  $rules  the matched rules, in manifest order
+     * @param  int  $scalePercent  the scale factor as a percentage, 100 for none
      */
-    public function evaluate(array $rules, IdentityResolver $identities): Evaluation
+    public function evaluate(array $rules, IdentityResolver $identities, int $scalePercent = 100): Evaluation
     {
         // By position in $rules, so a store failure lands between the identity failures in evaluation order.
         $failures = [];
@@ -127,7 +132,7 @@ final readonly class RuleEvaluator
             // which rules apply never depends on the store's health.
             $slots[$rule->mode->value]--;
             $planned[] = [$position, $rule];
-            $plan[] = new PlannedAttempt(new CounterKey($rule->id, $identity), $rule->maxAttempts, $rule->windowSeconds, $rule->mode === RuleMode::Enforce);
+            $plan[] = new PlannedAttempt(new CounterKey($rule->id, $identity), Scale::limit($rule->maxAttempts, $scalePercent), $rule->windowSeconds, $rule->mode === RuleMode::Enforce);
         }
 
         // 2. Count, unless the store is in its cooldown. With a stop, the call only asks

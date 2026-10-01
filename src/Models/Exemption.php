@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle\Models;
 
 use Afzal\DynamicThrottle\Enums\ExemptionSubject;
+use Afzal\DynamicThrottle\Models\Concerns\UsesPackageConnection;
 use DateTimeInterface;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
@@ -35,6 +36,8 @@ use Stringable;
  */
 final class Exemption extends Model
 {
+    use UsesPackageConnection;
+
     protected $table = 'dynamic_throttle_exemptions';
 
     /** @var list<string> */
@@ -136,25 +139,6 @@ final class Exemption extends Model
     public function rule(): BelongsTo
     {
         return $this->belongsTo(Rule::class);
-    }
-
-    /**
-     * The connection from config('dynamic-throttle.database.connection'), or the app's
-     * default. A connection set explicitly, by Exemption::on() or by Eloquent when it
-     * loads models from a query, wins.
-     */
-    public function getConnectionName(): ?string
-    {
-        // The parent turns an enum connection name into its value.
-        $explicit = parent::getConnectionName();
-
-        if ($explicit !== null) {
-            return $explicit;
-        }
-
-        $connection = config('dynamic-throttle.database.connection');
-
-        return is_string($connection) && $connection !== '' ? $connection : null;
     }
 
     /**

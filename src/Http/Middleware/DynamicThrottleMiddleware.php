@@ -131,8 +131,8 @@ final readonly class DynamicThrottleMiddleware
     /**
      * The headers for the response, or the exception to throw: the 429, the 503, or in
      * strict mode a mistake. In order, the first step that lets the request through
-     * untouched ends it: the kill switch, the package's own routes, except, and no
-     * matched rule.
+     * untouched ends it: the kill switch, the package's own routes, except, bypass,
+     * and no matched rule.
      *
      * @return array<string, int>|Throwable
      */
@@ -150,6 +150,13 @@ final readonly class DynamicThrottleMiddleware
             }
 
             $manifest = $this->container->make(ManifestRepository::class)->current();
+            // The runtime settings apply until their end time, by this request's clock (SPEC-013).
+            $now = intdiv($this->clock->microseconds(), 1_000_000);
+
+            if ($manifest->settings->bypasses($now)) {
+                return [];
+            }
+
             $rules = (new RuleMatcher)->match($manifest, $target->method, $target->path)->rules;
 
             if ($rules === []) {
@@ -157,7 +164,7 @@ final readonly class DynamicThrottleMiddleware
             }
 
             $identities = $this->container->make(RequestIdentityResolver::class, ['request' => $request, 'exemptions' => $manifest->exemptions]);
-            $evaluation = $this->container->make(RuleEvaluator::class)->evaluate($rules, $identities);
+            $evaluation = $this->container->make(RuleEvaluator::class)->evaluate($rules, $identities, $manifest->settings->scalePercent($now));
             $mistake = $this->strictMistake($evaluation);
             // Also when strict mode rethrows a mistake: an outage in the same request is still told.
             $this->keepEvents($request, $target, $evaluation);

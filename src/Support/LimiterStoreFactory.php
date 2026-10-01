@@ -27,7 +27,37 @@ final readonly class LimiterStoreFactory
         private Clock $clock,
     ) {}
 
+    /**
+     * @throws InvalidArgumentException for an unknown driver, an undefined store or an invalid prefix
+     */
     public function make(): LimiterStore
+    {
+        [$driver, $target] = $this->pick();
+
+        return $driver === 'redis' ? $this->redisStore((string) $target) : $this->cacheStore($target);
+    }
+
+    /**
+     * The driver make() picks, and where it counts, for dynamic-throttle:status
+     * (SPEC-013): "cache, store array" or "redis, connection default". It builds the
+     * store too, so a config mistake throws here as it would on a request.
+     *
+     * @throws InvalidArgumentException for an unknown driver, an undefined store or an invalid prefix
+     */
+    public function describe(): string
+    {
+        $this->make();
+        [$driver, $target] = $this->pick();
+
+        return $driver === 'redis' ? "redis, connection {$target}" : 'cache, store '.($target ?? 'default');
+    }
+
+    /**
+     * @return array{'cache', ?string}|array{'redis', string} the driver, and its cache store or Redis connection
+     *
+     * @throws InvalidArgumentException for an unknown driver
+     */
+    private function pick(): array
     {
         $driver = $this->string('dynamic-throttle.driver') ?? 'auto';
         $store = $this->string('dynamic-throttle.store') ?? $this->string('cache.default');
@@ -37,9 +67,9 @@ final readonly class LimiterStoreFactory
         $redisConnection = $this->string('dynamic-throttle.redis_connection');
 
         return match ($driver) {
-            'auto' => $storeConnection !== null ? $this->redisStore($redisConnection ?? $storeConnection) : $this->cacheStore($store),
-            'cache' => $this->cacheStore($store),
-            'redis' => $this->redisStore($redisConnection ?? $storeConnection ?? 'default'),
+            'auto' => $storeConnection !== null ? ['redis', $redisConnection ?? $storeConnection] : ['cache', $store],
+            'cache' => ['cache', $store],
+            'redis' => ['redis', $redisConnection ?? $storeConnection ?? 'default'],
             default => throw new InvalidArgumentException("Unknown dynamic-throttle.driver \"{$driver}\": use auto, redis or cache."),
         };
     }

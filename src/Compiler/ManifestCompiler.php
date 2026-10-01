@@ -8,13 +8,17 @@ use Afzal\DynamicThrottle\Engine\Exemptions\IpRange;
 use Afzal\DynamicThrottle\Engine\Identity\IdentityHasher;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Enums\ExemptionSubject;
+use Afzal\DynamicThrottle\Enums\SettingName;
 use Afzal\DynamicThrottle\Manifest\CompiledExemption;
 use Afzal\DynamicThrottle\Manifest\CompiledRule;
 use Afzal\DynamicThrottle\Manifest\Contracts\ManifestRebuilder;
 use Afzal\DynamicThrottle\Manifest\InvalidManifest;
 use Afzal\DynamicThrottle\Manifest\ManifestCodec;
+use Afzal\DynamicThrottle\Manifest\ManifestSettings;
 use Afzal\DynamicThrottle\Models\Exemption;
 use Afzal\DynamicThrottle\Models\Rule;
+use Afzal\DynamicThrottle\Models\Setting;
+use Afzal\DynamicThrottle\Support\ScaleFactor;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Contracts\Cache\Repository;
@@ -25,10 +29,10 @@ use RuntimeException;
 use Throwable;
 
 /**
- * Compiles the rules and exemptions tables into the manifest requests read
- * (ADR-0007, SPEC-006, SPEC-009). Runs on admin actions, the command line, the
- * scheduler, and after the response of a request that found the manifest missing.
- * Never before a response.
+ * Compiles the rules, exemptions and settings tables into the manifest requests
+ * read (ADR-0007, SPEC-006, SPEC-009, SPEC-013). Runs on admin actions, the command
+ * line, the scheduler, and after the response of a request that found the manifest
+ * missing. Never before a response.
  */
 final readonly class ManifestCompiler implements ManifestRebuilder
 {
@@ -89,11 +93,12 @@ final readonly class ManifestCompiler implements ManifestRebuilder
         }
 
         [$exemptions, $skippedExemptions] = $this->compileExemptions(array_map(fn (CompiledRule $rule): string => $rule->id, $rules));
+        $settings = $this->compileSettings();
 
         // Greater than every earlier version, even after the cache was flushed (SPEC-006 AC-3).
         $version = max($this->storedVersion() + 1, (int) Date::now()->getTimestampMs());
 
-        if (! $this->cache->forever($this->keys->manifest(), ManifestCodec::encode($version, $rules, $exemptions))) {
+        if (! $this->cache->forever($this->keys->manifest(), ManifestCodec::encode($version, $rules, $exemptions, $settings))) {
             throw new RuntimeException('The cache store did not accept the manifest.');
         }
 
@@ -151,6 +156,112 @@ final readonly class ManifestCompiler implements ManifestRebuilder
         }
 
         return [$exemptions, $skipped];
+    }
+
+    /**
+     * The settings for the manifest. A missing table and invalid rows are reported,
+     * and compile without them (SPEC-013 AC-3).
+     */
+    private function compileSettings(): ManifestSettings
+    {
+        try {
+            [$settings, $skipped] = $this->settings();
+        } catch (SettingsTableMissing $missing) {
+            // Limits keep working before the app runs the migration that adds settings.
+            report($missing);
+
+            return ManifestSettings::none();
+        }
+
+        foreach ($skipped as $exception) {
+            report($exception);
+        }
+
+        return $settings;
+    }
+
+    /**
+     * The settings that are on and have not ended, from the settings table, and the rows
+     * that are not valid settings (SPEC-013 AC-2, AC-3). It only reads, so
+     * dynamic-throttle:status compares it with the manifest.
+     *
+     * @return array{ManifestSettings, list<InvalidSettingSkipped>}
+     *
+     * @throws SettingsTableMissing
+     */
+    public function settings(): array
+    {
+        $model = new Setting;
+
+        if (! $model->getConnection()->getSchemaBuilder()->hasTable($model->getTable())) {
+            // Publishing again copies every migration again, with new dates, so the message says to drop the copies.
+            throw new SettingsTableMissing("The {$model->getTable()} table does not exist, so the manifest has no runtime settings. Publish the package's migrations with php artisan vendor:publish --tag=dynamic-throttle-migrations, delete the new copies of those you had already run, then run php artisan migrate.");
+        }
+
+        $on = [];
+        $skipped = [];
+
+        foreach ($model->newQuery()->orderBy('id')->toBase()->get() as $row) {
+            $row = (array) $row;
+
+            try {
+                [$name, $percent, $until] = $this->fromSettingRow($row);
+            } catch (InvalidArgumentException $exception) {
+                $id = is_int($row['id']) || is_string($row['id']) ? $row['id'] : '?';
+                $skipped[] = new InvalidSettingSkipped("Setting {$id} was skipped: ".$exception->getMessage(), previous: $exception);
+
+                continue;
+            }
+
+            $on[$name->value] = [$percent, $until];
+        }
+
+        $bypass = $on[SettingName::BypassAll->value] ?? null;
+        $scale = $on[SettingName::ScaleFactor->value] ?? null;
+        $settings = new ManifestSettings(
+            bypass: $bypass !== null,
+            bypassUntil: $bypass[1] ?? null,
+            scale: $scale[0] ?? null,
+            scaleUntil: $scale[1] ?? null,
+        );
+
+        // A setting applies until its end time, and not at it.
+        return [$settings->at(Date::now()->getTimestamp()), $skipped];
+    }
+
+    /**
+     * A settings row's name, its factor as a percentage for scale_factor, and its end
+     * time in Unix seconds.
+     *
+     * @param  array<array-key, mixed>  $row
+     * @return array{SettingName, ?int, ?int}
+     *
+     * @throws InvalidArgumentException naming the bad column
+     */
+    private function fromSettingRow(array $row): array
+    {
+        $name = (is_string($row['name']) ? SettingName::tryFrom($row['name']) : null)
+            ?? throw new InvalidArgumentException('name must be one of bypass_all, scale_factor, got '.(is_string($row['name']) ? "\"{$row['name']}\"" : get_debug_type($row['name'])).'.');
+        $value = is_string($row['value']) ? $row['value'] : throw new InvalidArgumentException("{$name->value}'s value must be a string, got ".get_debug_type($row['value']).'.');
+
+        $percent = match ($name) {
+            SettingName::BypassAll => $value === '1' ? null : throw new InvalidArgumentException("bypass_all's value must be 1, got \"{$value}\"."),
+            SettingName::ScaleFactor => $this->scalePercent($value),
+        };
+
+        return [$name, $percent, $this->expiresAt($row['expires_at'])];
+    }
+
+    /**
+     * @throws InvalidArgumentException
+     */
+    private function scalePercent(string $value): int
+    {
+        try {
+            return ScaleFactor::percent($value);
+        } catch (InvalidArgumentException $exception) {
+            throw new InvalidArgumentException("scale_factor's value must be from 0.1 to 10, with at most two decimals, got \"{$value}\".", $exception->getCode(), previous: $exception);
+        }
     }
 
     /**

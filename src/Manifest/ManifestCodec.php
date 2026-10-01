@@ -14,10 +14,11 @@ use JsonException;
 final class ManifestCodec
 {
     /**
-     * Bumped when the shape changes. Format 2 added the exemptions (SPEC-009): a
-     * server reads any other format as corrupt, so the manifest is rebuilt.
+     * Bumped when the shape changes. Format 2 added the exemptions (SPEC-009), and
+     * format 3 the runtime settings (SPEC-013): a server reads any other format as
+     * corrupt, so the manifest is rebuilt.
      */
-    public const int FORMAT = 2;
+    public const int FORMAT = 3;
 
     private const int FLAGS = JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
 
@@ -25,13 +26,15 @@ final class ManifestCodec
      * @param  list<CompiledRule>  $rules
      * @param  list<CompiledExemption>  $exemptions
      */
-    public static function encode(int $version, array $rules, array $exemptions = []): string
+    public static function encode(int $version, array $rules, array $exemptions = [], ?ManifestSettings $settings = null): string
     {
         return json_encode([
             'format' => self::FORMAT,
             'version' => $version,
             'rules' => array_map(fn (CompiledRule $rule): array => $rule->toArray(), $rules),
             'exemptions' => array_map(fn (CompiledExemption $exemption): array => $exemption->toArray(), $exemptions),
+            // An object even when empty, as it is keyed by setting.
+            'settings' => (object) ($settings ?? ManifestSettings::none())->toArray(),
         ], self::FLAGS);
     }
 
@@ -89,8 +92,8 @@ final class ManifestCodec
         $keys = array_keys($data);
         sort($keys);
 
-        if ($keys !== ['exemptions', 'format', 'rules', 'version']) {
-            throw new InvalidManifest('The manifest must have exactly the keys format, version, rules and exemptions.');
+        if ($keys !== ['exemptions', 'format', 'rules', 'settings', 'version']) {
+            throw new InvalidManifest('The manifest must have exactly the keys format, version, rules, exemptions and settings.');
         }
 
         if (! is_int($data['version']) || $data['version'] < 1) {
@@ -129,6 +132,12 @@ final class ManifestCodec
             }
         }
 
-        return new Manifest($data['version'], $rules, $exemptions);
+        try {
+            $settings = ManifestSettings::fromArray($data['settings']);
+        } catch (InvalidArgumentException $exception) {
+            throw new InvalidManifest("The manifest's settings are invalid: ".$exception->getMessage(), $exception->getCode(), previous: $exception);
+        }
+
+        return new Manifest($data['version'], $rules, $exemptions, settings: $settings);
     }
 }
