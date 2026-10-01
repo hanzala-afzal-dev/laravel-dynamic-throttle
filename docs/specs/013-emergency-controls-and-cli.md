@@ -92,16 +92,18 @@ Feature tests run on SQLite with the array cache store and Laravel's time travel
 - `database/migrations/2026_10_01_000001_create_dynamic_throttle_settings_table.php`: `id`, `name` (unique), `value`, `expires_at` (a datetime, as exemptions use), timestamps.
 - `database/migrations/2026_10_01_000002_create_dynamic_throttle_audit_log_table.php`: `id`, `actor`, `action`, `target`, `before` and `after` (JSON), `ip`, `user_agent`, `created_at`.
 - `src/Models/Setting.php` and `src/Enums/SettingName.php` (`bypass_all`, `scale_factor`), observed by `ManifestObserver`.
+- `src/Models/Concerns/UsesPackageConnection.php` (new): the package's connection, which `Rule`, `Exemption`, `Setting` and `AuditEntry` share.
 - `src/Models/AuditEntry.php` and `src/Enums/AuditAction.php`.
-- `src/Manifest/ManifestSettings.php` (new, readonly): the settings as the manifest holds them. `bypasses(int $now): bool`, and `scalePercent(int $now): int`, the factor as a percentage, 100 for none, for a time in Unix seconds.
+- `src/Manifest/ManifestSettings.php` (new, readonly): the settings as the manifest holds them. `bypasses(int $now): bool`, and `scalePercent(int $now): int`, the factor as a percentage, 100 for none, for a time in Unix seconds. `at(int $now)` drops the settings that have ended.
 - `src/Manifest/Manifest.php`, `ManifestCodec.php` (format 3) and `ManifestSnapshot.php` (L1): the settings.
-- `src/Compiler/ManifestCompiler.php`: reads the settings. `dynamic-throttle:compile` prints what it printed.
+- `src/Compiler/ManifestCompiler.php`: reads the settings. `settings()` gives them, and the invalid rows, without compiling, for `status`. `dynamic-throttle:compile` prints what it printed.
 - `src/Engine/Stacking/RuleEvaluator.php`: `evaluate()` takes the factor as a percentage, and plans each attempt with the scaled limit.
 - `src/Engine/Stacking/Scale.php` (new): `Scale::limit(int $maxAttempts, int $percent): int`, the scaled limit in integers.
 - `src/Http/Middleware/DynamicThrottleMiddleware.php`: bypass, and the factor, from the manifest and the clock.
-- `src/Console/StatusCommand.php`, `BypassCommand.php`, `ScaleCommand.php`, `ListCommand.php`, `DisableRuleCommand.php` and `EnableRuleCommand.php`.
-- `src/Support/EmergencyControls.php` (new, internal): each change with its audit entry, in one transaction, then the compile, for the commands now and the JSON API (SPEC-017) and the dashboard (SPEC-021) later.
-- `src/Console/Duration.php` and `src/Console/ScaleFactor.php` (new, internal): `--for` and the factor, parsed with the messages above.
+- `src/Console/StatusCommand.php`, `BypassCommand.php`, `ScaleCommand.php`, `ListCommand.php`, `DisableRuleCommand.php` and `EnableRuleCommand.php`. The four that change something extend `ChangeCommand`, which holds `--for`, the confirmation and the messages. `CliActor` names the system user.
+- `src/Support/LimiterStoreFactory.php`: `describe()`, the driver it picks and where it counts, for `status`.
+- `src/Support/EmergencyControls.php` (new, internal): each change with its audit entry, in one transaction, then the compile, for the commands now and the JSON API (SPEC-017) and the dashboard (SPEC-021) later. It returns a `ChangeOutcome`, and throws `TableMissing` before writing when a table is missing.
+- `src/Console/Duration.php` and `src/Support/ScaleFactor.php` (new, internal): `--for` and the factor, parsed with the messages above. The compiler parses the stored factor with `ScaleFactor` too.
 
 ## Out of scope
 - Changing the settings from the JSON API (SPEC-017) and the dashboard (SPEC-021).
