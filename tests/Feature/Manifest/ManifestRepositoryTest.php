@@ -109,6 +109,22 @@ it('AC-13: answers from memory within refresh_seconds, then reads the store agai
         ->and([$readsWithinRefresh, $store->reads])->toBe([1, 2]);
 });
 
+it('SPEC-028 AC-3: reads the store again when the clock goes back past the read time', function (): void {
+    $store = manifestStore();
+    $cache = new Repository($store);
+    $cache->forever('dt:m', ManifestFixtures::json(7));
+    $clock = new FakeClock;
+    $repository = manifestRepository($cache, $clock, fakeRebuilder());
+    $repository->current();
+    $cache->forever('dt:m', ManifestFixtures::json(8));
+
+    // An NTP step back, by a microsecond.
+    $clock->setMicroseconds(FakeClock::T0 * 1_000_000 - 1);
+    $manifest = $repository->current();
+
+    expect([$manifest->version, $store->reads])->toBe([8, 2]);
+});
+
 it('AC-13: reads the store on every call when refresh_seconds is 0', function (): void {
     $store = manifestStore();
     $cache = new Repository($store);

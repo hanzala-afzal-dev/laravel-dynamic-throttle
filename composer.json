@@ -73,7 +73,7 @@
             "@php vendor/bin/testbench serve --ansi"
         ],
         "test": "@php -d apc.enable_cli=0 vendor/bin/pest --exclude-group=drivers",
-        "test:apcu": "@php -d apc.enable_cli=1 vendor/bin/pest tests/Apcu",
+        "test:apcu": "@php -d apc.enable_cli=1 -d apc.shm_size=8M vendor/bin/pest tests/Apcu",
         "test:drivers": [
             "@putenv DYNAMIC_THROTTLE_DRIVERS=1",
             "@php vendor/bin/pest --group=drivers --group=contract"

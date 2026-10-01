@@ -9,6 +9,7 @@ use Afzal\DynamicThrottle\Engine\Failure\ReportThrottle;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
 use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
 use Afzal\DynamicThrottle\Support\ApcuFailureMemory;
+use Afzal\DynamicThrottle\Support\ApcuManifestCache;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -155,9 +156,27 @@ arch('the report throttle keeps its state in the failure memories (SPEC-012 AC-1
     ->expect(ReportThrottle::class)
     ->toBeReadonly();
 
-arch('only ApcuFailureMemory calls APCu, with keys from KeyBuilder (SPEC-012 AC-11)')
+arch('only ApcuFailureMemory and ApcuManifestCache call APCu, with keys from KeyBuilder (SPEC-012 AC-11, SPEC-028 AC-13)')
     ->expect(['apcu_fetch', 'apcu_store', 'apcu_add', 'apcu_cas', 'apcu_inc', 'apcu_dec', 'apcu_entry', 'apcu_exists', 'apcu_delete', 'apcu_clear_cache'])
-    ->toOnlyBeUsedIn(ApcuFailureMemory::class);
+    ->toOnlyBeUsedIn([ApcuFailureMemory::class, ApcuManifestCache::class]);
+
+/*
+| SPEC-028 AC-13: L1, the manifest in APCu, is on the request path. It lives
+| in Support, next to ApcuFailureMemory, so it gets rules of its own, and the
+| manifest's read path reaches it only through LocalManifestCache.
+*/
+
+arch('the manifest\'s APCu cache never reads the wall clock (SPEC-028 AC-13)')
+    ->expect(ApcuManifestCache::class)
+    ->not->toUse($wallClock);
+
+arch('the manifest\'s APCu cache never touches the database (SPEC-028 AC-13)')
+    ->expect(ApcuManifestCache::class)
+    ->not->toUse($databaseAccess);
+
+arch('the manifest read path reaches APCu only through LocalManifestCache (SPEC-028 AC-13)')
+    ->expect('Afzal\DynamicThrottle\Manifest')
+    ->not->toUse(ApcuManifestCache::class);
 
 dataset('built-in classes the arch rules cannot see', [
     'a "now" date in the engine bypasses travel() (ADR-0006)' => [

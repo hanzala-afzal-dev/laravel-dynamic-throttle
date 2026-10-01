@@ -6,6 +6,7 @@ namespace Afzal\DynamicThrottle\Manifest;
 
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
+use Afzal\DynamicThrottle\Manifest\Contracts\LocalManifestCache;
 use Afzal\DynamicThrottle\Manifest\Contracts\ManifestRebuilder;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Contracts\Foundation\Application;
@@ -32,6 +33,8 @@ final readonly class ManifestRepository
         private ManifestRebuilder $rebuilder,
         private Application $app,
         private int $refreshSeconds,
+        /** L1, shared by the server's processes, or null to read the store after L0 (SPEC-028). */
+        private ?LocalManifestCache $local = null,
     ) {}
 
     public function current(): Manifest

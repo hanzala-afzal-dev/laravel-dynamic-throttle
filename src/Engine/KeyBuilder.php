@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle\Engine;
 
 use InvalidArgumentException;
+use LogicException;
 
 /**
  * Builds every cache and Redis key the package uses (CLAUDE.md hard rule).
@@ -77,5 +78,13 @@ final readonly class KeyBuilder
     public function reported(string $app, string $cause): string
     {
         return "{$this->prefix}reported:{$app}:{$cause}";
+    }
+
+    /**
+     * The manifest a server last read, in APCu (SPEC-028).
+     */
+    public function localManifest(string $app, string $version): string
+    {
+        throw new LogicException("Not implemented yet (SPEC-028): {$app} {$version}");
     }
 }
