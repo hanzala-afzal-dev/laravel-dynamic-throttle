@@ -42,7 +42,7 @@ It does **not** replace edge rate limiting (Cloudflare, Nginx, API gateways). Ke
 | PHP | 8.3, 8.4, 8.5 |
 | Laravel | 12.69+ and 13.30+ (the lowest versions CI tests, [ADR-0019](docs/adr/0019-tested-laravel-floors.md)) |
 | Counter storage | Redis 6.2+ or Valkey 7.2+ (recommended), or Memcached. On Redis, a request costs one round trip, however many rules match it. On Redis Cluster, or on an endpoint that requires a script's keys to share a hash slot, such as ElastiCache Serverless, use a cluster connection (`clusters` in `config/database.php`): each rule then costs one round trip. Where such an endpoint supports no cluster client, set `driver` to `cache`. The `database` store on MySQL or PostgreSQL works but adds database writes to every limited request. On SQLite it can fail under load with "database is locked". **Do not use `file` or `apc` in production**: they are not atomic, so concurrent requests can exceed the limit ([SPEC-002](docs/specs/002-limiter-store-and-cache-driver.md)). |
-| Runtimes | PHP-FPM, Laravel Octane (Swoole, RoadRunner, FrankenPHP) |
+| Runtimes | PHP-FPM, Laravel Octane (Swoole, RoadRunner, FrankenPHP). **On PHP-FPM, enable the APCu extension** (the extension, not the `apc` cache store): a server's workers then share the rules, instead of each request reading them from the cache, and the counter store's cooldown. |
 
 Composer enforces the PHP and Laravel versions when you install. See [ADR-0002](docs/adr/0002-supported-platforms.md) for the support policy.
 
@@ -63,7 +63,7 @@ php artisan vendor:publish --tag=dynamic-throttle-config
 ## How it works
 
 1. Admins edit rules in the database, through the dashboard, the JSON API or Artisan.
-2. A compiler turns them into a versioned manifest stored in your cache. It is cached again in memory on Octane, or in APCu on PHP-FPM ([ADR-0007](docs/adr/0007-rule-storage-and-distribution.md)).
+2. A compiler turns them into a versioned manifest stored in your cache. Octane keeps it in memory, and on PHP-FPM, a server's workers share it in APCu, so a process or a server reads the cache about once per `manifest.refresh_seconds` ([ADR-0007](docs/adr/0007-rule-storage-and-distribution.md)).
 3. The `dynamic.throttle` route middleware runs after authentication. It matches every applicable rule and counts each request with a sliding-window counter ([ADR-0006](docs/adr/0006-rate-limit-algorithm.md)). Blocked requests get a normal Laravel 429.
 
 The design is documented as [Architecture Decision Records](docs/adr/README.md). Feature specs live in [docs/specs](docs/specs).
@@ -116,7 +116,7 @@ Event::listen(function (RateLimitWouldBlock $event) {
 A rule's `on_failure` decides what happens when its counter cannot be checked: the counter store fails, or the rule cannot tell who the client is, such as when your custom scope resolver throws ([ADR-0010](docs/adr/0010-failure-policy.md)).
 
 - **`open`, the default.** The request goes through. Only the rules that counted it before the failure set rate-limit headers.
-- **`closed`.** The request gets a 503 (`ServiceUnavailableHttpException`), which your exception handler renders as it renders `abort(503)`, with a `Retry-After`. Use it for a rule that must hold during an outage, such as one on a login route. A dry-run rule never answers 503, and neither does any rule while the manifest cannot be read, since then no rule is known.
+- **`closed`.** The request gets a 503 (`ServiceUnavailableHttpException`), which your exception handler renders as it renders `abort(503)`, with a `Retry-After`. Use it for a rule that must hold during an outage, such as one on a login route. A dry-run rule never answers 503. While the cache cannot be read, the rules still apply from the last manifest the process read, or on PHP-FPM with APCu, the last one the server read. Only with none is no rule known, so none answers 503.
 - **The cooldown.** After the counter store fails, the package skips it for `failure.cooldown_seconds` (`DYNAMIC_THROTTLE_COOLDOWN`, default 10, and 0 turns it off). An outage then costs one failed call per cooldown instead of one per request: meanwhile, fail-open rules let requests through at once, and fail-closed rules answer 503 at once, with `Retry-After` set to what is left of the cooldown. The cooldown lives in the process, for Octane and queue workers, and in APCu when the extension is enabled, where a server's PHP-FPM workers share it. **On PHP-FPM, enable APCu**: without it, each request tries the store again.
 - **Reports.** Every failure is reported to your exception handler, but each cause at most once per cooldown, so an outage or a broken resolver cannot flood your error tracker. A cause is the exception's class and where it was thrown. A config mistake, such as an unknown `driver`, counts as a store that failed.
 

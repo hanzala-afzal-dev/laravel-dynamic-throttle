@@ -27,6 +27,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Saving a rule recompiles it after the transaction commits.
   - `php artisan dynamic-throttle:compile` compiles it from deploy scripts, and the scheduler runs it every five minutes, so a cleared cache heals itself (`manifest.schedule`).
   - Octane and queue workers keep it in memory, and check the cache every `manifest.refresh_seconds` (`DYNAMIC_THROTTLE_MANIFEST_REFRESH`, default 2).
+  - On PHP-FPM with the APCu extension, a server's workers share it in APCu, so a server reads the cache about once per `refresh_seconds` instead of on every request. Each app of the server, and each installed version of the package, has an entry of its own. `refresh_seconds` 0 turns it off.
+  - When the cache cannot be read, the last manifest the process read, or with APCu the server read, still applies, so fail-closed rules keep answering 503 through an outage.
 - Rule matching and stacking:
   - A rule matches by method and by a pattern on the URL-decoded path. `*` matches every method, and `GET` rules also match `HEAD`. In patterns, `*` matches any characters, and a leading slash is ignored.
   - Every matching rule counts the request, in priority order. The first one that rejects it stops, and the others' counts are released. Dry-run rules never reject.

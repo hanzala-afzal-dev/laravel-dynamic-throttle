@@ -7,6 +7,7 @@
     "runner.annotations": false,
     "runner.time_unit": "microseconds",
     "runner.php_config": {
+        "apc.enable_cli": 1,
         "opcache.enable_cli": 1,
         "pcov.enabled": 0,
         "xdebug.mode": "off"

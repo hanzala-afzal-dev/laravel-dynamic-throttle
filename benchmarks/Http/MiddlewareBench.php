@@ -29,6 +29,9 @@ use Symfony\Component\HttpFoundation\Response;
  * Each iteration is one request, in a process of its own, after 20 requests
  * that warm it up. So the iterations are single requests, and their
  * distribution gives the p95 (benchmarks/percentiles.php).
+ *
+ * phpbench.json enables APCu in the CLI, for SPEC-028's case. Each process
+ * has an APCu of its own, as each PHP-FPM server has.
  */
 #[Bench\Revs(1)]
 #[Bench\Iterations(200)]
@@ -49,6 +52,9 @@ final class MiddlewareBench
 
     private Response $response;
 
+    /** PHP-FPM starts each request with nothing in the process's memory. */
+    private bool $emptyMemory = false;
+
     /**
      * @return iterable<string, array{store: string}>
      */
@@ -59,18 +65,20 @@ final class MiddlewareBench
     }
 
     /**
-     * @return iterable<string, array{refresh: int}>
+     * @return iterable<string, array{refresh: int, empty_memory: bool}>
      */
     public function manifests(): iterable
     {
         // Octane and queue workers keep the manifest in memory between requests.
-        yield 'manifest in memory' => ['refresh' => 3_600];
-        // PHP-FPM starts each request with nothing in memory, so it reads and decodes the manifest.
-        yield 'manifest read per request' => ['refresh' => 0];
+        yield 'manifest in memory' => ['refresh' => 3_600, 'empty_memory' => false];
+        // PHP-FPM without APCu reads and decodes the manifest on every request.
+        yield 'manifest read per request' => ['refresh' => 0, 'empty_memory' => false];
+        // PHP-FPM with APCu builds it from what the server's workers keep there (SPEC-028 AC-12).
+        yield 'PHP-FPM with APCu' => ['refresh' => 2, 'empty_memory' => true];
     }
 
     /**
-     * @param  array{store: string, refresh: int}  $params
+     * @param  array{store: string, refresh: int, empty_memory: bool}  $params
      */
     public function setUp(array $params): void
     {
@@ -88,7 +96,12 @@ final class MiddlewareBench
         $config->set('dynamic-throttle.store', 'bench');
         $config->set('dynamic-throttle.prefix', Services::prefix());
         $config->set('dynamic-throttle.manifest.refresh_seconds', $params['refresh']);
+        $this->emptyMemory = $params['empty_memory'];
         ManifestRepository::flushState();
+
+        if (function_exists('apcu_clear_cache')) {
+            apcu_clear_cache();
+        }
 
         $rules = $this->rules();
 
@@ -116,6 +129,10 @@ final class MiddlewareBench
 
     public function benchRequest(): void
     {
+        if ($this->emptyMemory) {
+            ManifestRepository::flushState();
+        }
+
         // What Laravel builds for each request, on Octane as on PHP-FPM: the scoped
         // services, then the middleware.
         $this->app->forgetScopedInstances();

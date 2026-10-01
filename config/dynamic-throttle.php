@@ -160,9 +160,10 @@ return [
     |
     | Requests read the rules from a manifest in the cache store above, never
     | from the database (docs/adr/0007). Octane and queue workers also keep
-    | it in memory, and check the cache again every refresh_seconds, so a
-    | changed rule reaches them within that time. 0 means every request
-    | reads the cache.
+    | it in memory, and on PHP-FPM with the APCu extension, a server's
+    | workers share it in APCu. Both check the cache again every
+    | refresh_seconds, so a changed rule applies within that time. 0 means
+    | every request reads the cache.
     |
     | "schedule" registers "php artisan dynamic-throttle:compile" in your
     | scheduler every five minutes, so the manifest heals itself after the
