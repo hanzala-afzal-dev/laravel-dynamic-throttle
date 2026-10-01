@@ -226,7 +226,8 @@ final readonly class RuleIndex
                 throw new InvalidArgumentException("The index offers rule {$position} more than once.");
             }
 
-            $offered[$position] = true;
+            // Only isset() and count() read it, which see any value alike.
+            $offered[$position] = true; // @pest-mutate-ignore: TrueToFalse
             $checked[] = $position;
         }
 

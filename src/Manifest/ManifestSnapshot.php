@@ -8,11 +8,14 @@ use Afzal\DynamicThrottle\Engine\Matching\RuleIndex;
 use InvalidArgumentException;
 
 /**
- * What L1 holds of a manifest (ADR-0007, SPEC-028), as plain values, which APCu
- * copies without unserializing objects:
+ * What L1 holds of a manifest (ADR-0007, SPEC-028). Its entry is plain values,
+ * which APCu copies without unserializing objects:
  * - the index built from the rules, stored with them (ADR-0023, as amended);
  * - each rule's JSON, built into a rule only when a request matches it;
- * - the exemptions' fields, which build the manifest's exemptions in full.
+ * - the exemptions' fields.
+ *
+ * From an entry, the index and the exemptions are built at once, so an entry
+ * that cannot build them is no snapshot.
  *
  * @internal
  */
@@ -22,14 +25,13 @@ final readonly class ManifestSnapshot
     private const array FIELDS = ['version', 'index', 'rules', 'exemptions', 'state', 'read_at'];
 
     /**
-     * @param  array<array-key, mixed>  $index  the index's parts (RuleIndex::toArray()), checked when the manifest is built
      * @param  list<string>  $rules  each rule's JSON (ManifestCodec::encodeRule())
-     * @param  list<array<array-key, mixed>>  $exemptions  each exemption's fields, checked when the manifest is built
+     * @param  list<CompiledExemption>  $exemptions
      * @param  int  $readAt  when the manifest was read from the cache store, in microseconds
      */
     public function __construct(
         public int $version,
-        public array $index,
+        public RuleIndex $index,
         public array $rules,
         public array $exemptions,
         public ManifestState $state,
@@ -38,19 +40,13 @@ final readonly class ManifestSnapshot
 
     public static function of(Manifest $manifest, int $readAt): self
     {
-        return new self(
-            $manifest->version,
-            $manifest->index->toArray(),
-            $manifest->rulesJson(),
-            array_map(fn (CompiledExemption $exemption): array => $exemption->toArray(), $manifest->exemptions->all()),
-            $manifest->state,
-            $readAt,
-        );
+        return new self($manifest->version, $manifest->index, $manifest->rulesJson(), $manifest->exemptions->all(), $manifest->state, $readAt);
     }
 
     /**
-     * The snapshot an entry holds, or null for one without a snapshot's fields and types
-     * (AC-9). Its index and exemptions are checked when it builds the manifest.
+     * The snapshot of an entry, or null for an entry that is not one (AC-9): without a
+     * snapshot's fields and types, or with an index or exemptions that cannot be built.
+     * Its rules' JSON is checked only when a request matches them (AC-14).
      */
     public static function fromArray(mixed $entry): ?self
     {
@@ -67,38 +63,33 @@ final readonly class ManifestSnapshot
             return null;
         }
 
-        return new self($version, $index, $rules, $exemptions, $state, $readAt);
+        try {
+            return new self($version, RuleIndex::fromArray($index, count($rules)), $rules, array_map(CompiledExemption::fromArray(...), $exemptions), $state, $readAt);
+        } catch (InvalidArgumentException) {
+            return null;
+        }
     }
 
     /**
-     * The manifest. Its rules are built when a request matches them (AC-14), and its
-     * index and exemptions are checked now.
-     *
-     * @throws InvalidArgumentException for an index or an exemption that is not what it should be (AC-9)
+     * The manifest. Its rules are built when a request matches them (AC-14).
      */
     public function manifest(): Manifest
     {
-        return new Manifest(
-            $this->version,
-            ManifestRules::fromJson($this->rules),
-            array_map(CompiledExemption::fromArray(...), $this->exemptions),
-            $this->state,
-            RuleIndex::fromArray($this->index, count($this->rules)),
-        );
+        return new Manifest($this->version, ManifestRules::fromJson($this->rules), $this->exemptions, $this->state, $this->index);
     }
 
     /**
      * The entry L1 keeps: plain values, in FIELDS order.
      *
-     * @return array{version: int, index: array<array-key, mixed>, rules: list<string>, exemptions: list<array<array-key, mixed>>, state: string, read_at: int}
+     * @return array{version: int, index: array{literal: array<string, array<array-key, list<int>>>, wildcard: array<string, list<int>>, patterns: list<string>}, rules: list<string>, exemptions: list<array{id: string, rule: ?string, subject: string, parameter: ?string, match: string, expires_at: ?int}>, state: string, read_at: int}
      */
     public function toArray(): array
     {
         return [
             'version' => $this->version,
-            'index' => $this->index,
+            'index' => $this->index->toArray(),
             'rules' => $this->rules,
-            'exemptions' => $this->exemptions,
+            'exemptions' => array_map(fn (CompiledExemption $exemption): array => $exemption->toArray(), $this->exemptions),
             'state' => $this->state->value,
             'read_at' => $this->readAt,
         ];

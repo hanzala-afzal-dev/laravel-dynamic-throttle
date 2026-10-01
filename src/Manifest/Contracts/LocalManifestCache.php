@@ -20,5 +20,15 @@ interface LocalManifestCache
      */
     public function fetch(): ?ManifestSnapshot;
 
+    /**
+     * Keeps the snapshot, and ends the claim on its refresh.
+     */
     public function store(ManifestSnapshot $snapshot): void;
+
+    /**
+     * Claims the refresh of an expired entry, for $seconds at most and at least one, so
+     * one process of the server reads the store while the others serve the entry. True
+     * for the process that gets it.
+     */
+    public function claim(int $seconds): bool;
 }

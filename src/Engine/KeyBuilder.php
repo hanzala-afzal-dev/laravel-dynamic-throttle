@@ -88,4 +88,13 @@ final readonly class KeyBuilder
     {
         return "{$this->prefix}manifest:{$app}:{$version}";
     }
+
+    /**
+     * The claim that lets one process of the server refresh the manifest's expired entry
+     * in APCu while the others serve it (SPEC-028).
+     */
+    public function localManifestRefresh(string $app, string $version): string
+    {
+        return $this->localManifest($app, $version).':refresh';
+    }
 }

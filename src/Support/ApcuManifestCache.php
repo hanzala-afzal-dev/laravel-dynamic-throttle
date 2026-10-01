@@ -23,6 +23,8 @@ final readonly class ApcuManifestCache implements LocalManifestCache
 
     private string $key;
 
+    private string $claim;
+
     /**
      * @param  string  $app  the app among those of the server, whose PHP-FPM pools share APCu
      * @param  string  $version  the package's commit, as Composer installed it, else its version
@@ -30,6 +32,7 @@ final readonly class ApcuManifestCache implements LocalManifestCache
     public function __construct(KeyBuilder $keys, string $app, string $version)
     {
         $this->key = $keys->localManifest($app, $version);
+        $this->claim = $keys->localManifestRefresh($app, $version);
     }
 
     /**
@@ -44,22 +47,22 @@ final readonly class ApcuManifestCache implements LocalManifestCache
     {
         try {
             $entry = apcu_fetch($this->key, $found);
-        } catch (Throwable) {
-            // An object APCu cannot read back, such as one whose class changed.
-            [$entry, $found] = [null, true];
-        }
+            $snapshot = ManifestSnapshot::fromArray($entry);
 
-        if (! $found) {
+            if ($found && ! $snapshot instanceof ManifestSnapshot) {
+                apcu_delete($this->key);
+            }
+
+            // Released here, so an object another app stored cannot throw out of the fetch.
+            unset($entry);
+
+            return $snapshot;
+        } catch (Throwable) {
+            // An object APCu cannot read back, or one that throws when it is released.
+            apcu_delete($this->key);
+
             return null;
         }
-
-        $snapshot = ManifestSnapshot::fromArray($entry);
-
-        if (! $snapshot instanceof ManifestSnapshot) {
-            apcu_delete($this->key);
-        }
-
-        return $snapshot;
     }
 
     public function store(ManifestSnapshot $snapshot): void
@@ -70,5 +73,13 @@ final readonly class ApcuManifestCache implements LocalManifestCache
         } catch (Throwable) {
             // A value PHP cannot serialize, which only a snapshot built by hand holds: nothing is kept either.
         }
+
+        apcu_delete($this->claim);
+    }
+
+    public function claim(int $seconds): bool
+    {
+        // At least a second: APCu keeps an entry whose TTL is 0 for ever.
+        return apcu_add($this->claim, true, max(1, $seconds));
     }
 }

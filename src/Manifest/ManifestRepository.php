@@ -51,8 +51,8 @@ final readonly class ManifestRepository
 
         $snapshot = $this->local?->fetch();
 
-        if ($snapshot instanceof ManifestSnapshot && $this->isFresh($snapshot->readAt, $now)) {
-            $manifest = $this->build($snapshot);
+        if ($snapshot instanceof ManifestSnapshot) {
+            $manifest = $this->isFresh($snapshot->readAt, $now) ? $this->build($snapshot) : null;
 
             if ($manifest instanceof Manifest) {
                 // Kept in L0 with the entry's read time, so L0 never outlives L1's freshness.
@@ -60,42 +60,43 @@ final readonly class ManifestRepository
 
                 return ManifestMemory::$manifest = $manifest;
             }
-        }
 
-        try {
-            $json = $this->cache->get($this->keys->manifest());
+            // Expired. One process of the server reads the store, and the others go on with
+            // the last known manifest meanwhile, so a slow store holds up one request (AC-15).
+            $last = $this->local->claim($this->refreshSeconds) ? null : $this->lastKnown($memory, $snapshot);
 
-            if (is_string($json)) {
-                $manifest = ManifestCodec::decode($json);
-                $this->local?->store(ManifestSnapshot::of($manifest, $now));
-                ManifestMemory::$readAt = $now;
-
-                return ManifestMemory::$manifest = $manifest;
+            if ($last instanceof Manifest) {
+                return $last;
             }
-
-            $problem = new ManifestUnavailable('The manifest is missing from the cache. One request will rebuild it after its response.');
-        } catch (InvalidManifest $exception) {
-            $problem = $exception;
-        } catch (Throwable $exception) {
-            $problem = new ManifestUnavailable('The manifest could not be read: '.$exception->getMessage(), previous: $exception);
         }
 
-        $this->report($problem, $now);
+        $read = $this->readStore();
+        // After the store answered, which a slow store makes later than $now.
+        $readAt = $this->clock->microseconds();
+
+        if ($read instanceof Manifest) {
+            $this->share($read, $readAt);
+            ManifestMemory::$readAt = $readAt;
+
+            return ManifestMemory::$manifest = $read;
+        }
+
+        $last = $this->lastKnown($memory, $snapshot)?->stale();
+
+        if ($last instanceof Manifest) {
+            // Kept first, before the report and the rebuild's lock can wait on the store too, so
+            // the store is tried again after refresh_seconds: from this process, and through L1
+            // from every process of the server.
+            $this->share($last, $readAt);
+            ManifestMemory::$readAt = $readAt;
+            ManifestMemory::$manifest = $last;
+        }
+
+        $this->report($read, $now);
         $this->scheduleRebuild();
-        $last = $this->lastKnown($memory, $snapshot);
 
-        if (! $last instanceof Manifest) {
-            // Not kept anywhere, so the next call looks for the rebuilt manifest at once.
-            return Manifest::missing();
-        }
-
-        // Keep the last known rules, and try the store again after refresh_seconds: from
-        // this process, and through L1 from every process of the server.
-        $stale = $last->stale();
-        $this->local?->store(ManifestSnapshot::of($stale, $now));
-        ManifestMemory::$readAt = $now;
-
-        return ManifestMemory::$manifest = $stale;
+        // Without a last known manifest, nothing is kept, so the next call looks for the rebuilt one at once.
+        return $last ?? Manifest::missing();
     }
 
     /**
@@ -107,6 +108,24 @@ final readonly class ManifestRepository
         ManifestMemory::$manifest = null;
         ManifestMemory::$readAt = 0;
         ManifestMemory::$reportedAt = null;
+    }
+
+    /**
+     * The manifest in the cache store, or why there is none.
+     */
+    private function readStore(): Manifest|Throwable
+    {
+        try {
+            $json = $this->cache->get($this->keys->manifest());
+
+            return is_string($json)
+                ? ManifestCodec::decode($json)
+                : new ManifestUnavailable('The manifest is missing from the cache. One request will rebuild it after its response.');
+        } catch (InvalidManifest $exception) {
+            return $exception;
+        } catch (Throwable $exception) {
+            return new ManifestUnavailable('The manifest could not be read: '.$exception->getMessage(), previous: $exception);
+        }
     }
 
     /**
@@ -133,8 +152,8 @@ final readonly class ManifestRepository
     }
 
     /**
-     * The manifest an L1 entry holds, or null for an entry that cannot build one: an index
-     * or exemptions that are not what they should be (SPEC-028 AC-9).
+     * The manifest an L1 entry holds. A snapshot was checked when it came from the entry,
+     * so this guards the repository's promise never to throw, and nothing more.
      */
     private function build(ManifestSnapshot $snapshot): ?Manifest
     {
@@ -145,6 +164,19 @@ final readonly class ManifestRepository
         }
     }
 
+    /**
+     * Keeps the manifest in L1 for the server's other processes. One that cannot be written
+     * there, such as one holding a number JSON cannot encode, is still served (SPEC-028 AC-10).
+     */
+    private function share(Manifest $manifest, int $readAt): void
+    {
+        try {
+            $this->local?->store(ManifestSnapshot::of($manifest, $readAt));
+        } catch (Throwable) {
+            // Not kept: the server's next request reads the store.
+        }
+    }
+
     private function report(Throwable $problem, int $now): void
     {
         if (ManifestMemory::$reportedAt !== null && $now - ManifestMemory::$reportedAt < self::REPORT_EVERY_SECONDS * 1_000_000) {
@@ -152,7 +184,12 @@ final readonly class ManifestRepository
         }
 
         ManifestMemory::$reportedAt = $now;
-        report($problem);
+
+        try {
+            report($problem);
+        } catch (Throwable) {
+            // The app's exception handler failed too, so there is nowhere left to report it.
+        }
     }
 
     /**
