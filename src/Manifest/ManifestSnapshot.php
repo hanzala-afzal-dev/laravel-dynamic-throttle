@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle\Manifest;
 
-use LogicException;
-
 /**
  * What L1 holds of a manifest (ADR-0007, SPEC-028): its parts as compiled,
  * never the rule index or the exemption groups, which are built again from
@@ -30,11 +28,11 @@ final readonly class ManifestSnapshot
 
     public static function of(Manifest $manifest, int $readAt): self
     {
-        throw new LogicException('Not implemented yet (SPEC-028): '.$manifest->version.' at '.$readAt);
+        return new self($manifest->version, $manifest->rules, $manifest->exemptions->all(), $manifest->state, $readAt);
     }
 
     public function manifest(): Manifest
     {
-        throw new LogicException('Not implemented yet (SPEC-028): '.$this->version);
+        return new Manifest($this->version, $this->rules, $this->exemptions, $this->state);
     }
 }
