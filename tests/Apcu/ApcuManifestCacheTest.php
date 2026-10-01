@@ -135,8 +135,8 @@ it('AC-10: keeps nothing, and throws nothing, when APCu cannot store the entry',
         state: ManifestState::Fresh,
         readAt: FakeClock::T0 * 1_000_000,
     )],
-    // apcu_store() throws on a value PHP cannot serialize, which only a snapshot built by hand holds.
-    'that APCu cannot serialize' => [fn (): ManifestSnapshot => new ManifestSnapshot(
+    // A snapshot built by hand with exemptions that are not exemptions cannot become an entry: storing it throws.
+    'that cannot become an entry' => [fn (): ManifestSnapshot => new ManifestSnapshot(
         version: 7,
         index: LocalManifests::snapshot(7)->index,
         rules: LocalManifests::snapshot(7)->rules,
