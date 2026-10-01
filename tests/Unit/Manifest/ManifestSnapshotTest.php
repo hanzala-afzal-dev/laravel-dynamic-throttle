@@ -10,6 +10,7 @@ use Afzal\DynamicThrottle\Manifest\CompiledRule;
 use Afzal\DynamicThrottle\Manifest\InvalidManifest;
 use Afzal\DynamicThrottle\Manifest\Manifest;
 use Afzal\DynamicThrottle\Manifest\ManifestCodec;
+use Afzal\DynamicThrottle\Manifest\ManifestSettings;
 use Afzal\DynamicThrottle\Manifest\ManifestSnapshot;
 use Afzal\DynamicThrottle\Tests\Support\FakeClock;
 use Afzal\DynamicThrottle\Tests\Support\ManifestFixtures;
@@ -21,8 +22,9 @@ covers(ManifestSnapshot::class);
 /*
 | SPEC-028: what L1 holds of a manifest, as plain values, which APCu copies
 | without unserializing objects: the index built from the rules (ADR-0023, as
-| amended), each rule's JSON, and the exemptions. The APCu tests (tests/Apcu)
-| cover storing it; these run in every suite.
+| amended), each rule's JSON, and the exemptions. SPEC-013 AC-24 adds the
+| runtime settings. The APCu tests (tests/Apcu) cover storing it; these run in
+| every suite.
 */
 
 function snapshotManifest(): Manifest
@@ -68,6 +70,7 @@ it('AC-11: holds the index built from the rules, each rule\'s JSON and the exemp
         'index' => RuleIndex::of($manifest->rules())->toArray(),
         'rules' => array_map(ManifestCodec::encodeRule(...), $manifest->rules()),
         'exemptions' => array_map(fn (CompiledExemption $exemption): array => $exemption->toArray(), $manifest->exemptions->all()),
+        'settings' => [],
         'state' => 'fresh',
         'read_at' => FakeClock::T0 * 1_000_000,
     ]);
@@ -112,7 +115,18 @@ it('AC-9: is no snapshot with an index or exemptions that cannot be built, so th
     'an index that points past its rules' => [['index' => ['literal' => [], 'wildcard' => ['*' => [0, 1, 2]], 'patterns' => ['api/*', 'web/*']]]],
     'an index with a pattern for a rule it does not have' => [['index' => ['literal' => [], 'wildcard' => ['*' => [0, 1]], 'patterns' => ['api/*', 'web/*', 'x/*']]]],
     'an exemption that is not an exemption' => [['exemptions' => [ManifestFixtures::exemption(['match' => 'not a range'])]]],
+    'settings that are not settings (SPEC-013 AC-24)' => [['settings' => ['scale_factor' => ['percent' => 9, 'until' => null]]]],
 ]);
+
+it('SPEC-013 AC-24: keeps the manifest\'s settings, so a manifest from L1 applies them', function (): void {
+    $settings = new ManifestSettings(bypass: true, bypassUntil: FakeClock::T0 + 60, scale: 200);
+    $manifest = ManifestCodec::decode(ManifestFixtures::json(7, settings: $settings));
+
+    $entry = ManifestSnapshot::of($manifest, FakeClock::T0 * 1_000_000)->toArray();
+
+    expect($entry['settings'] ?? null)->toBe($settings->toArray())
+        ->and(ManifestSnapshot::fromArray($entry)?->manifest()->settings)->toEqual($settings);
+});
 
 it('AC-11: builds a manifest that offers the same candidates and matches the same rules as the decoded one, on 2,000 seeded requests', function (): void {
     $random = new Randomizer(new Mt19937(20_261_001));

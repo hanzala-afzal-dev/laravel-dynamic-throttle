@@ -1115,3 +1115,59 @@ it('SPEC-027: starts no cooldown and lists no failure when the first of several 
         ->and($evaluation->failures)->toBe([])
         ->and($cooldown->secondsLeft())->toBe(0);
 });
+
+/*
+| SPEC-013: the scale factor (ADR-0011 point 5). The evaluator counts each rule
+| against its limit scaled by the factor, a whole percentage, and leaves the
+| counts made before the factor changed as they are.
+*/
+
+it('SPEC-013 AC-6: counts each rule against its limit scaled by the factor', function (): void {
+    $stack = stackStore();
+
+    $evaluation = (new RuleEvaluator($stack->store))->evaluate([stackRule('a', 10, 10), stackRule('b', 3, 20)], oneClient(), scalePercent: 200);
+
+    expect(array_map(fn (RuleAttempt $attempt): int => $attempt->attempt->limit, $evaluation->attempts))->toBe([20, 6]);
+});
+
+it('SPEC-013 AC-6: counts against each rule\'s own limit without a factor', function (): void {
+    $stack = stackStore();
+
+    $evaluation = (new RuleEvaluator($stack->store))->evaluate([stackRule('a', 10, 10)], oneClient());
+
+    expect($evaluation->attempts[0]->attempt->limit)->toBe(10);
+});
+
+it('SPEC-013 AC-6: rejects at the scaled limit', function (): void {
+    $stack = stackStore();
+    $evaluator = new RuleEvaluator($stack->store);
+    $rules = [stackRule('a', 4, 10)];
+
+    $outcomes = array_map(fn (): EvaluationOutcome => $evaluator->evaluate($rules, oneClient(), scalePercent: 50)->outcome, range(1, 3));
+
+    expect($outcomes)->toBe([EvaluationOutcome::Allowed, EvaluationOutcome::Allowed, EvaluationOutcome::Rejected]);
+});
+
+it('SPEC-013 AC-8: scales dry-run rules too, so they would block at the scaled limit', function (): void {
+    $stack = stackStore();
+    $evaluator = new RuleEvaluator($stack->store);
+    $rules = [stackRule('d', 2, 10, RuleMode::DryRun)];
+
+    $wouldBlock = array_map(fn (): int => count($evaluator->evaluate($rules, oneClient(), scalePercent: 200)->wouldBlock), range(1, 5));
+
+    expect($wouldBlock)->toBe([0, 0, 0, 0, 1]);
+});
+
+it('SPEC-013 AC-7: keeps the counts made before the factor changed', function (): void {
+    $stack = stackStore();
+    $evaluator = new RuleEvaluator($stack->store);
+    $rules = [stackRule('a', 10, 10)];
+
+    foreach (range(1, 5) as $request) {
+        $evaluator->evaluate($rules, oneClient());
+    }
+
+    $scaled = $evaluator->evaluate($rules, oneClient(), scalePercent: 200);
+
+    expect([$scaled->attempts[0]->attempt->limit, $scaled->attempts[0]->attempt->remaining])->toBe([20, 14]);
+});

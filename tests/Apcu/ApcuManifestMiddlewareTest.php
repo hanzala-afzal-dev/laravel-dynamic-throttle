@@ -15,6 +15,7 @@ use Afzal\DynamicThrottle\Support\ApcuManifestCache;
 use Afzal\DynamicThrottle\Tests\Support\CountingCacheStore;
 use Afzal\DynamicThrottle\Tests\Support\FailingStore;
 use Afzal\DynamicThrottle\Tests\Support\FakeClock;
+use Afzal\DynamicThrottle\Tests\Support\Settings;
 use Afzal\DynamicThrottle\Tests\Support\Throttling;
 use Afzal\DynamicThrottle\Tests\TestCase;
 use Composer\InstalledVersions;
@@ -171,4 +172,23 @@ it('AC-8: writes nothing to APCu under DynamicThrottle::fake(), even with refres
 
     expect($statuses)->toBe([200, 429])
         ->and(apcu_cache_info(true)['num_entries'])->toBe(0);
+});
+
+it('SPEC-013 AC-10: applies the settings of a manifest from L1, and ends them at their end time there', function (): void {
+    $store = countingPackageStore();
+    Throttling::rule(['max_attempts' => 1]);
+    Throttling::route('api/x');
+    Settings::bypass(until: FakeClock::T0 + 1);
+    $store->resetReads();
+
+    $this->get('api/x');
+    nextPhpFpmRequest();
+    $fromL1 = $this->get('api/x');
+    // L1's entry, read at T0, is still fresh one second later.
+    nextPhpFpmRequest();
+    $this->travelTo(Carbon::createFromTimestamp(FakeClock::T0 + 1));
+    $ended = $this->get('api/x');
+
+    expect([Throttling::headers($fromL1), Throttling::headers($ended)['X-RateLimit-Remaining'] ?? null])->toBe([[], '0'])
+        ->and($store->reads('dt:m'))->toBe(1);
 });

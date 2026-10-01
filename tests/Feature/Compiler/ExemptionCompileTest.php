@@ -77,7 +77,7 @@ it('AC-7: compiles after an exemption is saved, updated or deleted, and not for 
         ->and($afterDelete['version'])->toBeGreaterThan($afterUpdate['version']);
 });
 
-it('AC-8: writes format 2, with each exemption\'s fields, in id order', function (): void {
+it('AC-8: writes each exemption\'s fields, in id order, in format 3 since SPEC-013', function (): void {
     $rule = Exemptions::rule();
     $global = Exemption::forIp('10.0.0.0/8')->because('The office network');
     $global->save();
@@ -88,7 +88,7 @@ it('AC-8: writes format 2, with each exemption\'s fields, in id order', function
 
     $manifest = Exemptions::stored();
 
-    expect($manifest['format'])->toBe(2)
+    expect($manifest['format'])->toBe(3)
         ->and(array_slice($manifest['exemptions'], 0, 2))->toBe([
             ['id' => (string) $global->id, 'rule' => null, 'subject' => 'ip', 'parameter' => null, 'match' => '10.0.0.0/8', 'expires_at' => null],
             ['id' => (string) $ofRule->id, 'rule' => (string) $rule->id, 'subject' => 'ip', 'parameter' => null, 'match' => '2001:db8::/32', 'expires_at' => FakeClock::T0 + 60],
