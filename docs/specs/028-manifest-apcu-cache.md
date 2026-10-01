@@ -22,11 +22,16 @@ PHP-FPM starts every request with nothing in memory. So each request reads the m
 
 So a change reaches every worker of every server within `refresh_seconds`, as ADR-0007 says. A server reads the store about once per `refresh_seconds`, where today each PHP-FPM request reads it.
 
+### An expired entry
+When L1's entry has expired, one process of the server claims the refresh and reads the store. The others go on with the expired entry meanwhile, and read nothing. So a store that is slow to answer, or to fail, holds up one request per `refresh_seconds`, not every request.
+- The claim lasts `refresh_seconds` at most, so a process that dies while it reads the store holds up nothing for long. Storing the entry ends it.
+- A process that finds no entry at all reads the store, as today.
+
 ### A missing or unreadable manifest (ADR-0007, ADR-0010)
-- It is reported, and rebuilt after the response, as today.
-- The request then uses the last known manifest, however old, marked stale: L0's or L1's, whichever has the higher version. Versions only grow (SPEC-006 AC-3), so a worker never trades newer rules for its own older ones.
-  - The stale manifest is written back with the time now, so the store is tried again after `refresh_seconds`, by one request of the server, not by every request.
+- The request uses the last known manifest, however old, marked stale: L0's or L1's, whichever has the higher version. Versions only grow (SPEC-006 AC-3), so a worker never trades newer rules for its own older ones.
+  - The stale manifest is written back first, with the time after the failed read, so the store is tried again `refresh_seconds` after it failed, by one request of the server, not by every request.
   - This keeps fail-closed rules answering 503 through a store outage on PHP-FPM, where today every request finds no rule.
+- Then it is reported, and rebuilt after the response, as today. A report that fails is not thrown.
 - With no manifest anywhere, no rule applies, as today.
 
 ### When L1 is used
@@ -40,7 +45,7 @@ Otherwise the read path is today's.
 - One entry per app of the server, and per installed version of the package. Its key comes from `KeyBuilder` and names both:
   - the app by its base path, as the cooldown's APCu entries do (SPEC-012), since a server's PHP-FPM pools share APCu;
   - the package's commit, as Composer installed it, else its version, so an upgrade, even to another commit of a branch, never reads objects written by other classes.
-- An entry is kept for a day after it is written. That bounds the last known manifest's age, and lets old apps' and old versions' entries expire.
+- An entry is kept for a day after it is last written, so old apps' and old versions' entries expire. Through an outage, each write-back keeps the last known manifest another day, as L0 keeps its manifest in a long-running worker for as long as the outage lasts.
 
 ### Failures
 APCu may be full or fail, a fetch may throw, or an entry may not have the shape of a snapshot. Each of these is a miss:
@@ -48,7 +53,9 @@ APCu may be full or fail, a fetch may throw, or an entry may not have the shape 
 - a bad entry is deleted;
 - nothing throws.
 
-A rule's JSON is only checked when a request matches the rule and builds it. A rule that cannot be built fails that request's matching, which the middleware reports, and the request goes through, as for any error (ADR-0010). Only something other than the package can write such an entry.
+An entry holding an object anywhere is not a snapshot: APCu reads it back, so it is released and deleted inside the fetch, where even an object whose destructor throws cannot escape. A manifest that cannot be written to L1 is still served.
+
+A rule's JSON is only checked when a request matches the rule and builds it. A rule that cannot be built fails that request's matching, which the middleware reports, and the request goes through, as for any error of the manifest (ADR-0010), in strict mode too. Only something other than the package can write such an entry.
 
 ## Acceptance criteria
 The APCu tests run in `tests/Apcu` with `apc.enable_cli=1` (`composer test:apcu`), with a FakeClock at T0.
@@ -59,7 +66,9 @@ The APCu tests run in `tests/Apcu` with `apc.enable_cli=1` (`composer test:apcu`
 - **AC-4 (the last known manifest)** The store loses the manifest while L1 holds one, and L0 is empty:
   - the request uses L1's rules, marked stale, reports once and schedules one rebuild;
   - the next request within `refresh_seconds` reads nothing from the store;
-  - with a manifest in L0 too, as in a long-running worker, the one with the higher version is used.
+  - with a manifest in L0 too, as in a long-running worker, the one with the higher version is used;
+  - with a store that takes time to fail, the stale manifest is written back with the time after the failure, so the server's next requests read nothing for `refresh_seconds`;
+  - a report that throws throws nothing out of the request, and the stale manifest is still written back.
 - **AC-5 (fail-closed through an outage)** With the cache store failing and L0 empty, a fail-closed rule from L1 answers 503.
 - **AC-6 (apps)** Two apps with different base paths never read each other's entry.
 - **AC-7 (versions)** An entry written under another package version is never read. The provider keys the entry by the app's base path and the commit Composer installed.
@@ -71,12 +80,14 @@ The APCu tests run in `tests/Apcu` with `apc.enable_cli=1` (`composer test:apcu`
   - an object that throws when APCu reads it;
   - an entry whose index, rules or exemptions have the wrong types;
   - an entry whose index points past its rules, or has a pattern for a rule it does not have;
-  - an entry whose exemptions cannot be built.
-- **AC-10 (APCu full)** When APCu cannot store the entry, the request still gets the store's rules, and nothing throws.
+  - an entry whose exemptions cannot be built;
+  - an object anywhere in the entry, even one whose destructor throws.
+- **AC-10 (APCu full)** When APCu cannot store the entry, the request still gets the store's rules, and nothing throws. So does a manifest that cannot be written to L1, such as one whose response override holds a number JSON cannot encode.
 - **AC-11 (the index)** An L1 entry holds the index built from its rules. For seeded random rules and requests, a manifest built from L1 offers the same candidates and matches the same rules as the decoded manifest.
 - **AC-12 (the benchmark)** `MiddlewareBench` gets a case "PHP-FPM with APCu", with L0 emptied before each request. On the array store, the package's own time is under 0.5 ms at p95: the Phase 3 exit criterion.
 - **AC-13 (hard rules)** The arch tests hold: no database, no wall clock, no `unserialize()`. Only `ApcuFailureMemory` and `ApcuManifestCache` call APCu, with keys from `KeyBuilder`.
-- **AC-14 (only what matches)** A request builds from L1 only the rules it matches. A rule it does not match is never decoded, so a rule's JSON that cannot be built does not affect it. A matched rule that cannot be built fails the request's matching: the error is reported, and the request goes through.
+- **AC-14 (only what matches)** A request builds from L1 only the rules it matches. A rule it does not match is never decoded, so a rule's JSON that cannot be built does not affect it. A matched rule that cannot be built fails the request's matching: the error is reported, and the request goes through, in strict mode too.
+- **AC-15 (one refresh per server)** When L1's entry has expired, one process claims the refresh and reads the store. Another process meanwhile serves the expired entry and reads nothing. The claim ends when the entry is stored, and after `refresh_seconds` at most.
 
 ## Interfaces and files
 - `src/Manifest/ManifestSnapshot.php` (new, internal): what L1 holds.
@@ -87,10 +98,11 @@ The APCu tests run in `tests/Apcu` with `apc.enable_cli=1` (`composer test:apcu`
 - `src/Manifest/ManifestCodec.php`: `encodeRule()` and `decodeRule()`, one rule's JSON, as the manifest writes it.
 - `src/Engine/Matching/RuleIndex.php`: `toArray()` and `fromArray()`, its parts as plain values, checked when they come back.
 - `src/Engine/Matching/RuleMatcher.php`: reads a matched rule with `Manifest::rule()`.
-- `src/Manifest/Contracts/LocalManifestCache.php` (new, internal): `fetch(): ?ManifestSnapshot` and `store(ManifestSnapshot)`. Neither throws.
+- `src/Manifest/Contracts/LocalManifestCache.php` (new, internal): `fetch(): ?ManifestSnapshot`, `store(ManifestSnapshot)`, and `claim(int $seconds): bool`, which claims the refresh of an expired entry. None throws.
 - `src/Support/ApcuManifestCache.php` (new): the APCu implementation, next to `ApcuFailureMemory`.
 - `src/Manifest/ManifestRepository.php`: L1 between L0 and L2. It takes an optional `LocalManifestCache`, and with none behaves as today.
-- `src/Engine/KeyBuilder.php`: `localManifest(string $app, string $version)`.
+- `src/Engine/KeyBuilder.php`: `localManifest(string $app, string $version)`, and `localManifestRefresh()` for the claim.
+- `src/Http/Middleware/DynamicThrottleMiddleware.php`: an error of the manifest is never a mistake that strict mode rethrows.
 - Tests that read `$manifest->rules` read `rules()` or `rule()` instead.
 - `src/DynamicThrottleServiceProvider.php`: gives the repository the APCu cache when L1 is used, keyed by the app's base path and the package's commit from Composer's `InstalledVersions`.
 - `benchmarks/Http/MiddlewareBench.php` and `phpbench.json`: the "PHP-FPM with APCu" case, with `apc.enable_cli=1`.
@@ -107,7 +119,10 @@ The APCu tests run in `tests/Apcu` with `apc.enable_cli=1` (`composer test:apcu`
 - **A lock against several workers refreshing L1 at once.** See the edge cases.
 
 ## Edge cases and failure modes
-- **Several workers refresh at once.** Each writes what it read, and the last write wins. A worker that read an older version can overwrite a newer one, which then waits for the next refresh: one more `refresh_seconds` at most.
+- **Several workers refresh at once:** only when the claim expires first, or no entry exists. Each writes what it read, and the last write wins. A worker that read an older version can overwrite a newer one, which then waits for the next refresh: one more `refresh_seconds` at most.
+- **A store that is slow to fail,** with a timeout of a second for example: one request per server and per `refresh_seconds` waits for it (AC-15), and the write-back keeps the others on the last known manifest (AC-4).
+- **Apps served from one directory,** as two PHP-FPM pools with different settings, share L1 and the cooldown under the same `dynamic-throttle.prefix`. The README says to give each its own prefix, as apps that share a Redis do.
+- **APCu is shared by every app under one PHP-FPM master.** Another app there can read and write this app's entries, as it can its cooldown (SPEC-012). The README says to run apps that do not trust each other under separate masters. The checks on an entry keep a bad one from breaking a request, not from applying other rules.
 - **Time** comes from the Clock, never `time()`. APCu's own TTL only expires entries after a day.
 - **The clock goes back,** after an NTP step for example. A read time in the future is not fresh, so the next request reads the store. Otherwise L0 would keep its manifest until the clock caught up, as it does today, and L1 would hold a whole server's.
 - **A large manifest:** 100 rules take about 24 KB as JSON. An entry APCu cannot hold is a miss (AC-10).
@@ -136,8 +151,8 @@ Recorded as recommended (ADR-0027), except the first, second and sixth, which th
    - With OPcache, as on any production PHP-FPM, that costs 1 to 3 µs per request. The draft measured 1.5 ms in a process without OPcache, which compiles Composer's list of installed packages on every call, and so recommended a constant.
    - A constant bumped at each release would cost nothing. But a forgotten bump, or two commits of one branch, would read objects that other classes wrote.
 4. **No new config key.** L1 follows APCu, as the cooldown does (SPEC-012), and `refresh_seconds` 0 switches it off.
-5. **No lock when L1 goes stale.** The refresh is at most one extra store read and decode per worker, once per `refresh_seconds`.
+5. **One process per server refreshes an expired entry, and the others serve it meanwhile** (revised after the review). The draft had no claim: an expired entry cost at most one store read per worker. The review measured a store that times out: every worker then waited on it, up to every request. A claim in APCu costs one `apcu_add()` per refresh.
 6. **L1's lifetime: fresh for `refresh_seconds`, kept a day** (answered by the maintainer).
    - ADR-0007's table gives L1 a TTL of `refresh_seconds`, and its "Missing manifest" section uses a last known manifest from L0 or L1. An entry that expired after `refresh_seconds` would hold no last known manifest 2 seconds into an outage.
-   - So the table's TTL is L1's freshness, and the entry is kept a day as the last known manifest, as L0 keeps its manifest in a long-running worker. ADR-0007's decision record notes this reading.
+   - So the table's TTL is L1's freshness, and the entry is kept a day after it is last written. A write-back during an outage keeps the last known manifest another day, as L0 keeps its manifest in a long-running worker. ADR-0007's decision record notes this reading.
 7. **The last known manifest is the newer of L0's and L1's.** Taking L0's first, as the draft said, could let a long-running worker write its older manifest over a newer one in L1, which every other worker would then use.
