@@ -18,7 +18,7 @@ afterEach(function (): void {
 
 function systemUser(): string
 {
-    return function_exists('posix_getpwuid') ? (string) (posix_getpwuid(posix_geteuid())['name'] ?? '') : (string) getenv('USER');
+    return function_exists('posix_getpwuid') ? posix_getpwuid(posix_geteuid())['name'] ?? '' : (string) getenv('USER');
 }
 
 it('AC-23: names the system user that runs the command', function (): void {
