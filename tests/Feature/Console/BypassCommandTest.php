@@ -141,7 +141,8 @@ it('AC-15: turns bypass on in production after yes, and with --force without ask
         $command->expectsConfirmation('Are you sure you want to run this command?', 'yes');
     }
 
-    $command->assertExitCode(0);
+    // A pending command runs when it is run or destroyed: run it before reading what it wrote.
+    $command->assertExitCode(0)->run();
 
     expect(Setting::query()->count())->toBe(1);
 })->with([
