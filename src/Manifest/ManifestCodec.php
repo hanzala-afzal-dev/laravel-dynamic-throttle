@@ -6,7 +6,6 @@ namespace Afzal\DynamicThrottle\Manifest;
 
 use InvalidArgumentException;
 use JsonException;
-use LogicException;
 
 /**
  * The manifest's JSON (SPEC-006). Decoding is strict: a manifest that decoded
@@ -20,6 +19,8 @@ final class ManifestCodec
      */
     public const int FORMAT = 2;
 
+    private const int FLAGS = JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
+
     /**
      * @param  list<CompiledRule>  $rules
      * @param  list<CompiledExemption>  $exemptions
@@ -31,12 +32,16 @@ final class ManifestCodec
             'version' => $version,
             'rules' => array_map(fn (CompiledRule $rule): array => $rule->toArray(), $rules),
             'exemptions' => array_map(fn (CompiledExemption $exemption): array => $exemption->toArray(), $exemptions),
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        ], self::FLAGS);
     }
 
+    /**
+     * One rule's JSON, as the manifest writes it. L1 keeps each rule's JSON, and builds
+     * a rule only when a request matches it (SPEC-028).
+     */
     public static function encodeRule(CompiledRule $rule): string
     {
-        throw new LogicException('Not implemented yet (SPEC-028): '.$rule->id);
+        return json_encode($rule->toArray(), self::FLAGS);
     }
 
     /**
@@ -44,7 +49,21 @@ final class ManifestCodec
      */
     public static function decodeRule(string $json): CompiledRule
     {
-        throw new LogicException('Not implemented yet (SPEC-028): '.$json);
+        try {
+            $data = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            throw new InvalidManifest('A rule is not JSON: '.$exception->getMessage(), $exception->getCode(), previous: $exception);
+        }
+
+        if (! is_array($data) || array_is_list($data)) {
+            throw new InvalidManifest('A rule must be a JSON object.');
+        }
+
+        try {
+            return CompiledRule::fromArray($data);
+        } catch (InvalidArgumentException $exception) {
+            throw new InvalidManifest('A rule is invalid: '.$exception->getMessage(), $exception->getCode(), previous: $exception);
+        }
     }
 
     /**

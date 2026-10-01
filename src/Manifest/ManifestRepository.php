@@ -133,8 +133,8 @@ final readonly class ManifestRepository
     }
 
     /**
-     * The manifest an L1 entry holds, or null for an entry that cannot build one, such as
-     * a rule whose class changed since the entry was stored (SPEC-028 AC-9).
+     * The manifest an L1 entry holds, or null for an entry that cannot build one: an index
+     * or exemptions that are not what they should be (SPEC-028 AC-9).
      */
     private function build(ManifestSnapshot $snapshot): ?Manifest
     {

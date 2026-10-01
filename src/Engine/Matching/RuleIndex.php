@@ -6,7 +6,7 @@ namespace Afzal\DynamicThrottle\Engine\Matching;
 
 use Afzal\DynamicThrottle\Enums\RequestMethod;
 use Afzal\DynamicThrottle\Manifest\CompiledRule;
-use LogicException;
+use InvalidArgumentException;
 
 /**
  * Narrows the rules a request tests to the ones that can match (ADR-0008).
@@ -20,7 +20,7 @@ use LogicException;
 final readonly class RuleIndex
 {
     /**
-     * @param  array<string, array<string, list<int>>>  $literal  method => first segment => positions
+     * @param  array<string, array<array-key, list<int>>>  $literal  method => first segment => positions; PHP keys a numeric segment as an integer
      * @param  array<string, list<int>>  $wildcard  method => positions of patterns whose first segment has a "*"
      * @param  list<string>  $patterns  each rule's pattern as it is matched
      */
@@ -56,19 +56,66 @@ final readonly class RuleIndex
     }
 
     /**
-     * @return array<string, mixed>
+     * Its parts as plain values, for L1, which stores them with the rules they were
+     * built from (SPEC-028, ADR-0023 as amended).
+     *
+     * @return array{literal: array<string, array<array-key, list<int>>>, wildcard: array<string, list<int>>, patterns: list<string>}
      */
     public function toArray(): array
     {
-        throw new LogicException('Not implemented yet (SPEC-028): '.count($this->patterns));
+        return ['literal' => $this->literal, 'wildcard' => $this->wildcard, 'patterns' => $this->patterns];
     }
 
     /**
+     * The index whose parts toArray() gave, for $count rules. The parts are checked, as
+     * an index that disagreed with its rules would offer the wrong ones (ADR-0023): every
+     * method is known, and every rule is offered exactly once.
+     *
      * @param  array<array-key, mixed>  $parts
+     *
+     * @throws InvalidArgumentException naming the first part that is wrong
      */
     public static function fromArray(array $parts, int $count): self
     {
-        throw new LogicException('Not implemented yet (SPEC-028): '.count($parts).' '.$count);
+        $keys = array_keys($parts);
+        sort($keys);
+
+        if ($keys !== ['literal', 'patterns', 'wildcard']) {
+            throw new InvalidArgumentException('The index must have exactly the parts literal, wildcard and patterns.');
+        }
+
+        if (! is_array($parts['patterns']) || ! array_is_list($parts['patterns']) || count($parts['patterns']) !== $count) {
+            throw self::wrongPatterns($count);
+        }
+
+        $patterns = [];
+
+        foreach ($parts['patterns'] as $pattern) {
+            $patterns[] = is_string($pattern) ? $pattern : throw self::wrongPatterns($count);
+        }
+
+        $offered = [];
+        $literal = [];
+
+        foreach (is_array($parts['literal']) ? $parts['literal'] : throw self::notMap('literal') as $method => $segments) {
+            $method = self::method($method);
+
+            foreach (is_array($segments) ? $segments : throw self::notMap('literal') as $segment => $positions) {
+                $literal[$method][$segment] = self::positions(is_array($positions) ? $positions : throw self::notMap('literal'), $count, $offered);
+            }
+        }
+
+        $wildcard = [];
+
+        foreach (is_array($parts['wildcard']) ? $parts['wildcard'] : throw self::notMap('wildcard') as $method => $positions) {
+            $wildcard[self::method($method)] = self::positions($positions, $count, $offered);
+        }
+
+        if (count($offered) !== $count) {
+            throw new InvalidArgumentException('The index offers '.count($offered)." of its {$count} rules.");
+        }
+
+        return new self($literal, $wildcard, $patterns);
     }
 
     /**
@@ -128,6 +175,62 @@ final readonly class RuleIndex
         $pattern = ltrim($pattern, '/');
 
         return $pattern === '' ? '/' : $pattern;
+    }
+
+    private static function wrongPatterns(int $count): InvalidArgumentException
+    {
+        return new InvalidArgumentException("The index's patterns must be a list of {$count} strings, one for each rule.");
+    }
+
+    private static function notMap(string $part): InvalidArgumentException
+    {
+        return new InvalidArgumentException($part === 'literal'
+            ? "The index's literal part must map each method to segments, and each segment to positions."
+            : "The index's wildcard part must map each method to positions.");
+    }
+
+    /**
+     * A method of a stored index: one of RequestMethod's values.
+     */
+    private static function method(int|string $method): string
+    {
+        return is_string($method) && RequestMethod::tryFrom($method) instanceof RequestMethod
+            ? $method
+            : throw new InvalidArgumentException("The index has a method it does not know: \"{$method}\".");
+    }
+
+    /**
+     * Positions of a stored index: each one a rule's, and offered once in all.
+     *
+     * @param  array<int, true>  $offered  the positions offered so far, as keys
+     * @return list<int>
+     */
+    private static function positions(mixed $positions, int $count, array &$offered): array
+    {
+        if (! is_array($positions) || ! array_is_list($positions)) {
+            throw new InvalidArgumentException("The index's positions must be lists of integers.");
+        }
+
+        $checked = [];
+
+        foreach ($positions as $position) {
+            if (! is_int($position)) {
+                throw new InvalidArgumentException("The index's positions must be lists of integers.");
+            }
+
+            if ($position < 0 || $position >= $count) {
+                throw new InvalidArgumentException("The index's position {$position} is not one of its {$count} rules.");
+            }
+
+            if (isset($offered[$position])) {
+                throw new InvalidArgumentException("The index offers rule {$position} more than once.");
+            }
+
+            $offered[$position] = true;
+            $checked[] = $position;
+        }
+
+        return $checked;
     }
 
     /**
