@@ -4,6 +4,7 @@
 - Date: 2026-09-24
 - Roadmap phase: 2
 - Amends: [ADR-0008](0008-rule-matching.md) ("The compiler pre-indexes rules")
+- Amended by: [SPEC-028](../specs/028-manifest-apcu-cache.md) (L1, the manifest's copy in APCu, stores the index with the rules it was built from)
 - Related: ADR-0007, SPEC-006, SPEC-007
 
 ## Context
@@ -44,3 +45,10 @@
 
 - SPEC-007 AC-6: on seeded random rules and requests, indexed matching returns exactly what testing every rule returns.
 - SPEC-007 AC-19: PHPBench measures index building for 100 and 500 rules.
+
+## Decision record
+
+On 2026-10-01, for SPEC-028, the maintainer decided that L1, the manifest's copy in APCu (ADR-0007), stores the index with the rules it was built from.
+- Rebuilding the index cost 49 µs per PHP-FPM request with 100 rules. With rebuilding 100 rule objects, it kept SPEC-028's first build above the 0.5 ms target (`benchmarks/results/phase-3-apcu-manifest.md`).
+- The index and its rules are written in one entry, at once, and the index is checked when it comes back. Only something other than the package writing the entry could make them disagree.
+- The cache store's manifest still never holds the index, so its format does not change.

@@ -11,11 +11,13 @@ PHP-FPM starts every request with nothing in memory. So each request reads the m
 
 ### The read path: L0, then L1, then L2
 1. **L0**, the process's memory: a manifest read within `refresh_seconds` is used as it is, as today.
-2. **L1**, in APCu, holds the last manifest this server read from the store:
-   - its version, rules and exemptions, whether it is stale, and when it was read;
-   - never the rule index, which is rebuilt from the rules, as every loaded manifest's is (ADR-0023).
+2. **L1**, in APCu, holds the last manifest this server read from the store, as plain values, which APCu copies without unserializing objects:
+   - its version, whether it is stale, and when it was read;
+   - the rule index, built from the rules when they were read, and stored with them (ADR-0023, as amended);
+   - each rule's JSON, which a request builds into a rule only when it matches the rule;
+   - the exemptions, which a request builds in full, as from the store.
 
-   An entry read within `refresh_seconds` is fresh. The request builds the manifest from it, and keeps that in L0 with the entry's read time, so L0 never outlives L1's freshness.
+   An entry read within `refresh_seconds` is fresh. The request builds the manifest from it, and keeps that in L0 with the entry's read time, so L0 never outlives L1's freshness. So a PHP-FPM request with 100 rules builds the 3 it matches, and no index.
 3. **L2**, the cache store, is otherwise read and decoded as today. The request then writes what it read to L1, with the time now.
 
 So a change reaches every worker of every server within `refresh_seconds`, as ADR-0007 says. A server reads the store about once per `refresh_seconds`, where today each PHP-FPM request reads it.
@@ -46,6 +48,8 @@ APCu may be full or fail, a fetch may throw, or an entry may not have the shape 
 - a bad entry is deleted;
 - nothing throws.
 
+A rule's JSON is only checked when a request matches the rule and builds it. A rule that cannot be built fails that request's matching, which the middleware reports, and the request goes through, as for any error (ADR-0010). Only something other than the package can write such an entry.
+
 ## Acceptance criteria
 The APCu tests run in `tests/Apcu` with `apc.enable_cli=1` (`composer test:apcu`), with a FakeClock at T0.
 
@@ -65,21 +69,29 @@ The APCu tests run in `tests/Apcu` with `apc.enable_cli=1` (`composer test:apcu`
   - an array;
   - an object of another class;
   - an object that throws when APCu reads it;
-  - a snapshot whose rules are not compiled rules, or whose exemptions are not compiled exemptions;
-  - a snapshot whose rules cannot build a manifest, such as a rule whose class changed since it was stored.
+  - an entry whose index, rules or exemptions have the wrong types;
+  - an entry whose index points past its rules, or has a pattern for a rule it does not have;
+  - an entry whose exemptions cannot be built.
 - **AC-10 (APCu full)** When APCu cannot store the entry, the request still gets the store's rules, and nothing throws.
-- **AC-11 (the index)** An L1 entry holds no rule index, and a manifest built from one matches exactly as the decoded manifest does.
+- **AC-11 (the index)** An L1 entry holds the index built from its rules. For seeded random rules and requests, a manifest built from L1 offers the same candidates and matches the same rules as the decoded manifest.
 - **AC-12 (the benchmark)** `MiddlewareBench` gets a case "PHP-FPM with APCu", with L0 emptied before each request. On the array store, the package's own time is under 0.5 ms at p95: the Phase 3 exit criterion.
-- **AC-13 (hard rules)** The arch tests hold: no database, no wall clock. Only `ApcuFailureMemory` and `ApcuManifestCache` call APCu, with keys from `KeyBuilder`.
+- **AC-13 (hard rules)** The arch tests hold: no database, no wall clock, no `unserialize()`. Only `ApcuFailureMemory` and `ApcuManifestCache` call APCu, with keys from `KeyBuilder`.
+- **AC-14 (only what matches)** A request builds from L1 only the rules it matches. A rule it does not match is never decoded, so a rule's JSON that cannot be built does not affect it. A matched rule that cannot be built fails the request's matching: the error is reported, and the request goes through.
 
 ## Interfaces and files
 - `src/Manifest/ManifestSnapshot.php` (new, internal): what L1 holds.
-  - Fields: the manifest's version, rules, exemptions and state, and the read time in microseconds.
-  - It turns into a `Manifest`, and comes from one.
+  - Fields: the manifest's version, index, each rule's JSON, its exemptions as arrays, its state, and the read time in microseconds.
+  - It turns into a `Manifest` and into the entry's plain values, and comes from either.
+- `src/Manifest/ManifestRules.php` (new, internal): a manifest's rules by position. Decoded from the store, they are all built. From L1, each one is built from its JSON the first time it is read, then kept.
+- `src/Manifest/Manifest.php`: `rule(int $position)` and `rules()` take the place of the public `$rules` array. The constructor takes the rules as a list or as `ManifestRules`, and an index stored with them.
+- `src/Manifest/ManifestCodec.php`: `encodeRule()` and `decodeRule()`, one rule's JSON, as the manifest writes it.
+- `src/Engine/Matching/RuleIndex.php`: `toArray()` and `fromArray()`, its parts as plain values, checked when they come back.
+- `src/Engine/Matching/RuleMatcher.php`: reads a matched rule with `Manifest::rule()`.
 - `src/Manifest/Contracts/LocalManifestCache.php` (new, internal): `fetch(): ?ManifestSnapshot` and `store(ManifestSnapshot)`. Neither throws.
 - `src/Support/ApcuManifestCache.php` (new): the APCu implementation, next to `ApcuFailureMemory`.
 - `src/Manifest/ManifestRepository.php`: L1 between L0 and L2. It takes an optional `LocalManifestCache`, and with none behaves as today.
 - `src/Engine/KeyBuilder.php`: `localManifest(string $app, string $version)`.
+- Tests that read `$manifest->rules` read `rules()` or `rule()` instead.
 - `src/DynamicThrottleServiceProvider.php`: gives the repository the APCu cache when L1 is used, keyed by the app's base path and the package's commit from Composer's `InstalledVersions`.
 - `benchmarks/Http/MiddlewareBench.php` and `phpbench.json`: the "PHP-FPM with APCu" case, with `apc.enable_cli=1`.
 - Tests:
@@ -90,7 +102,7 @@ The APCu tests run in `tests/Apcu` with `apc.enable_cli=1` (`composer test:apcu`
 - README and CHANGELOG: APCu is recommended on PHP-FPM, with what it saves.
 
 ## Out of scope
-- **Building only the rules a request can match**, from an entry that stores the index and each rule separately. It is the fallback if AC-12 misses.
+- **Building only the exemptions a request needs.** Every request builds them all from L1, as from the store. A later spec can store their groups, as the index is stored, if many exemptions show in benchmarks.
 - **PHP files cached by OPcache as L1,** ADR-0007's deferred alternative.
 - **A lock against several workers refreshing L1 at once.** See the edge cases.
 
@@ -98,7 +110,7 @@ The APCu tests run in `tests/Apcu` with `apc.enable_cli=1` (`composer test:apcu`
 - **Several workers refresh at once.** Each writes what it read, and the last write wins. A worker that read an older version can overwrite a newer one, which then waits for the next refresh: one more `refresh_seconds` at most.
 - **Time** comes from the Clock, never `time()`. APCu's own TTL only expires entries after a day.
 - **The clock goes back,** after an NTP step for example. A read time in the future is not fresh, so the next request reads the store. Otherwise L0 would keep its manifest until the clock caught up, as it does today, and L1 would hold a whole server's.
-- **A large manifest:** 100 rules serialize to about 36 KB. An entry APCu cannot hold is a miss (AC-10).
+- **A large manifest:** 100 rules take about 24 KB as JSON. An entry APCu cannot hold is a miss (AC-10).
 - **`apc.serializer`:** the tests use PHP's own serializer, APCu's default. Another one, such as igbinary, must support enums, which the rules hold.
 - **A deploy in place that keeps PHP-FPM running:**
   - An entry written by another commit of the package is never read (AC-7).
@@ -108,15 +120,18 @@ The APCu tests run in `tests/Apcu` with `apc.enable_cli=1` (`composer test:apcu`
 ## End-to-end verification
 - `composer test`, `composer analyse`, `composer format:check`, `composer refactor:check`
 - `composer test:apcu`
-- `composer test:mutate`, if `src/Engine` changes (`KeyBuilder`)
+- `composer test:mutate`, since `src/Engine` changes (`KeyBuilder`, `RuleIndex`, `RuleMatcher`)
 - `composer bench`: `MiddlewareBench`, recorded in `benchmarks/results/`
 
 ## Decisions
-Recorded as recommended (ADR-0027), except the sixth, which the maintainer answered on 2026-10-01. The maintainer can veto the others in the PR.
-1. **L1 holds the decoded manifest's parts, not its JSON.** On the benchmark's 100 rules:
-   - fetching them from APCu costs about 0.11 ms at p50, against 0.40 ms to decode the JSON;
-   - fetching the JSON from APCu, then decoding it, saves nothing.
-2. **The index is rebuilt after the fetch** (ADR-0023). Storing it would cost as much to fetch: 0.111 ms against 0.116 ms.
+Recorded as recommended (ADR-0027), except the first, second and sixth, which the maintainer decided on 2026-10-01. The maintainer can veto the others in the PR.
+1. **L1 holds each rule's JSON, and a request builds only the rules it matches** (decided by the maintainer).
+   - The first build kept the rules as objects, which every request rebuilt in full. It missed AC-12: p95 was 651 to 697 µs (`benchmarks/results/phase-3-apcu-manifest.md`). Fetching 100 rule objects cost 109 µs at p50, and rebuilding the index 49 µs.
+   - Plain values are cheaper: APCu copies them without unserializing anything. A prototype that fetched the index and every rule's JSON, then built the 7 candidates, cost 30 µs at p50 and 59 µs at p95, against 167 and 351.
+   - The draft held the decoded rules, since fetching the whole manifest's JSON, then decoding all of it, saved nothing. Decoding only the matched rules is what saves.
+2. **The index is stored in L1, with the rules it was built from** (decided by the maintainer, amending ADR-0023).
+   - Rebuilding it cost 49 µs per request. The draft's measurement, that storing it saved nothing, held only while the rules were objects.
+   - The cache store's manifest still never holds it. In L1, it is written with its rules in one entry, and checked when it comes back.
 3. **The key names the commit Composer installed**, from `InstalledVersions`, else the package's version.
    - With OPcache, as on any production PHP-FPM, that costs 1 to 3 µs per request. The draft measured 1.5 ms in a process without OPcache, which compiles Composer's list of installed packages on every call, and so recommended a constant.
    - A constant bumped at each release would cost nothing. But a forgotten bump, or two commits of one branch, would read objects that other classes wrote.
