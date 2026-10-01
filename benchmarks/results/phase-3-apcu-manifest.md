@@ -31,7 +31,7 @@ SPEC-028 keeps the manifest a server read in APCu (ADR-0007's L1), so a PHP-FPM 
 - **On local Redis,** it also saves the manifest's round trip: 465 to 495 µs at p50, and 790 to 935 µs at p95.
 - **Against the first build,** building only the matched rules saves 70 to 110 µs at p50, and 85 to 275 µs at p95.
 - **The other cases** run the same code in all three, apart from the matcher reading rules through `Manifest::rule()`, and move within this machine's noise.
-- **Raw data:** round 2's runs of `main` and of the shipped code are in `phase-3-apcu-manifest-fallback-before.xml` and `phase-3-apcu-manifest-fallback-after.xml`, next to this file.
+- **Raw data:** round 2's runs of `main` and of the shipped code are in `phase-3-apcu-manifest-before.xml` and `phase-3-apcu-manifest-after.xml`, next to this file. The other runs' numbers are from their console output.
 
 ### Against the target
 The Phase 3 exit criteria (`docs/roadmap.md`): the package's own time, measured on the array store, under 0.5 ms at p95 on PHP-FPM with APCu.
@@ -64,7 +64,7 @@ The Phase 3 exit criteria (`docs/roadmap.md`): the package's own time, measured 
 - **PHP-FPM with APCu, on the array store,** a request is 165 µs faster at p50, and 315 to 385 µs faster at p95.
 - **On local Redis,** it saves the manifest's round trip too: 425 to 455 µs at p50, and 810 µs at p95.
 - **The other cases** run the same code before and after, and move within this machine's noise.
-- **Raw data:** round 2's runs are in `phase-3-apcu-manifest-before.xml` and `phase-3-apcu-manifest-after.xml`, next to this file.
+- **Raw data:** these numbers are from the runs' console output.
 
 ### Where the first build's time went
 Measured alone, in one process, with the benchmark's 100 rules (microseconds, 3,000 samples):
