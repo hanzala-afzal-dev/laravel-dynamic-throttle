@@ -1,6 +1,6 @@
 # SPEC-028: The manifest's APCu cache on PHP-FPM
 
-- Status: In progress
+- Status: Done
 - ADRs: ADR-0007, ADR-0010, ADR-0016, ADR-0023
 - Roadmap phase: 3
 
@@ -137,6 +137,18 @@ The APCu tests run in `tests/Apcu` with `apc.enable_cli=1` (`composer test:apcu`
 - `composer test:apcu`
 - `composer test:mutate`, since `src/Engine` changes (`KeyBuilder`, `RuleIndex`, `RuleMatcher`)
 - `composer bench`: `MiddlewareBench`, recorded in `benchmarks/results/`
+
+Done on `be8a904`:
+- `composer test`: 1,063 passed. `composer test:apcu`: 59 passed. `composer analyse`, `format:check` and `refactor:check` are clean.
+- `composer test:mutate`: 98.08%, where the gate is 85%. Nothing survives in this spec's code: one equivalent mutant in `RuleIndex` is marked, and the other survivors predate it.
+- `composer bench`: on the array store, PHP-FPM with APCu takes 415 to 419 µs at p95, against 985 to 1,069 on `main`, so AC-12 is met (`benchmarks/results/phase-3-apcu-manifest.md`).
+- The review subagent compared 300,000 seeded requests on manifests from L1 and from the store, with no difference, and fuzzed the entry's checks. Its findings are fixed test-first, in `0d94915`, `c4d291d` and `aab532a`:
+  - one process per server refreshes an expired entry (AC-15);
+  - the stale write-back comes first, with the time after the failed read, and a report that fails throws nothing (AC-4);
+  - an object in an entry is released inside the fetch (AC-9);
+  - a manifest L1 cannot hold is still served (AC-10);
+  - in strict mode too, a matched rule L1 cannot build is reported and the request goes through (AC-14).
+- Checking a stored index in place halved its cost, to 37 µs at p50 for 100 rules, in `2c2dbaf`.
 
 ## Decisions
 Recorded as recommended (ADR-0027), except the first, second and sixth, which the maintainer decided on 2026-10-01. The maintainer can veto the others in the PR.
