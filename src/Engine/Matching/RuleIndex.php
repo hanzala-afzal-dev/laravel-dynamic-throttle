@@ -77,45 +77,9 @@ final readonly class RuleIndex
      */
     public static function fromArray(array $parts, int $count): self
     {
-        $keys = array_keys($parts);
-        sort($keys);
+        self::check($parts, $count);
 
-        if ($keys !== ['literal', 'patterns', 'wildcard']) {
-            throw new InvalidArgumentException('The index must have exactly the parts literal, wildcard and patterns.');
-        }
-
-        if (! is_array($parts['patterns']) || ! array_is_list($parts['patterns']) || count($parts['patterns']) !== $count) {
-            throw self::wrongPatterns($count);
-        }
-
-        $patterns = [];
-
-        foreach ($parts['patterns'] as $pattern) {
-            $patterns[] = is_string($pattern) ? $pattern : throw self::wrongPatterns($count);
-        }
-
-        $offered = [];
-        $literal = [];
-
-        foreach (is_array($parts['literal']) ? $parts['literal'] : throw self::notMap('literal') as $method => $segments) {
-            $method = self::method($method);
-
-            foreach (is_array($segments) ? $segments : throw self::notMap('literal') as $segment => $positions) {
-                $literal[$method][$segment] = self::positions(is_array($positions) ? $positions : throw self::notMap('literal'), $count, $offered);
-            }
-        }
-
-        $wildcard = [];
-
-        foreach (is_array($parts['wildcard']) ? $parts['wildcard'] : throw self::notMap('wildcard') as $method => $positions) {
-            $wildcard[self::method($method)] = self::positions($positions, $count, $offered);
-        }
-
-        if (count($offered) !== $count) {
-            throw new InvalidArgumentException('The index offers '.count($offered)." of its {$count} rules.");
-        }
-
-        return new self($literal, $wildcard, $patterns);
+        return new self($parts['literal'], $parts['wildcard'], $parts['patterns']);
     }
 
     /**
@@ -177,6 +141,83 @@ final readonly class RuleIndex
         return $pattern === '' ? '/' : $pattern;
     }
 
+    /**
+     * Checks the parts in place, without copying them: a PHP-FPM request with L1 checks
+     * them on every request (SPEC-028).
+     *
+     * @param  array<array-key, mixed>  $parts
+     *
+     * @phpstan-assert array{literal: array<string, array<array-key, list<int>>>, wildcard: array<string, list<int>>, patterns: list<string>} $parts
+     *
+     * @throws InvalidArgumentException naming the first part that is wrong
+     */
+    private static function check(array $parts, int $count): void
+    {
+        $keys = array_keys($parts);
+        sort($keys);
+
+        if ($keys !== ['literal', 'patterns', 'wildcard']) {
+            throw new InvalidArgumentException('The index must have exactly the parts literal, wildcard and patterns.');
+        }
+
+        ['literal' => $literal, 'wildcard' => $wildcard, 'patterns' => $patterns] = $parts;
+
+        if (! is_array($patterns) || ! array_is_list($patterns) || count($patterns) !== $count) {
+            throw self::wrongPatterns($count);
+        }
+
+        foreach ($patterns as $pattern) {
+            if (! is_string($pattern)) {
+                throw self::wrongPatterns($count);
+            }
+        }
+
+        // Every list of positions, checked together below.
+        $lists = [];
+
+        foreach (is_array($literal) ? $literal : throw self::notMap('literal') as $method => $segments) {
+            self::checkMethod($method);
+
+            foreach (is_array($segments) ? $segments : throw self::notMap('literal') as $positions) {
+                $lists[] = is_array($positions) ? $positions : throw self::notMap('literal');
+            }
+        }
+
+        foreach (is_array($wildcard) ? $wildcard : throw self::notMap('wildcard') as $method => $positions) {
+            self::checkMethod($method);
+            $lists[] = $positions;
+        }
+
+        $offered = [];
+
+        foreach ($lists as $positions) {
+            if (! is_array($positions) || ! array_is_list($positions)) {
+                throw new InvalidArgumentException("The index's positions must be lists of integers.");
+            }
+
+            foreach ($positions as $position) {
+                if (! is_int($position)) {
+                    throw new InvalidArgumentException("The index's positions must be lists of integers.");
+                }
+
+                if ($position < 0 || $position >= $count) {
+                    throw new InvalidArgumentException("The index's position {$position} is not one of its {$count} rules.");
+                }
+
+                if (isset($offered[$position])) {
+                    throw new InvalidArgumentException("The index offers rule {$position} more than once.");
+                }
+
+                // Only isset() and count() read it, which see any value alike.
+                $offered[$position] = true; // @pest-mutate-ignore: TrueToFalse
+            }
+        }
+
+        if (count($offered) !== $count) {
+            throw new InvalidArgumentException('The index offers '.count($offered)." of its {$count} rules.");
+        }
+    }
+
     private static function wrongPatterns(int $count): InvalidArgumentException
     {
         return new InvalidArgumentException("The index's patterns must be a list of {$count} strings, one for each rule.");
@@ -192,46 +233,11 @@ final readonly class RuleIndex
     /**
      * A method of a stored index: one of RequestMethod's values.
      */
-    private static function method(int|string $method): string
+    private static function checkMethod(int|string $method): void
     {
-        return is_string($method) && RequestMethod::tryFrom($method) instanceof RequestMethod
-            ? $method
-            : throw new InvalidArgumentException("The index has a method it does not know: \"{$method}\".");
-    }
-
-    /**
-     * Positions of a stored index: each one a rule's, and offered once in all.
-     *
-     * @param  array<int, true>  $offered  the positions offered so far, as keys
-     * @return list<int>
-     */
-    private static function positions(mixed $positions, int $count, array &$offered): array
-    {
-        if (! is_array($positions) || ! array_is_list($positions)) {
-            throw new InvalidArgumentException("The index's positions must be lists of integers.");
+        if (! is_string($method) || ! RequestMethod::tryFrom($method) instanceof RequestMethod) {
+            throw new InvalidArgumentException("The index has a method it does not know: \"{$method}\".");
         }
-
-        $checked = [];
-
-        foreach ($positions as $position) {
-            if (! is_int($position)) {
-                throw new InvalidArgumentException("The index's positions must be lists of integers.");
-            }
-
-            if ($position < 0 || $position >= $count) {
-                throw new InvalidArgumentException("The index's position {$position} is not one of its {$count} rules.");
-            }
-
-            if (isset($offered[$position])) {
-                throw new InvalidArgumentException("The index offers rule {$position} more than once.");
-            }
-
-            // Only isset() and count() read it, which see any value alike.
-            $offered[$position] = true; // @pest-mutate-ignore: TrueToFalse
-            $checked[] = $position;
-        }
-
-        return $checked;
     }
 
     /**
