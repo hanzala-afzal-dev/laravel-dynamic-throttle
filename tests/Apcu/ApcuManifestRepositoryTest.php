@@ -5,8 +5,10 @@ declare(strict_types=1);
 use Afzal\DynamicThrottle\Engine\Exemptions\ExemptionSet;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Matching\RuleIndex;
+use Afzal\DynamicThrottle\Manifest\CompiledRule;
 use Afzal\DynamicThrottle\Manifest\ManifestCodec;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
+use Afzal\DynamicThrottle\Manifest\ManifestSnapshot;
 use Afzal\DynamicThrottle\Manifest\ManifestState;
 use Afzal\DynamicThrottle\Manifest\ManifestUnavailable;
 use Afzal\DynamicThrottle\Support\ApcuManifestCache;
@@ -209,6 +211,34 @@ it('AC-9: reads the store over an entry that is not a snapshot, replaces the ent
     $manifest = repositoryWithL1($store, new FakeClock)->current();
 
     expect([$manifest->version, $manifest->state, LocalManifests::cache()->fetch()?->version])->toBe([7, ManifestState::Fresh, 7]);
+});
+
+it('AC-9: reads the store over an entry whose rules cannot build a manifest, and throws nothing', function (): void {
+    // A rule of the right class without its properties, as a class that changed since it was stored leaves one.
+    $broken = (new ReflectionClass(CompiledRule::class))->newInstanceWithoutConstructor();
+    LocalManifests::cache()->store(new ManifestSnapshot(
+        version: 7, rules: [$broken], exemptions: [], state: ManifestState::Fresh, readAt: FakeClock::T0 * 1_000_000,
+    ));
+    $store = new CountingCacheStore;
+    $store->forever('dt:m', ManifestFixtures::json(8));
+
+    $manifest = repositoryWithL1($store, new FakeClock)->current();
+
+    expect([$manifest->version, $manifest->state, LocalManifests::cache()->fetch()?->version])->toBe([8, ManifestState::Fresh, 8]);
+});
+
+it('AC-9: serves no rules, and throws nothing, when the store fails and L1\'s entry cannot build a manifest', function (): void {
+    Exceptions::fake();
+    $broken = (new ReflectionClass(CompiledRule::class))->newInstanceWithoutConstructor();
+    LocalManifests::cache()->store(new ManifestSnapshot(
+        version: 7, rules: [$broken], exemptions: [], state: ManifestState::Fresh, readAt: (FakeClock::T0 - 3) * 1_000_000,
+    ));
+    $store = new CountingCacheStore;
+    $store->failing = true;
+
+    $manifest = repositoryWithL1($store, new FakeClock)->current();
+
+    expect([$manifest->state, $manifest->rules])->toBe([ManifestState::Missing, []]);
 });
 
 it('AC-10: serves the store\'s rules when APCu cannot hold them, and throws nothing', function (): void {

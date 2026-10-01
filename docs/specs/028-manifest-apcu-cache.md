@@ -65,7 +65,8 @@ The APCu tests run in `tests/Apcu` with `apc.enable_cli=1` (`composer test:apcu`
   - an array;
   - an object of another class;
   - an object that throws when APCu reads it;
-  - a snapshot whose rules are not compiled rules, or whose exemptions are not compiled exemptions.
+  - a snapshot whose rules are not compiled rules, or whose exemptions are not compiled exemptions;
+  - a snapshot whose rules cannot build a manifest, such as a rule whose class changed since it was stored.
 - **AC-10 (APCu full)** When APCu cannot store the entry, the request still gets the store's rules, and nothing throws.
 - **AC-11 (the index)** An L1 entry holds no rule index, and a manifest built from one matches exactly as the decoded manifest does.
 - **AC-12 (the benchmark)** `MiddlewareBench` gets a case "PHP-FPM with APCu", with L0 emptied before each request. On the array store, the package's own time is under 0.5 ms at p95: the Phase 3 exit criterion.
