@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle\Tests\Support;
 
+use Closure;
 use Illuminate\Cache\ArrayStore;
 use RuntimeException;
 
 /**
  * An array cache store that counts the reads of each key, and fails every read
- * once $failing is set, as a cache store that is down does (SPEC-028).
+ * once $failing is set, as a cache store that is down does (SPEC-028). Each read
+ * first runs $beforeRead, such as a clock that moves on while the read waits.
  */
 final class CountingCacheStore extends ArrayStore
 {
@@ -17,12 +19,15 @@ final class CountingCacheStore extends ArrayStore
 
     public bool $failing = false;
 
+    public ?Closure $beforeRead = null;
+
     /** @var array<string, int> how many times each key was read */
     private array $reads = [];
 
     public function get($key): mixed
     {
         $this->reads[$key] = $this->reads($key) + 1;
+        ($this->beforeRead)?->__invoke();
 
         return $this->failing ? throw new RuntimeException(self::DOWN) : parent::get($key);
     }

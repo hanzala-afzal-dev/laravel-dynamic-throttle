@@ -64,3 +64,7 @@ it('SPEC-028: builds the key of the manifest in APCu under the prefix, for one a
     // A server's apps share APCu, and so do the versions a deploy in place runs.
     expect((new KeyBuilder('dt:'))->localManifest('app1', '0865f7e'))->toBe('dt:manifest:app1:0865f7e');
 });
+
+it('SPEC-028 AC-15: builds the key of the claim on the refresh of the manifest in APCu, next to the manifest\'s', function (): void {
+    expect((new KeyBuilder('dt:'))->localManifestRefresh('app1', '0865f7e'))->toBe('dt:manifest:app1:0865f7e:refresh');
+});

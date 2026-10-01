@@ -14,6 +14,7 @@ use Afzal\DynamicThrottle\Tests\Support\ManifestFixtures;
 use Afzal\DynamicThrottle\Tests\Support\RuleSchema;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository;
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
@@ -244,4 +245,37 @@ it('AC-20: keeps the manifest in memory for the whole process, until flushState(
 
     expect([$fromAnotherInstance->version, $fromAnotherInstance->state])->toBe([7, ManifestState::Fresh])
         ->and($afterFlush->state)->toBe(ManifestState::Missing);
+});
+
+it('SPEC-028 AC-4: throws nothing when reporting an unreadable manifest fails', function (): void {
+    app()->instance(ExceptionHandler::class, new class implements ExceptionHandler
+    {
+        public function report(Throwable $e): void
+        {
+            throw new RuntimeException('The log is down.');
+        }
+
+        public function shouldReport(Throwable $e): bool
+        {
+            return true;
+        }
+
+        public function render($request, Throwable $e): never
+        {
+            throw $e;
+        }
+
+        public function renderForConsole($output, Throwable $e): void {}
+    });
+    $cache = new Repository(manifestStore());
+    $cache->forever('dt:m', ManifestFixtures::json(7));
+    $clock = new FakeClock;
+    $repository = manifestRepository($cache, $clock, fakeRebuilder());
+    $repository->current();
+    $cache->forget('dt:m');
+    $clock->setSeconds(FakeClock::T0 + 3);
+
+    $manifest = $repository->current();
+
+    expect([$manifest->version, $manifest->state])->toBe([7, ManifestState::Stale]);
 });

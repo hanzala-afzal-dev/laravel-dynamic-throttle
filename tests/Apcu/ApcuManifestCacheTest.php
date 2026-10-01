@@ -9,6 +9,7 @@ use Afzal\DynamicThrottle\Support\ApcuManifestCache;
 use Afzal\DynamicThrottle\Tests\Support\FakeClock;
 use Afzal\DynamicThrottle\Tests\Support\LocalManifests;
 use Afzal\DynamicThrottle\Tests\Support\ManifestFixtures;
+use Afzal\DynamicThrottle\Tests\Support\ThrowsWhenReleased;
 use Afzal\DynamicThrottle\Tests\Support\UnreadableEntry;
 
 covers(ApcuManifestCache::class);
@@ -91,7 +92,34 @@ it('AC-9: ignores and deletes an entry that is not a snapshot, and throws nothin
     'a snapshot object, which L1 never stores' => [fn (): ManifestSnapshot => LocalManifests::snapshot(7)],
     'an entry whose rules are not JSON strings' => [fn (): array => [...LocalManifests::snapshot(7)->toArray(), 'rules' => [ManifestFixtures::rule()]]],
     'an entry with an unknown state' => [fn (): array => [...LocalManifests::snapshot(7)->toArray(), 'state' => 'warm']],
+    'an object that throws when it is released' => [fn (): ThrowsWhenReleased => new ThrowsWhenReleased],
+    'an object deep in an entry' => [fn (): array => [
+        ...LocalManifests::snapshot(7)->toArray(),
+        'exemptions' => [[...ManifestFixtures::exemption(), 'id' => new ThrowsWhenReleased]],
+    ]],
 ]);
+
+it('AC-15: lets one process at a time claim the refresh, for the seconds it asks, until a snapshot is stored', function (): void {
+    $claimed = [LocalManifests::cache()->claim(2), LocalManifests::cache()->claim(2)];
+    $ttl = apcu_key_info((new KeyBuilder('dt:'))->localManifestRefresh(LocalManifests::APP, LocalManifests::VERSION))['ttl'] ?? null;
+
+    LocalManifests::cache()->store(LocalManifests::snapshot(7));
+
+    expect([...$claimed, $ttl])->toBe([true, false, 2])
+        ->and(LocalManifests::cache()->claim(2))->toBeTrue();
+});
+
+it('AC-15: claims for a second at least, so a claim never lasts for ever', function (): void {
+    LocalManifests::cache()->claim(0);
+
+    expect(apcu_key_info((new KeyBuilder('dt:'))->localManifestRefresh(LocalManifests::APP, LocalManifests::VERSION))['ttl'] ?? null)->toBe(1);
+});
+
+it('AC-15: claims the refresh of one app and one version of the package', function (): void {
+    LocalManifests::cache(app: 'staging')->claim(2);
+
+    expect([LocalManifests::cache(app: 'production')->claim(2), LocalManifests::cache(app: 'staging', version: 'v2')->claim(2)])->toBe([true, true]);
+});
 
 it('AC-10: keeps nothing, and throws nothing, when APCu cannot store the entry', function (ManifestSnapshot $snapshot): void {
     LocalManifests::cache()->store($snapshot);

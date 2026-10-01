@@ -14,9 +14,11 @@ use Afzal\DynamicThrottle\Tests\Support\FakeClock;
 use Afzal\DynamicThrottle\Tests\Support\LocalManifests;
 use Afzal\DynamicThrottle\Tests\Support\ManifestFixtures;
 use Afzal\DynamicThrottle\Tests\Support\RecordingRebuilder;
+use Afzal\DynamicThrottle\Tests\Support\ThrowsWhenReleased;
 use Afzal\DynamicThrottle\Tests\Support\UnreadableEntry;
 use Afzal\DynamicThrottle\Tests\TestCase;
 use Illuminate\Cache\Repository;
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Support\Facades\Exceptions;
 
 pest()->extend(TestCase::class);
@@ -198,6 +200,112 @@ it('AC-4: serves no rules when neither L0 nor L1 holds a manifest, and keeps not
     $manifest = repositoryWithL1($store, new FakeClock)->current();
 
     expect([$manifest->state, $manifest->rules(), LocalManifests::cache()->fetch()])->toBe([ManifestState::Missing, [], null]);
+});
+
+it('AC-4: writes the stale manifest back with the time after a store that takes time to fail, so the server waits on it once', function (): void {
+    Exceptions::fake();
+    $clock = new FakeClock;
+    LocalManifests::cache()->store(LocalManifests::snapshot(7, readAt: (FakeClock::T0 - 3) * 1_000_000));
+    $store = new CountingCacheStore;
+    $store->failing = true;
+    // Each read waits 1.5 seconds before it fails, as a store that times out does.
+    $store->beforeRead = fn () => $clock->setMicroseconds($clock->microseconds() + 1_500_000);
+
+    $manifest = repositoryWithL1($store, $clock)->current();
+    $entry = LocalManifests::cache()->fetch();
+    $readsBefore = $store->reads('dt:m');
+    emptyL0();
+    $next = repositoryWithL1($store, $clock)->current();
+
+    expect([$manifest->version, $manifest->state, $next->version])->toBe([7, ManifestState::Stale, 7])
+        ->and($entry?->readAt)->toBe(FakeClock::T0 * 1_000_000 + 1_500_000)
+        ->and($store->reads('dt:m'))->toBe($readsBefore);
+});
+
+it('AC-4: still writes the stale manifest back, and throws nothing, when reporting the store\'s failure fails', function (): void {
+    app()->instance(ExceptionHandler::class, new class implements ExceptionHandler
+    {
+        public function report(Throwable $e): void
+        {
+            throw new RuntimeException('The log is down.');
+        }
+
+        public function shouldReport(Throwable $e): bool
+        {
+            return true;
+        }
+
+        public function render($request, Throwable $e): never
+        {
+            throw $e;
+        }
+
+        public function renderForConsole($output, Throwable $e): void {}
+    });
+    LocalManifests::cache()->store(LocalManifests::snapshot(7, readAt: (FakeClock::T0 - 3) * 1_000_000));
+    $store = new CountingCacheStore;
+    $store->failing = true;
+
+    $manifest = repositoryWithL1($store, new FakeClock)->current();
+
+    expect([$manifest->version, $manifest->state, LocalManifests::cache()->fetch()?->readAt])->toBe([7, ManifestState::Stale, FakeClock::T0 * 1_000_000]);
+});
+
+it('AC-15: serves the expired entry while another process of the server reads the store, and reads nothing itself', function (): void {
+    $store = new CountingCacheStore;
+    $store->forever('dt:m', ManifestFixtures::json(8));
+    LocalManifests::cache()->store(LocalManifests::snapshot(7, readAt: (FakeClock::T0 - 3) * 1_000_000));
+    LocalManifests::cache()->claim(2);
+
+    $manifest = repositoryWithL1($store, new FakeClock)->current();
+
+    expect([$manifest->version, $store->reads('dt:m')])->toBe([7, 0]);
+});
+
+it('AC-15: claims the refresh of an expired entry, reads the store, and ends the claim when it stores the entry', function (): void {
+    $store = new CountingCacheStore;
+    $store->forever('dt:m', ManifestFixtures::json(8));
+    LocalManifests::cache()->store(LocalManifests::snapshot(7, readAt: (FakeClock::T0 - 3) * 1_000_000));
+
+    $manifest = repositoryWithL1($store, new FakeClock)->current();
+
+    expect([$manifest->version, $store->reads('dt:m'), LocalManifests::cache()->fetch()?->version])->toBe([8, 1, 8])
+        ->and(LocalManifests::cache()->claim(2))->toBeTrue();
+});
+
+it('AC-15: reads the store when L1 holds no entry, without a claim to wait for', function (): void {
+    $store = new CountingCacheStore;
+    $store->forever('dt:m', ManifestFixtures::json(8));
+    LocalManifests::cache()->claim(2);
+
+    $manifest = repositoryWithL1($store, new FakeClock)->current();
+
+    expect([$manifest->version, $store->reads('dt:m')])->toBe([8, 1]);
+});
+
+it('AC-9: throws nothing for an object deep in an entry, even with the store down', function (): void {
+    Exceptions::fake();
+    apcu_store(LocalManifests::key(), [
+        ...LocalManifests::snapshot(7, readAt: (FakeClock::T0 - 3) * 1_000_000)->toArray(),
+        'exemptions' => [[...ManifestFixtures::exemption(), 'id' => new ThrowsWhenReleased]],
+    ]);
+    $store = new CountingCacheStore;
+    $store->failing = true;
+
+    $manifest = repositoryWithL1($store, new FakeClock)->current();
+
+    expect([$manifest->state, apcu_exists(LocalManifests::key())])->toBe([ManifestState::Missing, false]);
+});
+
+it('AC-10: serves a manifest that cannot be written to L1, and throws nothing', function (): void {
+    // json_decode() reads 1e400 as INF, which json_encode() cannot write.
+    $json = str_replace('"response_override":null', '"response_override":{"retry":1e400}', ManifestFixtures::json(7));
+    $store = new CountingCacheStore;
+    $store->forever('dt:m', $json);
+
+    $manifest = repositoryWithL1($store, new FakeClock)->current();
+
+    expect([$manifest->version, $manifest->state, count($manifest->rules()), apcu_exists(LocalManifests::key())])->toBe([7, ManifestState::Fresh, 1, false]);
 });
 
 it('AC-9: reads the store over an entry that is not a snapshot, replaces the entry, and throws nothing', function (): void {
