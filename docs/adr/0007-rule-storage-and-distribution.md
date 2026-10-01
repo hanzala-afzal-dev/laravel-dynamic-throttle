@@ -96,3 +96,5 @@
 ## Decision record
 
 At the Phase 2 exit review, on 2026-09-28, the maintainer decided to build L1. On PHP-FPM, reading and decoding the manifest cost 0.3 to 0.6 ms per request (`benchmarks/results/phase-2-exit.md`). SPEC-028 builds L1 in APCu, as the read path's table above describes, in Phase 3.
+
+On 2026-10-01, for SPEC-028, the maintainer settled how to read L1's lifetime in the read path's table. "TTL `refresh_seconds`" is how long an L1 entry counts as fresh. The entry itself is kept for a day, so that it can serve as the last known manifest when the manifest is missing, as L0's does in a long-running worker.

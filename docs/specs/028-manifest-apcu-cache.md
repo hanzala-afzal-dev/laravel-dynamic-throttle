@@ -1,6 +1,6 @@
 # SPEC-028: The manifest's APCu cache on PHP-FPM
 
-- Status: Draft
+- Status: In progress
 - ADRs: ADR-0007, ADR-0010, ADR-0016, ADR-0023
 - Roadmap phase: 3
 
@@ -106,7 +106,7 @@ The APCu tests run in `tests/Apcu` with `apc.enable_cli=1` (`composer test:apcu`
 - `composer bench`: `MiddlewareBench`, recorded in `benchmarks/results/`
 
 ## Decisions
-Recorded as recommended (ADR-0027), except the open question below.
+Recorded as recommended (ADR-0027), except the sixth, which the maintainer answered on 2026-10-01. The maintainer can veto the others in the PR.
 1. **L1 holds the decoded manifest's parts, not its JSON.** On the benchmark's 100 rules:
    - fetching them from APCu costs about 0.11 ms at p50, against 0.40 ms to decode the JSON;
    - fetching the JSON from APCu, then decoding it, saves nothing.
@@ -114,11 +114,6 @@ Recorded as recommended (ADR-0027), except the open question below.
 3. **The key names the package version** as a constant bumped at each release. Composer's `InstalledVersions` costs about 1.5 ms on its first call in a process, too much for the request path.
 4. **No new config key.** L1 follows APCu, as the cooldown does (SPEC-012), and `refresh_seconds` 0 switches it off.
 5. **No lock when L1 goes stale.** The refresh is at most one extra store read and decode per worker, once per `refresh_seconds`.
-
-## Open question
-**ADR-0007's L1 lifetime.**
-- ADR-0007's table gives L1 a TTL of `refresh_seconds`. Its "Missing manifest" section says to use a last known manifest from L0 or L1.
-- On PHP-FPM, an entry that expires after `refresh_seconds` holds no last known manifest 2 seconds into an outage.
-- Recommendation:
-  - read the table's TTL as L1's freshness, and keep the entry a day as the last known manifest, as L0 keeps its manifest in a long-running worker;
-  - record that reading in ADR-0007's decision record.
+6. **L1's lifetime: fresh for `refresh_seconds`, kept a day** (answered by the maintainer).
+   - ADR-0007's table gives L1 a TTL of `refresh_seconds`, and its "Missing manifest" section uses a last known manifest from L0 or L1. An entry that expired after `refresh_seconds` would hold no last known manifest 2 seconds into an outage.
+   - So the table's TTL is L1's freshness, and the entry is kept a day as the last known manifest, as L0 keeps its manifest in a long-running worker. ADR-0007's decision record notes this reading.
