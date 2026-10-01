@@ -77,6 +77,17 @@ it('AC-13: says the limits are not scaled, writes nothing, and exits 0', functio
     expect(Settings::audit())->toBe([]);
 });
 
+it('AC-13: says the limits are not scaled once the factor has ended, writes nothing, and exits 0', function (): void {
+    $this->artisan('dynamic-throttle:scale', ['factor' => '2', '--for' => '30m'])->assertExitCode(0);
+    $this->travelTo(Carbon::parse('2027-01-01 00:31:00', 'UTC'));
+
+    $this->artisan('dynamic-throttle:scale', ['factor' => 'off'])
+        ->expectsOutputToContain('Limits are not scaled.')
+        ->assertExitCode(0);
+
+    expect(Settings::audit())->toHaveCount(1);
+});
+
 it('AC-13: rejects a factor it cannot use, says why, and writes nothing', function (string $factor): void {
     $this->artisan('dynamic-throttle:scale', ['factor' => $factor])
         ->expectsOutputToContain("The factor must be from 0.1 to 10, with at most two decimals, such as 1.5, got \"{$factor}\".")

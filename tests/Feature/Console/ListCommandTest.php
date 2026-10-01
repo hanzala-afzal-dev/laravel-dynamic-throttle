@@ -62,3 +62,23 @@ it('AC-17: says there is no rule yet', function (): void {
         ->expectsOutputToContain('There are no rules yet.')
         ->assertExitCode(0);
 });
+
+it('shows a rule\'s name as text, never as console styles or terminal controls (review)', function (): void {
+    Rule::create(RuleSchema::attributes(['name' => '<fg=nope>API</>']));
+    Rule::create(RuleSchema::attributes(['name' => "Web\e]0;owned\x07\e[2K", 'pattern' => 'web/*']));
+
+    $this->artisan('dynamic-throttle:list')
+        ->expectsOutputToContain('<fg=nope>API</>')
+        ->expectsOutputToContain('Web\\x1B]0;owned\\x07\\x1B[2K')
+        ->doesntExpectOutputToContain("\e")
+        ->assertExitCode(0);
+});
+
+it('says it cannot read the rules when the database is down, and exits 1', function (): void {
+    config()->set('database.connections.unreachable', ['driver' => 'sqlite', 'database' => '/nonexistent/dynamic-throttle.sqlite', 'prefix' => '']);
+    config()->set('dynamic-throttle.database.connection', 'unreachable');
+
+    $this->artisan('dynamic-throttle:list')
+        ->expectsOutputToContain('Could not read the rules:')
+        ->assertExitCode(1);
+});

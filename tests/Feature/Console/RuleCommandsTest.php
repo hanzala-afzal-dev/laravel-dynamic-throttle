@@ -121,3 +121,31 @@ it('AC-23: writes one audit entry for each change, with the CLI\'s actor, and th
     expect(Settings::audit())->toBe([$entry('rule.disable', true, false), $entry('rule.enable', false, true)])
         ->and(Rule::query()->count())->toBe(1);
 });
+
+it('shows a rule\'s name as text, so a name with console styles cannot stop the recovery path (review)', function (): void {
+    $rule = Throttling::rule(['name' => '<fg=nope>API</>']);
+
+    $this->artisan('dynamic-throttle:disable-rule', ['id' => (string) $rule->id])
+        ->expectsOutputToContain("Rule {$rule->id} (<fg=nope>API</>) is disabled.")
+        ->assertExitCode(0);
+
+    expect($rule->refresh()->enabled)->toBeFalse();
+});
+
+it('accepts --force on enable-rule, which never asks, so scripts can pass it to every command', function (): void {
+    $rule = Throttling::rule(['enabled' => false]);
+    $this->app['env'] = 'production';
+
+    $this->artisan('dynamic-throttle:enable-rule', ['id' => (string) $rule->id, '--force' => true])->assertExitCode(0);
+
+    expect($rule->refresh()->enabled)->toBeTrue();
+});
+
+it('says it cannot read the rule when the database is down, and exits 1', function (string $command): void {
+    config()->set('database.connections.unreachable', ['driver' => 'sqlite', 'database' => '/nonexistent/dynamic-throttle.sqlite', 'prefix' => '']);
+    config()->set('dynamic-throttle.database.connection', 'unreachable');
+
+    $this->artisan("dynamic-throttle:{$command}", ['id' => '1'])
+        ->expectsOutputToContain('Could not read rule 1:')
+        ->assertExitCode(1);
+})->with(['disable-rule', 'enable-rule']);

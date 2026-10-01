@@ -77,6 +77,8 @@ it('AC-24: rejects plain values that are not settings', function (mixed $setting
     'a factor below 0.1' => [['scale_factor' => ['percent' => 9, 'until' => null]]],
     'a factor above 10' => [['scale_factor' => ['percent' => 1_001, 'until' => null]]],
     'a factor until a string' => [['scale_factor' => ['percent' => 150, 'until' => 'soon']]],
+    'bypass that is null, not an object (review)' => [['bypass_all' => null]],
+    'a factor that is null, not an object (review)' => [['scale_factor' => null]],
 ]);
 
 it('AC-24: names a setting it does not know', function (): void {

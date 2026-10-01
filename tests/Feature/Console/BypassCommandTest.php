@@ -90,6 +90,17 @@ it('AC-12: says bypass is already off, writes nothing, and exits 0', function ()
     expect(Settings::audit())->toBe([]);
 });
 
+it('AC-12: says bypass is already off once it has ended, writes nothing, and exits 0', function (): void {
+    $this->artisan('dynamic-throttle:bypass', ['state' => 'on', '--for' => '30m'])->assertExitCode(0);
+    $this->travelTo(Carbon::parse('2027-01-01 00:31:00', 'UTC'));
+
+    $this->artisan('dynamic-throttle:bypass', ['state' => 'off'])
+        ->expectsOutputToContain('Bypass is already off.')
+        ->assertExitCode(0);
+
+    expect(Settings::audit())->toHaveCount(1);
+});
+
 it('AC-12: rejects what it cannot do, says why, and writes nothing', function (array $arguments, string $message): void {
     $this->artisan('dynamic-throttle:bypass', $arguments)
         ->expectsOutputToContain($message)
@@ -101,6 +112,7 @@ it('AC-12: rejects what it cannot do, says why, and writes nothing', function (a
     '--for with --forever' => [['state' => 'on', '--for' => '30m', '--forever' => true], 'Pass --for or --forever, not both.'],
     '--for with off' => [['state' => 'off', '--for' => '30m'], '--for and --forever do not apply to off.'],
     '--forever with off' => [['state' => 'off', '--forever' => true], '--for and --forever do not apply to off.'],
+    '--for without a duration, which would mean one hour by mistake' => [['state' => 'on', '--for' => null], '--for needs a duration, such as 30m.'],
 ]);
 
 it('AC-14: takes a duration in seconds, minutes, hours or days, up to 365 days', function (string $for, string $until): void {
@@ -181,10 +193,29 @@ it('AC-21: keeps the change when the compile fails, says servers keep the previo
     $this->artisan('dynamic-throttle:bypass', ['state' => 'on', '--for' => '30m'])
         ->expectsOutputToContain('The change is saved, but the manifest could not be compiled: The store is down.')
         ->expectsOutputToContain('Servers keep the previous manifest until a compile succeeds: run php artisan dynamic-throttle:compile, or wait for the scheduled one.')
+        // Servers do not apply it yet, so the command never says they do (review).
+        ->doesntExpectOutputToContain('every request goes through')
         ->assertExitCode(1);
 
     expect(Setting::query()->count())->toBe(1)
         ->and(Settings::audit())->toHaveCount(1);
+});
+
+it('AC-21: says to compile by hand when no compile is scheduled', function (): void {
+    config()->set('dynamic-throttle.manifest.schedule', false);
+    $store = new class extends ArrayStore
+    {
+        public function forever($key, $value): bool
+        {
+            throw new RuntimeException('The store is down.');
+        }
+    };
+    app()->instance(ManifestCompiler::class, new ManifestCompiler(new Repository($store), new KeyBuilder('dt:')));
+
+    $this->artisan('dynamic-throttle:bypass', ['state' => 'on', '--for' => '30m'])
+        ->expectsOutputToContain('Servers keep the previous manifest until a compile succeeds: run php artisan dynamic-throttle:compile.')
+        ->doesntExpectOutputToContain('wait for the scheduled one')
+        ->assertExitCode(1);
 });
 
 it('AC-22: prints the error and exits 1 when the database cannot be reached, and requests keep the last compiled settings', function (): void {

@@ -76,11 +76,22 @@ it('AC-18: shows a manifest it cannot read, and still exits 0', function (): voi
         ->assertExitCode(0);
 });
 
-it('AC-18: shows a setting saved but not compiled yet, and still exits 0', function (): void {
+it('AC-18: shows a setting saved but not compiled yet, and what is saved, and still exits 0', function (): void {
     Throttling::rule();
     Settings::insert(['expires_at' => Carbon::parse('2027-01-01 00:30:00', 'UTC')->toDateTimeString()]);
 
+    // The manifest has no bypass, so only the saved setting's line shows its end time.
     $this->artisan('dynamic-throttle:status')
+        ->expectsOutputToContain('The database holds settings that no compile has written yet: run php artisan dynamic-throttle:compile.')
+        ->expectsOutputToContain('on until 2027-01-01 00:30:00 UTC, 30 minutes left')
+        ->assertExitCode(0);
+});
+
+it('AC-18: shows a setting saved but not compiled yet when the manifest is missing too (review)', function (): void {
+    Settings::insert(['expires_at' => Carbon::parse('2027-01-01 00:30:00', 'UTC')->toDateTimeString()]);
+
+    $this->artisan('dynamic-throttle:status')
+        ->expectsOutputToContain('missing: run php artisan dynamic-throttle:compile')
         ->expectsOutputToContain('The database holds settings that no compile has written yet: run php artisan dynamic-throttle:compile.')
         ->assertExitCode(0);
 });
@@ -106,6 +117,26 @@ it('AC-19: prints the config error, and exits 1, so a deploy script can stop', f
     'an undefined store' => ['store', 'missing', 'Cache store [missing] is not defined.'],
     'an invalid prefix' => ['prefix', 'bad prefix!', 'The key prefix must be at most 32 characters from A-Z, a-z, 0-9, ":", "_", "." and "-".'],
 ]);
+
+it('AC-19: reports a Redis connection the config does not define, which would let every request through (review)', function (array $config): void {
+    config()->set($config);
+
+    $this->artisan('dynamic-throttle:status')
+        ->expectsOutputToContain('The config is invalid: Redis connection [nope] not configured.')
+        ->assertExitCode(1);
+})->with([
+    'the redis driver' => [['dynamic-throttle.driver' => 'redis', 'dynamic-throttle.redis_connection' => 'nope']],
+    'auto, on a redis cache store' => [['cache.stores.redis.connection' => 'nope', 'dynamic-throttle.store' => 'redis']],
+]);
+
+it('AC-19: accepts a Redis cluster connection', function (): void {
+    config()->set('database.redis.clusters.throttle', [['host' => '127.0.0.1', 'port' => 6379]]);
+    config()->set(['dynamic-throttle.driver' => 'redis', 'dynamic-throttle.redis_connection' => 'throttle']);
+
+    $this->artisan('dynamic-throttle:status')
+        ->expectsOutputToContain('redis, connection throttle')
+        ->assertExitCode(0);
+});
 
 it('AC-20: writes nothing, and compiles and rebuilds nothing, even with the manifest missing', function (): void {
     Throttling::rule();

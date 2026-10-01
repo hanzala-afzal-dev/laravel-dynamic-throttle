@@ -47,7 +47,10 @@ it('AC-1: migrates up and down, and keeps every type of a setting and an audit e
             'action' => AuditAction::SettingsScale,
             'target' => 'setting:scale_factor',
             'before' => null,
-            'after' => ['value' => '1.25', 'expires_at' => '2027-01-15T08:01:00+00:00'],
+            // MySQL's JSON type would put value first, as it sorts keys by length.
+            'after' => ['expires_at' => '2027-01-15T08:01:00+00:00', 'value' => '1.25'],
+            // Browsers' user agents can be long (the review): SPEC-019 writes them whole.
+            'user_agent' => str_repeat('Mozilla/5.0 ', 60),
         ]);
         $setting = Setting::query()->firstOrFail();
         $entry = AuditEntry::query()->firstOrFail();
@@ -59,9 +62,10 @@ it('AC-1: migrates up and down, and keeps every type of a setting and an audit e
         ->and([Schema::connection("settings-{$driver}")->hasTable('dynamic_throttle_settings'), Schema::connection("settings-{$driver}")->hasTable('dynamic_throttle_audit_log')])
         ->toBe([false, false])
         ->and([$setting->name, $setting->value, $setting->expires_at?->getTimestamp()])->toBe([SettingName::ScaleFactor, '1.25', FakeClock::T0 + 60])
-        ->and([$entry->getAttribute('action'), $entry->getAttribute('before')])->toBe([AuditAction::SettingsScale, null])
-        // MySQL's JSON type may reorder an object's keys.
-        ->and($entry->getAttribute('after'))->toEqual(['value' => '1.25', 'expires_at' => '2027-01-15T08:01:00+00:00']);
+        // Before and after come back exactly as written, keys in order, which MySQL's JSON type would not keep (the review).
+        ->and([$entry->getAttribute('action'), $entry->getAttribute('before'), $entry->getAttribute('after')])
+        ->toBe([AuditAction::SettingsScale, null, ['expires_at' => '2027-01-15T08:01:00+00:00', 'value' => '1.25']])
+        ->and($entry->getAttribute('user_agent'))->toBe(str_repeat('Mozilla/5.0 ', 60));
 })->with([
     'MySQL' => ['mysql', (string) env('MYSQL_HOST', '127.0.0.1'), (int) env('MYSQL_PORT', 3307), 'pdo_mysql'],
     'PostgreSQL' => ['pgsql', (string) env('PGSQL_HOST', '127.0.0.1'), (int) env('PGSQL_PORT', 5433), 'pdo_pgsql'],

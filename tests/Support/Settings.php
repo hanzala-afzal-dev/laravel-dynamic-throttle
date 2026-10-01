@@ -101,12 +101,15 @@ final class Settings
     }
 
     /**
-     * The CLI's actor in the audit log (ADR-0015): the system user that runs the command.
+     * The CLI's actor in the audit log (ADR-0015): the system user that runs the
+     * command, and the user who ran it through sudo.
      */
     public static function cliActor(): string
     {
         $user = function_exists('posix_getpwuid') && function_exists('posix_geteuid') ? (posix_getpwuid(posix_geteuid())['name'] ?? null) : null;
+        $user = is_string($user) && $user !== '' ? $user : (getenv('USER') ?: 'unknown');
+        $sudo = getenv('SUDO_USER');
 
-        return 'cli:'.(is_string($user) && $user !== '' ? $user : (getenv('USER') ?: 'unknown'));
+        return "cli:{$user}".(is_string($sudo) && $sudo !== '' && $sudo !== $user ? " (sudo by {$sudo})" : '');
     }
 }
