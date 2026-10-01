@@ -149,7 +149,7 @@ Done on `c7bbd77`:
   - concurrent changes are retried, and a rule is read again in the transaction;
   - an ended setting turned off is a no-op; `--for` needs a duration; `enable-rule` takes `--force`; the commands say when the database is down; the actor names the sudo user; the audit log keeps JSON as written and long user agents.
 - Two findings are proposals for the maintainer before 0.1.0 (the roadmap): the manifest's key naming its format, and the package's times in UTC.
-- Two test-only commits came after the red step: `8ca4537` runs a pending command before reading what it wrote, which the first AC-15 test did not; `ed3e0bb` and `5aabf20` are Rector's style changes. None changes what a test asserts.
+- Three test-only commits followed the red steps. `8ca4537` runs a pending command before reading what it wrote, which an AC-15 test did not. `ed3e0bb` and `5aabf20` are Rector's style changes. None changes what a test asserts.
 - Not done: the end time is computed before the confirmation in production, so a slow answer to `--for=30s` could save an end time already past. The test harness answers prompts at once, so no test can show it.
 
 ## Open questions
