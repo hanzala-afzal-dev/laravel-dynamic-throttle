@@ -16,6 +16,8 @@ final readonly class ManifestObserver implements ShouldHandleEventsAfterCommit
 {
     public function __construct(
         private ManifestCompiler $compiler,
+        // What a change through EmergencyControls reads back (SPEC-013).
+        private LastCompile $last,
     ) {}
 
     public function saved(): void
@@ -31,8 +33,9 @@ final readonly class ManifestObserver implements ShouldHandleEventsAfterCommit
     private function compile(): void
     {
         try {
-            $this->compiler->compile();
+            $this->last->compiled($this->compiler->compile());
         } catch (ManifestCompileFailed $exception) {
+            $this->last->failed($exception);
             report($exception);
         }
     }

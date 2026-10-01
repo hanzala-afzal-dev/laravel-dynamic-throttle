@@ -33,11 +33,13 @@ return new class extends Migration
             $table->string('action', 64);
             // What changed, such as setting:bypass_all or rule:12.
             $table->string('target', 255);
-            $table->json('before')->nullable();
-            $table->json('after')->nullable();
+            // Text, not json: MySQL's JSON type reorders object keys, so an entry would not come back as written.
+            $table->text('before')->nullable();
+            $table->text('after')->nullable();
             // 45 characters hold any IPv6 address, an IPv4-mapped one included.
             $table->string('ip', 45)->nullable();
-            $table->string('user_agent', 512)->nullable();
+            // Text: browsers' user agents can be longer than any string column's limit.
+            $table->text('user_agent')->nullable();
             // A datetime, not a timestamp: MySQL's TIMESTAMP ends in January 2038.
             $table->dateTime('created_at');
             $table->index('created_at');

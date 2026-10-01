@@ -23,13 +23,13 @@ final class DisableRuleCommand extends ChangeCommand
 
     public function handle(EmergencyControls $controls): int
     {
-        $rule = $this->rule();
+        $rule = $this->ruleOrRefusal();
 
         if (! $rule instanceof Rule) {
-            return $this->refuse("There is no rule {$this->id()}.");
+            return $rule;
         }
 
-        $label = "Rule {$rule->id} ({$rule->name})";
+        $label = $this->label($rule);
 
         // Disabling an enforcing rule is a dangerous action (ADR-0015 point 4).
         if ($rule->enabled && $rule->mode === RuleMode::Enforce && ! $this->confirmed("{$label} stops limiting requests")) {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle;
 
+use Afzal\DynamicThrottle\Compiler\LastCompile;
 use Afzal\DynamicThrottle\Compiler\ManifestCompiler;
 use Afzal\DynamicThrottle\Compiler\ManifestObserver;
 use Afzal\DynamicThrottle\Console\BypassCommand;
@@ -74,6 +75,9 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
         $this->app->scoped(LimiterStore::class, fn (Application $app): LimiterStore => $app->make(LimiterStoreFactory::class)->make());
 
         $this->registerRequestPath();
+
+        // Scoped, so a change reads back its own compile, never another request's (SPEC-013).
+        $this->app->scoped(LastCompile::class);
 
         // Exemption values are hashed as requests hash them (ADR-0024).
         $this->app->bind(ManifestCompiler::class, fn (Application $app): ManifestCompiler => new ManifestCompiler(

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle\Console;
 
 use Afzal\DynamicThrottle\Compiler\CompileResult;
+use Afzal\DynamicThrottle\Compiler\ManifestCompileFailed;
 use Afzal\DynamicThrottle\Models\Rule;
 use Afzal\DynamicThrottle\Support\ChangeOutcome;
 use Afzal\DynamicThrottle\Support\TableMissing;
@@ -39,8 +40,13 @@ abstract class ChangeCommand extends Command
         $for = $this->option('for');
         $forever = $this->option('forever') === true;
 
-        if (is_string($for) && $forever) {
+        if ($this->forGiven() && $forever) {
             throw new InvalidArgumentException('Pass --for or --forever, not both.');
+        }
+
+        // --for without a value would otherwise mean one hour by mistake (the review).
+        if ($this->forGiven() && ! is_string($for)) {
+            throw new InvalidArgumentException('--for needs a duration, such as 30m.');
         }
 
         return $forever ? null : Date::now()->addSeconds(Duration::seconds(is_string($for) ? $for : '1h'));
@@ -53,17 +59,49 @@ abstract class ChangeCommand extends Command
      */
     protected function noEndTime(): null
     {
-        return $this->option('for') === null && $this->option('forever') !== true
+        return ! $this->forGiven() && $this->option('forever') !== true
             ? null
             : throw new InvalidArgumentException('--for and --forever do not apply to off.');
     }
 
     /**
+     * Whether --for was given, with a value or without one.
+     */
+    private function forGiven(): bool
+    {
+        return $this->option('for') !== null || $this->input->hasParameterOption('--for');
+    }
+
+    /**
      * The rule the id argument names, or null when there is none.
+     *
+     * @throws Throwable from the database
      */
     protected function rule(): ?Rule
     {
         return preg_match('/\A[1-9]\d{0,17}\z/', $this->id()) === 1 ? Rule::query()->find((int) $this->id()) : null;
+    }
+
+    /**
+     * The rule the id argument names, or why there is none, as the commands print it.
+     */
+    protected function ruleOrRefusal(): Rule|int
+    {
+        try {
+            $rule = $this->rule();
+        } catch (Throwable $exception) {
+            return $this->refuse("Could not read rule {$this->id()}: ".$exception->getMessage());
+        }
+
+        return $rule ?? $this->refuse("There is no rule {$this->id()}.");
+    }
+
+    /**
+     * A rule as messages name it: its id, and its name as text (the review).
+     */
+    protected function label(Rule $rule): string
+    {
+        return "Rule {$rule->id} ({$rule->name})";
     }
 
     /**
@@ -93,24 +131,26 @@ abstract class ChangeCommand extends Command
         }
 
         if (! $outcome->changed) {
-            $this->info($unchanged);
+            $this->info(Printable::text($unchanged));
 
             return self::SUCCESS;
         }
 
-        $this->info($done);
+        // Servers apply a change only once it is compiled, so only then does the command say what they apply (the review).
+        if ($outcome->compileFailed instanceof ManifestCompileFailed) {
+            $failure = $outcome->compileFailed->getPrevious() ?? $outcome->compileFailed;
+            $this->error(Printable::text('The change is saved, but the manifest could not be compiled: '.$failure->getMessage()));
+            $this->line('Servers keep the previous manifest until a compile succeeds: run php artisan dynamic-throttle:compile'.($this->scheduled() ? ', or wait for the scheduled one.' : '.'));
 
-        if ($outcome->compiled instanceof CompileResult) {
-            $this->line("Compiled manifest version {$outcome->compiled->version}. Servers apply it {$this->propagation()}.");
-
-            return self::SUCCESS;
+            return self::FAILURE;
         }
 
-        $failure = $outcome->compileFailed?->getPrevious() ?? $outcome->compileFailed;
-        $this->error('The change is saved, but the manifest could not be compiled: '.$failure?->getMessage());
-        $this->line('Servers keep the previous manifest until a compile succeeds: run php artisan dynamic-throttle:compile, or wait for the scheduled one.');
+        $this->info(Printable::text($done));
+        $this->line($outcome->compiled instanceof CompileResult
+            ? "Compiled manifest version {$outcome->compiled->version}. Servers apply it {$this->propagation()}."
+            : 'The manifest compiles when the surrounding transaction commits.');
 
-        return self::FAILURE;
+        return self::SUCCESS;
     }
 
     /**
@@ -121,17 +161,17 @@ abstract class ChangeCommand extends Command
     protected function confirmed(string $warning): bool
     {
         if (! $this->input->isInteractive() && $this->option('force') !== true && $this->laravel->environment() === 'production') {
-            $this->error("{$warning}: in production, pass --force to confirm without a terminal.");
+            $this->error(Printable::text("{$warning}: in production, pass --force to confirm without a terminal."));
 
             return false;
         }
 
-        return $this->confirmToProceed($warning);
+        return $this->confirmToProceed(Printable::text($warning));
     }
 
     protected function refuse(string $message): int
     {
-        $this->error($message);
+        $this->error(Printable::text($message));
 
         return self::FAILURE;
     }
@@ -139,6 +179,14 @@ abstract class ChangeCommand extends Command
     protected function time(CarbonInterface $time): string
     {
         return $time->format('Y-m-d H:i:s T');
+    }
+
+    /**
+     * Whether the scheduler compiles every five minutes (SPEC-006), so a failed compile heals by itself.
+     */
+    private function scheduled(): bool
+    {
+        return $this->laravel->make('config')->get('dynamic-throttle.manifest.schedule') !== false;
     }
 
     /**

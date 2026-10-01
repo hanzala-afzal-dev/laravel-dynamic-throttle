@@ -6,6 +6,7 @@ namespace Afzal\DynamicThrottle\Console;
 
 use Afzal\DynamicThrottle\Models\Rule;
 use Illuminate\Console\Command;
+use Throwable;
 
 /**
  * Lists the rules in the database, disabled ones too, in the manifest's order,
@@ -19,8 +20,14 @@ final class ListCommand extends Command
 
     public function handle(): int
     {
-        // Raw rows, so a row the model would refuse still shows during an incident.
-        $rows = Rule::query()->orderBy('priority')->orderBy('id')->toBase()->get();
+        try {
+            // Raw rows, so a row the model would refuse still shows during an incident.
+            $rows = Rule::query()->orderBy('priority')->orderBy('id')->toBase()->get();
+        } catch (Throwable $exception) {
+            $this->error(Printable::text('Could not read the rules: '.$exception->getMessage()));
+
+            return self::FAILURE;
+        }
 
         if ($rows->isEmpty()) {
             $this->info('There are no rules yet.');
@@ -58,8 +65,11 @@ final class ListCommand extends Command
         ];
     }
 
+    /**
+     * A cell as text: a name cannot style or drive the terminal (the review).
+     */
     private function text(mixed $value): string
     {
-        return is_scalar($value) ? (string) $value : '';
+        return is_scalar($value) ? Printable::text((string) $value) : '';
     }
 }

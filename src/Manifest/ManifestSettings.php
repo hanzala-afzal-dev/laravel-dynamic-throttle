@@ -120,14 +120,15 @@ final readonly class ManifestSettings
             }
         }
 
-        $bypass = $settings[SettingName::BypassAll->value] ?? null;
-        $scale = $settings[SettingName::ScaleFactor->value] ?? null;
+        // A setting that is off is absent: null is not a setting (the review).
+        $bypass = array_key_exists(SettingName::BypassAll->value, $settings) ? self::fields($settings[SettingName::BypassAll->value], SettingName::BypassAll, ['until']) : null;
+        $scale = array_key_exists(SettingName::ScaleFactor->value, $settings) ? self::fields($settings[SettingName::ScaleFactor->value], SettingName::ScaleFactor, ['percent', 'until']) : null;
 
         return new self(
             bypass: $bypass !== null,
-            bypassUntil: $bypass === null ? null : self::until(self::fields($bypass, SettingName::BypassAll, ['until']), SettingName::BypassAll),
-            scale: $scale === null ? null : self::percent(self::fields($scale, SettingName::ScaleFactor, ['percent', 'until'])),
-            scaleUntil: $scale === null ? null : self::until(self::fields($scale, SettingName::ScaleFactor, ['percent', 'until']), SettingName::ScaleFactor),
+            bypassUntil: $bypass === null ? null : self::until($bypass, SettingName::BypassAll),
+            scale: $scale === null ? null : self::percent($scale),
+            scaleUntil: $scale === null ? null : self::until($scale, SettingName::ScaleFactor),
         );
     }
 

@@ -4,33 +4,42 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle\Support;
 
+use Afzal\DynamicThrottle\Compiler\CompileResult;
+use Afzal\DynamicThrottle\Compiler\LastCompile;
 use Afzal\DynamicThrottle\Compiler\ManifestCompileFailed;
-use Afzal\DynamicThrottle\Compiler\ManifestCompiler;
 use Afzal\DynamicThrottle\Enums\AuditAction;
 use Afzal\DynamicThrottle\Enums\SettingName;
 use Afzal\DynamicThrottle\Models\AuditEntry;
 use Afzal\DynamicThrottle\Models\Rule;
 use Afzal\DynamicThrottle\Models\Setting;
 use Carbon\CarbonInterface;
+use Closure;
+use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\Date;
 use Throwable;
 
 /**
  * The changes an admin makes during an incident (ADR-0011, SPEC-013): bypass, the
- * scale factor, and switching one rule off or on (ADR-0015 point 6).
+ * scale factor, and switching one rule off or on (ADR-0015 point 4).
  *
  * Each change and its audit entry are written in one transaction, so neither is
- * kept without the other (ADR-0015 point 3). The manifest is then compiled once,
- * so the caller can tell whether servers will see the change. The models' observer
- * stays quiet meanwhile, or it would compile twice. The commands use it, and the
- * JSON API (SPEC-017) and the dashboard (SPEC-021) will.
+ * kept without the other (ADR-0015 point 3). The models' observer compiles the
+ * manifest once, after the commit, as for any change (ADR-0007), and the change
+ * reads that compile back, so the caller can tell whether servers will see it.
+ * In a surrounding transaction, the compile waits for it to commit. The commands
+ * use it, and the JSON API (SPEC-017) and the dashboard (SPEC-021) will.
  *
  * @internal
  */
 final readonly class EmergencyControls
 {
+    /** Attempts after a deadlock, which Laravel retries (the review: MySQL deadlocks on two first writes). */
+    private const int ATTEMPTS = 3;
+
     public function __construct(
-        private ManifestCompiler $compiler,
+        private LastCompile $last,
     ) {}
 
     /**
@@ -77,19 +86,20 @@ final readonly class EmergencyControls
     {
         $this->requireTable(new AuditEntry);
 
-        $changed = Model::withoutEvents(fn (): bool => $rule->getConnection()->transaction(function () use ($rule, $enabled, $actor): bool {
-            if ($rule->enabled === $enabled) {
+        return $this->change($rule->getConnection(), function () use ($rule, $enabled, $actor): bool {
+            // Read again, locked: another admin may have changed it since it was loaded (the review).
+            $current = Rule::query()->whereKey($rule->getKey())->lockForUpdate()->first();
+
+            if (! $current instanceof Rule || $current->enabled === $enabled) {
                 return false;
             }
 
-            $rule->enabled = $enabled;
-            $rule->save();
-            $this->audit($actor, $enabled ? AuditAction::RuleEnable : AuditAction::RuleDisable, "rule:{$rule->id}", ['enabled' => ! $enabled], ['enabled' => $enabled]);
+            $current->enabled = $enabled;
+            $current->save();
+            $this->audit($actor, $enabled ? AuditAction::RuleEnable : AuditAction::RuleDisable, "rule:{$current->id}", ['enabled' => ! $enabled], ['enabled' => $enabled]);
 
             return true;
-        }));
-
-        return $changed ? $this->compile() : ChangeOutcome::unchanged();
+        });
     }
 
     /**
@@ -102,12 +112,13 @@ final readonly class EmergencyControls
         $this->requireTable(new Setting);
         $this->requireTable(new AuditEntry);
 
-        $changed = Model::withoutEvents(fn (): bool => (new Setting)->getConnection()->transaction(function () use ($name, $action, $value, $until, $actor): bool {
+        return $this->change((new Setting)->getConnection(), function () use ($name, $action, $value, $until, $actor): bool {
             $setting = Setting::query()->where('name', $name->value)->lockForUpdate()->first();
             $before = $setting instanceof Setting ? $this->state($setting) : null;
 
             if ($value === null) {
-                if (! $setting instanceof Setting) {
+                // A setting that has ended is off already (the review).
+                if (! $setting instanceof Setting || $this->ended($setting)) {
                     return false;
                 }
 
@@ -128,9 +139,44 @@ final readonly class EmergencyControls
             $this->audit($actor, $action, "setting:{$name->value}", $before, $this->state($setting));
 
             return true;
-        }));
+        });
+    }
 
-        return $changed ? $this->compile() : ChangeOutcome::unchanged();
+    /**
+     * Makes a change in a transaction, retried after a deadlock, and once more when
+     * another process inserted the same setting first, so the last change wins (the
+     * review). Then reads back the compile the observer ran when it committed.
+     *
+     * @param  Closure(): bool  $change  true when it changed something
+     */
+    private function change(ConnectionInterface $connection, Closure $change): ChangeOutcome
+    {
+        $this->last->forget();
+
+        try {
+            $changed = $connection->transaction($change, self::ATTEMPTS);
+        } catch (UniqueConstraintViolationException) {
+            $changed = $connection->transaction($change, self::ATTEMPTS);
+        }
+
+        if ($changed !== true) {
+            return ChangeOutcome::unchanged();
+        }
+
+        $result = $this->last->result();
+        $failure = $this->last->failure();
+
+        return match (true) {
+            $result instanceof CompileResult => ChangeOutcome::compiled($result),
+            $failure instanceof ManifestCompileFailed => ChangeOutcome::compileFailed($failure),
+            // In a surrounding transaction, the observer compiles when it commits.
+            default => ChangeOutcome::pending(),
+        };
+    }
+
+    private function ended(Setting $setting): bool
+    {
+        return $setting->expires_at !== null && $setting->expires_at->lessThanOrEqualTo(Date::now());
     }
 
     /**
@@ -163,15 +209,6 @@ final readonly class EmergencyControls
     {
         if (! $model->getConnection()->getSchemaBuilder()->hasTable($model->getTable())) {
             throw TableMissing::named($model->getTable());
-        }
-    }
-
-    private function compile(): ChangeOutcome
-    {
-        try {
-            return ChangeOutcome::compiled($this->compiler->compile());
-        } catch (ManifestCompileFailed $failure) {
-            return ChangeOutcome::compileFailed($failure);
         }
     }
 }

@@ -49,7 +49,21 @@ final readonly class LimiterStoreFactory
         $this->make();
         [$driver, $target] = $this->pick();
 
+        // Built offline, a Redis store with no such connection would fail on every request, which then goes through unlimited (the review).
+        if ($driver === 'redis' && ! $this->redisConnectionExists((string) $target)) {
+            throw new InvalidArgumentException("Redis connection [{$target}] not configured.");
+        }
+
         return $driver === 'redis' ? "redis, connection {$target}" : 'cache, store '.($target ?? 'default');
+    }
+
+    /**
+     * As Laravel's RedisManager finds a connection: under database.redis, or among its clusters.
+     */
+    private function redisConnectionExists(string $name): bool
+    {
+        return ! in_array($name, ['client', 'options', 'clusters'], true)
+            && (is_array($this->config->get("database.redis.{$name}")) || is_array($this->config->get("database.redis.clusters.{$name}")));
     }
 
     /**

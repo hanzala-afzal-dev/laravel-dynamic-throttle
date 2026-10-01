@@ -9,8 +9,8 @@ use Afzal\DynamicThrottle\Compiler\ManifestCompileFailed;
 
 /**
  * What a change through EmergencyControls did (SPEC-013): nothing, or a change
- * that is saved, with the compile that followed it, or the reason that compile
- * failed.
+ * that is saved, with the compile that followed it, the reason that compile
+ * failed, or neither while a surrounding transaction has yet to commit.
  *
  * @internal
  */
@@ -35,5 +35,13 @@ final readonly class ChangeOutcome
     public static function compileFailed(ManifestCompileFailed $failure): self
     {
         return new self(true, compileFailed: $failure);
+    }
+
+    /**
+     * Saved in a surrounding transaction: the manifest compiles if it commits.
+     */
+    public static function pending(): self
+    {
+        return new self(true);
     }
 }

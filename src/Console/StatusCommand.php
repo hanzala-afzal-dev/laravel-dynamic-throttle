@@ -45,7 +45,7 @@ final class StatusCommand extends Command
             $store = $config->get('dynamic-throttle.store');
             $manifestCache = $cache->store(is_string($store) && $store !== '' ? $store : null);
         } catch (InvalidArgumentException $exception) {
-            $this->error('The config is invalid: '.$exception->getMessage());
+            $this->error(Printable::text('The config is invalid: '.$exception->getMessage()));
 
             return self::FAILURE;
         }
@@ -55,11 +55,11 @@ final class StatusCommand extends Command
         $manifest = $this->manifest($manifestCache, $keys);
 
         if ($manifest instanceof Manifest) {
-            $this->components->twoColumnDetail('Bypass', $manifest->settings->bypass ? $this->until('on', $manifest->settings->bypassUntil, $now) : 'off');
-            $this->components->twoColumnDetail('Scale', $manifest->settings->scale !== null ? $this->until('factor '.ScaleFactor::format($manifest->settings->scale), $manifest->settings->scaleUntil, $now) : 'off');
+            $this->settings($manifest->settings, $now);
         }
 
-        $this->compareWithDatabase($manifest?->settings, $now);
+        // Without a manifest, servers apply no setting (the review).
+        $this->compareWithDatabase($manifest instanceof Manifest ? $manifest->settings : ManifestSettings::none(), $now);
 
         return self::SUCCESS;
     }
@@ -74,7 +74,7 @@ final class StatusCommand extends Command
             $json = $cache->get($keys->manifest());
             $manifest = is_string($json) ? ManifestCodec::decode($json) : null;
         } catch (Throwable $exception) {
-            $this->components->twoColumnDetail('Manifest', 'cannot be read: '.$exception->getMessage());
+            $this->components->twoColumnDetail('Manifest', Printable::text('cannot be read: '.$exception->getMessage()));
 
             return null;
         }
@@ -90,6 +90,15 @@ final class StatusCommand extends Command
         $this->components->twoColumnDetail('Manifest', "version {$manifest->version}: {$rules} ".Str::plural('rule', $rules).", {$exemptions} ".Str::plural('exemption', $exemptions));
 
         return $manifest;
+    }
+
+    /**
+     * A line for each setting: what it is, until when, and the time left.
+     */
+    private function settings(ManifestSettings $settings, CarbonInterface $now, string $label = ''): void
+    {
+        $this->components->twoColumnDetail("Bypass{$label}", $settings->bypass ? $this->until('on', $settings->bypassUntil, $now) : 'off');
+        $this->components->twoColumnDetail("Scale{$label}", $settings->scale !== null ? $this->until('factor '.ScaleFactor::format($settings->scale), $settings->scaleUntil, $now) : 'off');
     }
 
     private function until(string $setting, ?int $until, CarbonInterface $now): string
@@ -108,25 +117,27 @@ final class StatusCommand extends Command
     }
 
     /**
-     * Warns when the database holds settings no compile has written yet. Reading the
-     * database never fails the command: during an outage, the cache is what matters.
+     * Warns when the database holds settings no compile has written yet, and shows them.
+     * Reading the database never fails the command: during an outage, the cache is
+     * what matters.
      */
-    private function compareWithDatabase(?ManifestSettings $compiled, CarbonInterface $now): void
+    private function compareWithDatabase(ManifestSettings $compiled, CarbonInterface $now): void
     {
         try {
             [$saved] = $this->laravel->make(ManifestCompiler::class)->settings();
         } catch (SettingsTableMissing $missing) {
-            $this->warn($missing->getMessage());
+            $this->warn(Printable::text($missing->getMessage()));
 
             return;
         } catch (Throwable $exception) {
-            $this->warn('The database cannot be read: '.$exception->getMessage());
+            $this->warn(Printable::text('The database cannot be read: '.$exception->getMessage()));
 
             return;
         }
 
-        if ($compiled instanceof ManifestSettings && $saved->toArray() !== $compiled->at($now->getTimestamp())->toArray()) {
+        if ($saved->toArray() !== $compiled->at($now->getTimestamp())->toArray()) {
             $this->warn('The database holds settings that no compile has written yet: run php artisan dynamic-throttle:compile.');
+            $this->settings($saved, $now, ', saved');
         }
     }
 }
