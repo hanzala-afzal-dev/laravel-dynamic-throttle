@@ -6,6 +6,7 @@ use Afzal\DynamicThrottle\Compiler\InvalidSettingSkipped;
 use Afzal\DynamicThrottle\Compiler\ManifestCompiler;
 use Afzal\DynamicThrottle\Compiler\SettingsTableMissing;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
+use Afzal\DynamicThrottle\Models\Setting;
 use Afzal\DynamicThrottle\Tests\Support\Exemptions;
 use Afzal\DynamicThrottle\Tests\Support\FakeClock;
 use Afzal\DynamicThrottle\Tests\Support\RuleSchema;
@@ -104,7 +105,7 @@ it('AC-4: compiles after a setting is saved, updated or deleted, and not for a s
     }
 
     $rolledBack = Exemptions::stored();
-    $setting = DB::transaction(fn () => Settings::scale('2'));
+    $setting = DB::transaction(fn (): Setting => Settings::scale('2'));
     $afterSave = Exemptions::stored();
     $setting->update(['value' => '3']);
     $afterUpdate = Exemptions::stored();
