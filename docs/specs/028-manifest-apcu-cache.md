@@ -148,7 +148,7 @@ Done on `be8a904`:
   - an object in an entry is released inside the fetch (AC-9);
   - a manifest L1 cannot hold is still served (AC-10);
   - in strict mode too, a matched rule L1 cannot build is reported and the request goes through (AC-14).
-- Checking a stored index in place halved its cost, to 37 µs at p50 for 100 rules, in `2c2dbaf`.
+- Checking a stored index in place, in `2c2dbaf`, cut its cost from 60 to 37 µs at p50 for 100 rules.
 
 ## Decisions
 Recorded as recommended (ADR-0027), except the first, second and sixth, which the maintainer decided on 2026-10-01. The maintainer can veto the others in the PR.
