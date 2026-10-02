@@ -26,7 +26,7 @@ final readonly class RuleMatcher
 
         foreach ($manifest->index->candidates($method, $path) as $position) {
             if (Str::is($manifest->index->pattern($position), $path)) {
-                $rules[] = $manifest->rules[$position];
+                $rules[] = $manifest->rule($position);
             }
         }
 

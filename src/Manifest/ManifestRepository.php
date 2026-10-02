@@ -6,6 +6,7 @@ namespace Afzal\DynamicThrottle\Manifest;
 
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
+use Afzal\DynamicThrottle\Manifest\Contracts\LocalManifestCache;
 use Afzal\DynamicThrottle\Manifest\Contracts\ManifestRebuilder;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Contracts\Foundation\Application;
@@ -14,8 +15,11 @@ use Throwable;
 /**
  * The request path's view of the rules (ADR-0007, SPEC-006). It never touches
  * the database and never throws: a missing, corrupt or unreadable manifest
- * falls back to the last one this process read, or to no rules at all, and
- * one request rebuilds it after the response.
+ * falls back to the last one this process or server read, or to no rules at
+ * all, and one request rebuilds it after the response.
+ *
+ * It reads L0, the process's memory, then L1, which the server's processes
+ * share (SPEC-028), then L2, the cache store.
  */
 final readonly class ManifestRepository
 {
@@ -32,6 +36,8 @@ final readonly class ManifestRepository
         private ManifestRebuilder $rebuilder,
         private Application $app,
         private int $refreshSeconds,
+        /** L1, shared by the server's processes, or null to read the store after L0 (SPEC-028). */
+        private ?LocalManifestCache $local = null,
     ) {}
 
     public function current(): Manifest
@@ -39,38 +45,58 @@ final readonly class ManifestRepository
         $now = $this->clock->microseconds();
         $memory = ManifestMemory::$manifest;
 
-        if ($memory instanceof Manifest && $now - ManifestMemory::$readAt < $this->refreshSeconds * 1_000_000) {
+        if ($memory instanceof Manifest && $this->isFresh(ManifestMemory::$readAt, $now)) {
             return $memory;
         }
 
-        try {
-            $json = $this->cache->get($this->keys->manifest());
+        $snapshot = $this->local?->fetch();
 
-            if (is_string($json)) {
-                ManifestMemory::$readAt = $now;
+        if ($snapshot instanceof ManifestSnapshot) {
+            $manifest = $this->isFresh($snapshot->readAt, $now) ? $this->build($snapshot) : null;
 
-                return ManifestMemory::$manifest = ManifestCodec::decode($json);
+            if ($manifest instanceof Manifest) {
+                // Kept in L0 with the entry's read time, so L0 never outlives L1's freshness.
+                ManifestMemory::$readAt = $snapshot->readAt;
+
+                return ManifestMemory::$manifest = $manifest;
             }
 
-            $problem = new ManifestUnavailable('The manifest is missing from the cache. One request will rebuild it after its response.');
-        } catch (InvalidManifest $exception) {
-            $problem = $exception;
-        } catch (Throwable $exception) {
-            $problem = new ManifestUnavailable('The manifest could not be read: '.$exception->getMessage(), previous: $exception);
+            // Expired. One process of the server reads the store, and the others go on with
+            // the last known manifest meanwhile, so a slow store holds up one request (AC-15).
+            $last = $this->local->claim($this->refreshSeconds) ? null : $this->lastKnown($memory, $snapshot);
+
+            if ($last instanceof Manifest) {
+                return $last;
+            }
         }
 
-        $this->report($problem, $now);
+        $read = $this->readStore();
+        // After the store answered, which a slow store makes later than $now.
+        $readAt = $this->clock->microseconds();
+
+        if ($read instanceof Manifest) {
+            $this->share($read, $readAt);
+            ManifestMemory::$readAt = $readAt;
+
+            return ManifestMemory::$manifest = $read;
+        }
+
+        $last = $this->lastKnown($memory, $snapshot)?->stale();
+
+        if ($last instanceof Manifest) {
+            // Kept first, before the report and the rebuild's lock can wait on the store too, so
+            // the store is tried again after refresh_seconds: from this process, and through L1
+            // from every process of the server.
+            $this->share($last, $readAt);
+            ManifestMemory::$readAt = $readAt;
+            ManifestMemory::$manifest = $last;
+        }
+
+        $this->report($read, $now);
         $this->scheduleRebuild();
 
-        if (! $memory instanceof Manifest) {
-            // Not kept in memory, so the next call looks for the rebuilt manifest at once.
-            return Manifest::missing();
-        }
-
-        // Keep the last known rules, and try the store again after refresh_seconds.
-        ManifestMemory::$readAt = $now;
-
-        return ManifestMemory::$manifest = $memory->stale();
+        // Without a last known manifest, nothing is kept, so the next call looks for the rebuilt one at once.
+        return $last ?? Manifest::missing();
     }
 
     /**
@@ -84,6 +110,73 @@ final readonly class ManifestRepository
         ManifestMemory::$reportedAt = null;
     }
 
+    /**
+     * The manifest in the cache store, or why there is none.
+     */
+    private function readStore(): Manifest|Throwable
+    {
+        try {
+            $json = $this->cache->get($this->keys->manifest());
+
+            return is_string($json)
+                ? ManifestCodec::decode($json)
+                : new ManifestUnavailable('The manifest is missing from the cache. One request will rebuild it after its response.');
+        } catch (InvalidManifest $exception) {
+            return $exception;
+        } catch (Throwable $exception) {
+            return new ManifestUnavailable('The manifest could not be read: '.$exception->getMessage(), previous: $exception);
+        }
+    }
+
+    /**
+     * Read within refresh_seconds. A read time in the future, after the clock went back,
+     * is not fresh, so the clock's step never freezes the rules (SPEC-028).
+     */
+    private function isFresh(int $readAt, int $now): bool
+    {
+        return $now >= $readAt && $now - $readAt < $this->refreshSeconds * 1_000_000;
+    }
+
+    /**
+     * The newer of L0's and L1's manifests. Versions only grow (SPEC-006 AC-3), so a
+     * process never trades the server's newer rules for its own older ones (SPEC-028
+     * decision 7).
+     */
+    private function lastKnown(?Manifest $memory, ?ManifestSnapshot $snapshot): ?Manifest
+    {
+        if ($snapshot instanceof ManifestSnapshot && (! $memory instanceof Manifest || $snapshot->version > $memory->version)) {
+            return $this->build($snapshot) ?? $memory;
+        }
+
+        return $memory;
+    }
+
+    /**
+     * The manifest an L1 entry holds. A snapshot was checked when it came from the entry,
+     * so this guards the repository's promise never to throw, and nothing more.
+     */
+    private function build(ManifestSnapshot $snapshot): ?Manifest
+    {
+        try {
+            return $snapshot->manifest();
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Keeps the manifest in L1 for the server's other processes. One that cannot be written
+     * there, such as one holding a number JSON cannot encode, is still served (SPEC-028 AC-10).
+     */
+    private function share(Manifest $manifest, int $readAt): void
+    {
+        try {
+            $this->local?->store(ManifestSnapshot::of($manifest, $readAt));
+        } catch (Throwable) {
+            // Not kept: the server's next request reads the store.
+        }
+    }
+
     private function report(Throwable $problem, int $now): void
     {
         if (ManifestMemory::$reportedAt !== null && $now - ManifestMemory::$reportedAt < self::REPORT_EVERY_SECONDS * 1_000_000) {
@@ -91,7 +184,12 @@ final readonly class ManifestRepository
         }
 
         ManifestMemory::$reportedAt = $now;
-        report($problem);
+
+        try {
+            report($problem);
+        } catch (Throwable) {
+            // The app's exception handler failed too, so there is nowhere left to report it.
+        }
     }
 
     /**

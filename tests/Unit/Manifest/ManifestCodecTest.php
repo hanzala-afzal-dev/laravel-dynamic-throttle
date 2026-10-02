@@ -9,6 +9,7 @@ use Afzal\DynamicThrottle\Enums\RequestMethod;
 use Afzal\DynamicThrottle\Enums\RuleMode;
 use Afzal\DynamicThrottle\Enums\Scope;
 use Afzal\DynamicThrottle\Manifest\CompiledExemption;
+use Afzal\DynamicThrottle\Manifest\CompiledRule;
 use Afzal\DynamicThrottle\Manifest\InvalidManifest;
 use Afzal\DynamicThrottle\Manifest\Manifest;
 use Afzal\DynamicThrottle\Manifest\ManifestCodec;
@@ -27,11 +28,11 @@ it('encodes and decodes a manifest', function (): void {
         'id' => '7', 'method' => 'POST', 'scope' => 'header', 'scope_parameter' => 'X-Api-Key',
         'mode' => 'dry_run', 'on_failure' => 'closed', 'on_missing_identity' => 'skip', 'response_override' => $override,
     ]]));
-    $rule = $manifest->rules[0];
+    $rule = $manifest->rule(0);
 
     expect($manifest->version)->toBe(42)
         ->and($manifest->state)->toBe(ManifestState::Fresh)
-        ->and($manifest->rules)->toHaveCount(1)
+        ->and($manifest->rules())->toHaveCount(1)
         ->and([$rule->id, $rule->name, $rule->pattern, $rule->scopeParameter])->toBe(['7', 'API', 'api/*', 'X-Api-Key'])
         ->and([$rule->method, $rule->scope, $rule->mode, $rule->onFailure, $rule->onMissingIdentity])
         ->toBe([RequestMethod::Post, Scope::Header, RuleMode::DryRun, FailurePolicy::Closed, MissingIdentity::Skip])
@@ -129,3 +130,21 @@ it('SPEC-009 AC-12: rejects a manifest whose exemptions are not exactly as the c
     yield 'a user match that is not a hash' => [$withExemption([...$exemption, 'subject' => 'user', 'match' => 'App\\Models\\User:42'])];
     yield 'a custom exemption without a scope' => [$withExemption([...$exemption, 'subject' => 'custom', 'match' => hash('sha256', 'acme')])];
 });
+
+it('SPEC-028: encodes one rule as the manifest writes it, and decodes it back', function (): void {
+    $rule = CompiledRule::fromArray(ManifestFixtures::rule(['id' => '7', 'pattern' => 'api/users/*', 'response_override' => ['message' => 'Slow down, café']]));
+
+    $json = ManifestCodec::encodeRule($rule);
+
+    expect($json)->toBe(json_encode($rule->toArray(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))
+        ->and(ManifestCodec::decodeRule($json))->toEqual($rule);
+});
+
+it('SPEC-028: rejects a rule\'s JSON that is not a rule', function (string $json, string $message): void {
+    expect(fn (): CompiledRule => ManifestCodec::decodeRule($json))->toThrow(InvalidManifest::class, $message);
+})->with([
+    'not JSON' => ['{"id"', 'A rule is not JSON: Syntax error'],
+    'a list' => ['[1, 2]', 'A rule must be a JSON object.'],
+    'a string' => ['"api/*"', 'A rule must be a JSON object.'],
+    'an invalid rule' => [json_encode(ManifestFixtures::rule(['max_attempts' => 0]), JSON_THROW_ON_ERROR), 'A rule is invalid: max_attempts must be at least 1, got 0.'],
+]);

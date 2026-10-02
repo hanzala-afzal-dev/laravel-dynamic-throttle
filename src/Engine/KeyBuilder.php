@@ -78,4 +78,23 @@ final readonly class KeyBuilder
     {
         return "{$this->prefix}reported:{$app}:{$cause}";
     }
+
+    /**
+     * The manifest a server last read, in APCu (SPEC-028). The key names the app, as the
+     * cooldown's does, and the package's version, so a deploy in place never reads
+     * objects that another version's classes wrote.
+     */
+    public function localManifest(string $app, string $version): string
+    {
+        return "{$this->prefix}manifest:{$app}:{$version}";
+    }
+
+    /**
+     * The claim that lets one process of the server refresh the manifest's expired entry
+     * in APCu while the others serve it (SPEC-028).
+     */
+    public function localManifestRefresh(string $app, string $version): string
+    {
+        return $this->localManifest($app, $version).':refresh';
+    }
 }

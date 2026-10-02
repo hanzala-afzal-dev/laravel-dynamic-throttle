@@ -6,6 +6,7 @@ namespace Afzal\DynamicThrottle\Engine\Matching;
 
 use Afzal\DynamicThrottle\Enums\RequestMethod;
 use Afzal\DynamicThrottle\Manifest\CompiledRule;
+use InvalidArgumentException;
 
 /**
  * Narrows the rules a request tests to the ones that can match (ADR-0008).
@@ -19,7 +20,7 @@ use Afzal\DynamicThrottle\Manifest\CompiledRule;
 final readonly class RuleIndex
 {
     /**
-     * @param  array<string, array<string, list<int>>>  $literal  method => first segment => positions
+     * @param  array<string, array<array-key, list<int>>>  $literal  method => first segment => positions; PHP keys a numeric segment as an integer
      * @param  array<string, list<int>>  $wildcard  method => positions of patterns whose first segment has a "*"
      * @param  list<string>  $patterns  each rule's pattern as it is matched
      */
@@ -52,6 +53,33 @@ final readonly class RuleIndex
         }
 
         return new self($literal, $wildcard, $patterns);
+    }
+
+    /**
+     * Its parts as plain values, for L1, which stores them with the rules they were
+     * built from (SPEC-028, ADR-0023 as amended).
+     *
+     * @return array{literal: array<string, array<array-key, list<int>>>, wildcard: array<string, list<int>>, patterns: list<string>}
+     */
+    public function toArray(): array
+    {
+        return ['literal' => $this->literal, 'wildcard' => $this->wildcard, 'patterns' => $this->patterns];
+    }
+
+    /**
+     * The index whose parts toArray() gave, for $count rules. The parts are checked, as
+     * an index that disagreed with its rules would offer the wrong ones (ADR-0023): every
+     * method is known, and every rule is offered exactly once.
+     *
+     * @param  array<array-key, mixed>  $parts
+     *
+     * @throws InvalidArgumentException naming the first part that is wrong
+     */
+    public static function fromArray(array $parts, int $count): self
+    {
+        self::check($parts, $count);
+
+        return new self($parts['literal'], $parts['wildcard'], $parts['patterns']);
     }
 
     /**
@@ -111,6 +139,105 @@ final readonly class RuleIndex
         $pattern = ltrim($pattern, '/');
 
         return $pattern === '' ? '/' : $pattern;
+    }
+
+    /**
+     * Checks the parts in place, without copying them: a PHP-FPM request with L1 checks
+     * them on every request (SPEC-028).
+     *
+     * @param  array<array-key, mixed>  $parts
+     *
+     * @phpstan-assert array{literal: array<string, array<array-key, list<int>>>, wildcard: array<string, list<int>>, patterns: list<string>} $parts
+     *
+     * @throws InvalidArgumentException naming the first part that is wrong
+     */
+    private static function check(array $parts, int $count): void
+    {
+        $keys = array_keys($parts);
+        sort($keys);
+
+        if ($keys !== ['literal', 'patterns', 'wildcard']) {
+            throw new InvalidArgumentException('The index must have exactly the parts literal, wildcard and patterns.');
+        }
+
+        ['literal' => $literal, 'wildcard' => $wildcard, 'patterns' => $patterns] = $parts;
+
+        if (! is_array($patterns) || ! array_is_list($patterns) || count($patterns) !== $count) {
+            throw self::wrongPatterns($count);
+        }
+
+        foreach ($patterns as $pattern) {
+            if (! is_string($pattern)) {
+                throw self::wrongPatterns($count);
+            }
+        }
+
+        // Every list of positions, checked together below.
+        $lists = [];
+
+        foreach (is_array($literal) ? $literal : throw self::notMap('literal') as $method => $segments) {
+            self::checkMethod($method);
+
+            foreach (is_array($segments) ? $segments : throw self::notMap('literal') as $positions) {
+                $lists[] = is_array($positions) ? $positions : throw self::notMap('literal');
+            }
+        }
+
+        foreach (is_array($wildcard) ? $wildcard : throw self::notMap('wildcard') as $method => $positions) {
+            self::checkMethod($method);
+            $lists[] = $positions;
+        }
+
+        $offered = [];
+
+        foreach ($lists as $positions) {
+            if (! is_array($positions) || ! array_is_list($positions)) {
+                throw new InvalidArgumentException("The index's positions must be lists of integers.");
+            }
+
+            foreach ($positions as $position) {
+                if (! is_int($position)) {
+                    throw new InvalidArgumentException("The index's positions must be lists of integers.");
+                }
+
+                if ($position < 0 || $position >= $count) {
+                    throw new InvalidArgumentException("The index's position {$position} is not one of its {$count} rules.");
+                }
+
+                if (isset($offered[$position])) {
+                    throw new InvalidArgumentException("The index offers rule {$position} more than once.");
+                }
+
+                // Only isset() and count() read it, which see any value alike.
+                $offered[$position] = true; // @pest-mutate-ignore: TrueToFalse
+            }
+        }
+
+        if (count($offered) !== $count) {
+            throw new InvalidArgumentException('The index offers '.count($offered)." of its {$count} rules.");
+        }
+    }
+
+    private static function wrongPatterns(int $count): InvalidArgumentException
+    {
+        return new InvalidArgumentException("The index's patterns must be a list of {$count} strings, one for each rule.");
+    }
+
+    private static function notMap(string $part): InvalidArgumentException
+    {
+        return new InvalidArgumentException($part === 'literal'
+            ? "The index's literal part must map each method to segments, and each segment to positions."
+            : "The index's wildcard part must map each method to positions.");
+    }
+
+    /**
+     * A method of a stored index: one of RequestMethod's values.
+     */
+    private static function checkMethod(int|string $method): void
+    {
+        if (! is_string($method) || ! RequestMethod::tryFrom($method) instanceof RequestMethod) {
+            throw new InvalidArgumentException("The index has a method it does not know: \"{$method}\".");
+        }
     }
 
     /**

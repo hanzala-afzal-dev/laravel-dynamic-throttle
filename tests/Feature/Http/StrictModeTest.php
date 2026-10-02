@@ -6,15 +6,23 @@ use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
 use Afzal\DynamicThrottle\Engine\Exceptions\IdentityUnavailableException;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
+use Afzal\DynamicThrottle\Engine\Matching\RuleIndex;
 use Afzal\DynamicThrottle\Enums\FailurePolicy;
 use Afzal\DynamicThrottle\Enums\Scope;
 use Afzal\DynamicThrottle\Events\StorageUnavailable;
 use Afzal\DynamicThrottle\Facades\DynamicThrottle;
+use Afzal\DynamicThrottle\Manifest\CompiledRule;
+use Afzal\DynamicThrottle\Manifest\InvalidManifest;
+use Afzal\DynamicThrottle\Manifest\Manifest;
+use Afzal\DynamicThrottle\Manifest\ManifestCodec;
+use Afzal\DynamicThrottle\Manifest\ManifestMemory;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
+use Afzal\DynamicThrottle\Manifest\ManifestRules;
 use Afzal\DynamicThrottle\Models\Exemption;
 use Afzal\DynamicThrottle\Tests\Support\Auth\TestUser;
 use Afzal\DynamicThrottle\Tests\Support\FailingStore;
 use Afzal\DynamicThrottle\Tests\Support\FakeClock;
+use Afzal\DynamicThrottle\Tests\Support\ManifestFixtures;
 use Afzal\DynamicThrottle\Tests\Support\Throttling;
 use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Http\Request;
@@ -202,4 +210,20 @@ it('SPEC-027: rethrows the resolver error of a rule after the one that rejects, 
     // Outside strict mode the request gets the 429, and the error is reported (SPEC-012 AC-4).
     expect(fn () => $this->get('api/login'))
         ->toThrow(IdentityUnavailableException::class, 'The identity for custom:tenant could not be resolved: The tenant lookup failed.');
+});
+
+it('SPEC-028 AC-14: applies the policy to a rule L1 cannot build, in strict mode', function (): void {
+    DynamicThrottle::strict();
+    config()->set('dynamic-throttle.manifest.refresh_seconds', 60);
+    $api = CompiledRule::fromArray(ManifestFixtures::rule(['id' => '1', 'pattern' => 'api/*']));
+    $web = CompiledRule::fromArray(ManifestFixtures::rule(['id' => '2', 'pattern' => 'web/*']));
+    // A manifest from L1, kept in the process, whose web rule's JSON something else spoiled.
+    ManifestMemory::$manifest = new Manifest(7, ManifestRules::fromJson([ManifestCodec::encodeRule($api), '{"id": "2"']), index: RuleIndex::of([$api, $web]));
+    ManifestMemory::$readAt = FakeClock::T0 * 1_000_000;
+    Throttling::route('web/x');
+
+    $response = $this->get('web/x');
+
+    expect($response->status())->toBe(200)
+        ->and(array_map(fn (Throwable $exception): string => $exception::class, Exceptions::reported()))->toBe([InvalidManifest::class]);
 });

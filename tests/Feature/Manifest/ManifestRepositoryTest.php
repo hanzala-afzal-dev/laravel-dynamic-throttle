@@ -14,6 +14,7 @@ use Afzal\DynamicThrottle\Tests\Support\ManifestFixtures;
 use Afzal\DynamicThrottle\Tests\Support\RuleSchema;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository;
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
@@ -87,7 +88,7 @@ it('AC-12: reads the stored manifest when memory is empty', function (): void {
 
     $manifest = manifestRepository($cache, new FakeClock, fakeRebuilder())->current();
 
-    expect([$manifest->version, $manifest->state, count($manifest->rules)])->toBe([7, ManifestState::Fresh, 1]);
+    expect([$manifest->version, $manifest->state, count($manifest->rules())])->toBe([7, ManifestState::Fresh, 1]);
 });
 
 it('AC-13: answers from memory within refresh_seconds, then reads the store again', function (): void {
@@ -107,6 +108,22 @@ it('AC-13: answers from memory within refresh_seconds, then reads the store agai
 
     expect([$first->version, $withinRefresh->version, $afterRefresh->version])->toBe([7, 7, 8])
         ->and([$readsWithinRefresh, $store->reads])->toBe([1, 2]);
+});
+
+it('SPEC-028 AC-3: reads the store again when the clock goes back past the read time', function (): void {
+    $store = manifestStore();
+    $cache = new Repository($store);
+    $cache->forever('dt:m', ManifestFixtures::json(7));
+    $clock = new FakeClock;
+    $repository = manifestRepository($cache, $clock, fakeRebuilder());
+    $repository->current();
+    $cache->forever('dt:m', ManifestFixtures::json(8));
+
+    // An NTP step back, by a microsecond.
+    $clock->setMicroseconds(FakeClock::T0 * 1_000_000 - 1);
+    $manifest = $repository->current();
+
+    expect([$manifest->version, $store->reads])->toBe([8, 2]);
 });
 
 it('AC-13: reads the store on every call when refresh_seconds is 0', function (): void {
@@ -150,7 +167,7 @@ it('AC-15: serves no rules, and rebuilds once, after the response', function ():
     app()->terminate();
     $rebuilt = $repository->current();
 
-    expect(array_map(fn (Manifest $manifest): array => [$manifest->state, $manifest->rules], $manifests))
+    expect(array_map(fn (Manifest $manifest): array => [$manifest->state, $manifest->rules()], $manifests))
         ->toBe(array_fill(0, 3, [ManifestState::Missing, []]))
         ->and([$beforeTerminate, $rebuilder->calls])->toBe([0, 1])
         ->and([$rebuilt->version, $rebuilt->state])->toBe([9, ManifestState::Fresh]);
@@ -228,4 +245,37 @@ it('AC-20: keeps the manifest in memory for the whole process, until flushState(
 
     expect([$fromAnotherInstance->version, $fromAnotherInstance->state])->toBe([7, ManifestState::Fresh])
         ->and($afterFlush->state)->toBe(ManifestState::Missing);
+});
+
+it('SPEC-028 AC-4: throws nothing when reporting an unreadable manifest fails', function (): void {
+    app()->instance(ExceptionHandler::class, new class implements ExceptionHandler
+    {
+        public function report(Throwable $e): void
+        {
+            throw new RuntimeException('The log is down.');
+        }
+
+        public function shouldReport(Throwable $e): bool
+        {
+            return true;
+        }
+
+        public function render($request, Throwable $e): never
+        {
+            throw $e;
+        }
+
+        public function renderForConsole($output, Throwable $e): void {}
+    });
+    $cache = new Repository(manifestStore());
+    $cache->forever('dt:m', ManifestFixtures::json(7));
+    $clock = new FakeClock;
+    $repository = manifestRepository($cache, $clock, fakeRebuilder());
+    $repository->current();
+    $cache->forget('dt:m');
+    $clock->setSeconds(FakeClock::T0 + 3);
+
+    $manifest = $repository->current();
+
+    expect([$manifest->version, $manifest->state])->toBe([7, ManifestState::Stale]);
 });

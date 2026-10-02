@@ -59,3 +59,12 @@ it('SPEC-012: builds the keys of the cooldown and of the reported causes under t
     // APCu is shared by the apps of a server, so its keys name the app too.
     expect([$keys->cooldown('app1'), $keys->reported('app1', '0a1b')])->toBe(['dt:cooldown:app1', 'dt:reported:app1:0a1b']);
 });
+
+it('SPEC-028: builds the key of the manifest in APCu under the prefix, for one app and one version of the package', function (): void {
+    // A server's apps share APCu, and so do the versions a deploy in place runs.
+    expect((new KeyBuilder('dt:'))->localManifest('app1', '0865f7e'))->toBe('dt:manifest:app1:0865f7e');
+});
+
+it('SPEC-028 AC-15: builds the key of the claim on the refresh of the manifest in APCu, next to the manifest\'s', function (): void {
+    expect((new KeyBuilder('dt:'))->localManifestRefresh('app1', '0865f7e'))->toBe('dt:manifest:app1:0865f7e:refresh');
+});

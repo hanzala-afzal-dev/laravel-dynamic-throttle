@@ -21,7 +21,9 @@ use Afzal\DynamicThrottle\Http\RateLimitHeaders;
 use Afzal\DynamicThrottle\Http\RequestIdentityResolver;
 use Afzal\DynamicThrottle\Http\RequestTarget;
 use Afzal\DynamicThrottle\Manifest\CompiledRule;
+use Afzal\DynamicThrottle\Manifest\InvalidManifest;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
+use Afzal\DynamicThrottle\Manifest\ManifestUnavailable;
 use Closure;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Contracts\Container\Container;
@@ -224,7 +226,8 @@ final readonly class DynamicThrottleMiddleware
     private function isMistake(Throwable $exception): bool
     {
         return match (true) {
-            $exception instanceof StorageUnavailableException => false,
+            // The manifest, as L1 holds it, follows the policy too (SPEC-028 AC-14).
+            $exception instanceof StorageUnavailableException, $exception instanceof InvalidManifest, $exception instanceof ManifestUnavailable => false,
             $exception instanceof IdentityUnavailableException => ! $exception->fromClient,
             default => true,
         };

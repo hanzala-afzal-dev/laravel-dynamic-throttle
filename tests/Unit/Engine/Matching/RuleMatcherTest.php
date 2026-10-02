@@ -105,7 +105,7 @@ it('AC-5: offers only candidates that can match, then keeps the ones that do', f
         matchingRule('7', '*', '/'),
     ]);
 
-    $candidates = array_map(fn (int $position): string => $manifest->rules[$position]->id, $manifest->index->candidates('GET', 'api/users'));
+    $candidates = array_map(fn (int $position): string => $manifest->rule($position)->id, $manifest->index->candidates('GET', 'api/users'));
 
     expect($candidates)->toBe(['1', '2', '5', '6'])
         ->and(matchedIds($manifest, 'GET', 'api/users'))->toBe(['1', '2', '5']);
@@ -119,7 +119,7 @@ it('AC-5: offers HEAD requests the GET candidates too, and a path whose first se
     ]);
 
     $ids = fn (string $method, string $path): array => array_map(
-        fn (int $position): string => $manifest->rules[$position]->id,
+        fn (int $position): string => $manifest->rule($position)->id,
         $manifest->index->candidates($method, $path),
     );
 

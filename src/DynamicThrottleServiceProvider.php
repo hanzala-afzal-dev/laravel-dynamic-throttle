@@ -20,10 +20,12 @@ use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
 use Afzal\DynamicThrottle\Http\IdentitySettings;
 use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
 use Afzal\DynamicThrottle\Http\RequestIdentityResolver;
+use Afzal\DynamicThrottle\Manifest\Contracts\LocalManifestCache;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Models\Exemption;
 use Afzal\DynamicThrottle\Models\Rule;
 use Afzal\DynamicThrottle\Support\ApcuFailureMemory;
+use Afzal\DynamicThrottle\Support\ApcuManifestCache;
 use Afzal\DynamicThrottle\Support\ConfigMerger;
 use Afzal\DynamicThrottle\Support\LaravelClock;
 use Afzal\DynamicThrottle\Support\LazyManifestRebuilder;
@@ -42,6 +44,7 @@ use Illuminate\Foundation\Http\Kernel;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
+use OutOfBoundsException;
 use Throwable;
 
 final class DynamicThrottleServiceProvider extends ServiceProvider
@@ -74,14 +77,21 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
 
         // Scoped, so each Octane request registers its rebuild on its own app. The rules
         // themselves stay in process memory across requests (ManifestMemory).
-        $this->app->scoped(ManifestRepository::class, fn (Application $app): ManifestRepository => new ManifestRepository(
-            $this->manifestCache($app),
-            $app->make(KeyBuilder::class),
-            $app->make(Clock::class),
-            new LazyManifestRebuilder($app),
-            $app,
-            $this->refreshSeconds($app),
-        ));
+        $this->app->scoped(ManifestRepository::class, function (Application $app): ManifestRepository {
+            $cache = $this->manifestCache($app);
+            $keys = $app->make(KeyBuilder::class);
+            $refreshSeconds = $this->refreshSeconds($app);
+
+            return new ManifestRepository(
+                $cache,
+                $keys,
+                $app->make(Clock::class),
+                new LazyManifestRebuilder($app),
+                $app,
+                $refreshSeconds,
+                $this->localManifestCache($app, $keys, $refreshSeconds),
+            );
+        });
 
         // The cap lives in the evaluator, which knows which rules count a request (ADR-0025).
         $this->app->scoped(RuleEvaluator::class, fn (Application $app): RuleEvaluator => new RuleEvaluator(
@@ -189,6 +199,43 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
         return $app->make('cache')->store(is_string($store) && $store !== '' ? $store : null);
     }
 
+    /**
+     * L1 (ADR-0007, SPEC-028): the manifest in APCu, where a server's PHP-FPM workers
+     * share it. Off when every request reads the store, and under fake(), whose
+     * manifest APCu would carry from one test to the next.
+     */
+    private function localManifestCache(Application $app, KeyBuilder $keys, int $refreshSeconds): ?LocalManifestCache
+    {
+        if ($refreshSeconds === 0 || ! ApcuManifestCache::available() || $app->make(DynamicThrottle::class)->isFaked()) {
+            return null;
+        }
+
+        return new ApcuManifestCache($keys, $this->appId($app), $this->installedVersion());
+    }
+
+    /**
+     * The app among those of the server, by its path: the PHP-FPM pools of a server
+     * share APCu (SPEC-012).
+     */
+    private function appId(Application $app): string
+    {
+        return hash('xxh128', $app->basePath());
+    }
+
+    /**
+     * The package's commit, as Composer installed it, else its version (SPEC-028 decision
+     * 3). Composer's list of installed packages is in OPcache, so this costs microseconds.
+     */
+    private function installedVersion(): string
+    {
+        try {
+            return InstalledVersions::getReference(self::PACKAGE) ?? InstalledVersions::getPrettyVersion(self::PACKAGE) ?? 'unknown';
+        } catch (OutOfBoundsException) {
+            // Not installed through Composer.
+            return 'unknown';
+        }
+    }
+
     private function refreshSeconds(Application $app): int
     {
         $seconds = $app->make('config')->get('dynamic-throttle.manifest.refresh_seconds');
@@ -241,8 +288,7 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
         // fake()'s failures stay in the process: APCu would carry them from one test to the next.
         if (ApcuFailureMemory::available() && ! $app->make(DynamicThrottle::class)->isFaked()) {
             try {
-                // Named by the app's path: the PHP-FPM pools of a server share APCu.
-                $memories[] = new ApcuFailureMemory($app->make(KeyBuilder::class), hash('xxh128', $app->basePath()));
+                $memories[] = new ApcuFailureMemory($app->make(KeyBuilder::class), $this->appId($app));
             } catch (Throwable) {
                 // An invalid prefix, reported where the counter store is built. The process still remembers.
             }

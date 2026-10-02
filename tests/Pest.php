@@ -16,8 +16,10 @@ use Afzal\DynamicThrottle\Tests\TestCase;
 |   it on local stores; `composer test:drivers` adds every service store.
 | - Drivers: needs the docker compose services, excluded from `composer test`.
 | - Apcu: needs APCu enabled in the CLI, which `composer test:apcu` does
-|   (SPEC-012). `composer test` turns it off, and where php.ini turns it on,
-|   TestCase clears it before each test, so no state leaks between tests.
+|   (SPEC-012), with an 8 MB segment, so a test can overflow it cheaply
+|   (SPEC-028 AC-10). `composer test` turns it off, and where php.ini turns
+|   it on, TestCase clears it before each test, so no state leaks between
+|   tests.
 |
 */
 
