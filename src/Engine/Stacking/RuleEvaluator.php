@@ -28,6 +28,9 @@ use Afzal\DynamicThrottle\Manifest\CompiledRule;
  *    request counts nowhere.
  * 3. Decides, in evaluation order.
  *
+ * plan() and decide() are the first and last steps, which dynamic-throttle:explain
+ * runs around the counters it reads, without counting (SPEC-014).
+ *
  * Once the store fails, or while its cooldown runs, no rule is checked, and the
  * first fail-closed rule that applies stops evaluation (SPEC-012).
  */
@@ -67,24 +70,50 @@ final readonly class RuleEvaluator
      */
     public function evaluate(array $rules, IdentityResolver $identities, int $scalePercent = 100): Evaluation
     {
+        $plan = $this->plan($rules, $identities, $scalePercent);
+
+        // 2. Count, unless the store is in its cooldown. With a stop, the call only asks
+        // whether an earlier rule rejects, so it releases every count either way.
+        $batch = $plan->attempts === [] || $this->inCooldown() ? new AttemptBatch : $this->count($plan->attempts, $plan->stop instanceof CompiledRule);
+
+        if ($batch->failure instanceof StorageUnavailableException || $batch->releaseFailures !== []) {
+            $this->cooldown?->start();
+        }
+
+        return $this->decide($plan, $batch);
+    }
+
+    /**
+     * 1. Plans, without the store: the cap, the exemptions and each rule's identity,
+     * for every rule, in order. dynamic-throttle:explain plans as a request does
+     * (SPEC-014). Never throws an IdentityUnavailableException: an identity that
+     * cannot be resolved fails its rule, and a fail-closed rule's ends the plan.
+     *
+     * Every rule's identity is resolved before the store answers, even a rule's
+     * after the one that will reject: counting them one call at a time would cost a
+     * round trip per rule again (ADR-0026).
+     *
+     * @param  list<CompiledRule>  $rules  the matched rules, in manifest order
+     * @param  int  $scalePercent  the scale factor as a percentage, 100 for none
+     */
+    public function plan(array $rules, IdentityResolver $identities, int $scalePercent = 100): Plan
+    {
         // By position in $rules, so a store failure lands between the identity failures in evaluation order.
         $failures = [];
         $skipped = [];
         $ignored = [];
         $exempted = [];
         $exemptionFailures = [];
-        // The rules that apply, and the attempts they plan, in the same order.
+        // The rules that apply, their positions, and the attempts they plan, in the same order.
         $planned = [];
-        $plan = [];
+        $positions = [];
+        $attempts = [];
         // An enforcing fail-closed rule whose identity cannot be resolved ends the plan (SPEC-012).
         $stop = null;
         // Attempts left for each mode: a rule that does not apply takes none, and a
         // dry-run rule never takes an enforcing rule's (ADR-0025).
         $slots = [RuleMode::Enforce->value => $this->maxRulesPerRequest, RuleMode::DryRun->value => $this->maxRulesPerRequest];
 
-        // 1. Plan. Every rule's identity is resolved before the store answers, even a
-        // rule's after the one that will reject: counting them one call at a time
-        // would cost a round trip per rule again (ADR-0026).
         foreach ($rules as $position => $rule) {
             if ($slots[$rule->mode->value] === 0) {
                 $ignored[] = $rule;
@@ -131,27 +160,33 @@ final readonly class RuleEvaluator
             // Taken before the attempt: a rule the store cannot count still applies, so
             // which rules apply never depends on the store's health.
             $slots[$rule->mode->value]--;
-            $planned[] = [$position, $rule];
-            $plan[] = new PlannedAttempt(new CounterKey($rule->id, $identity), Scale::limit($rule->maxAttempts, $scalePercent), $rule->windowSeconds, $rule->mode === RuleMode::Enforce);
+            $planned[] = $rule;
+            $positions[] = $position;
+            $attempts[] = new PlannedAttempt(new CounterKey($rule->id, $identity), Scale::limit($rule->maxAttempts, $scalePercent), $rule->windowSeconds, $rule->mode === RuleMode::Enforce);
         }
 
-        // 2. Count, unless the store is in its cooldown. With a stop, the call only asks
-        // whether an earlier rule rejects, so it releases every count either way.
-        $batch = $plan === [] || $this->inCooldown() ? new AttemptBatch : $this->count($plan, $stop instanceof CompiledRule);
+        return new Plan($planned, $attempts, $positions, $failures, $skipped, $ignored, $exempted, $exemptionFailures, $stop);
+    }
 
-        if ($batch->failure instanceof StorageUnavailableException || $batch->releaseFailures !== []) {
-            $this->cooldown?->start();
-        }
-
-        // 3. Decide, in evaluation order: the first enforcing rejection gives the 429, then
-        // the first fail-closed rule the store could not check, then the stop.
+    /**
+     * 3. Decides, in evaluation order, from the store's answers to the plan: the
+     * first enforcing rejection gives the 429, then the first fail-closed rule the
+     * store could not check, then the plan's stop. Without the store:
+     * dynamic-throttle:explain decides from the attempts its counters say the next
+     * request would make (SPEC-014 decision 8).
+     *
+     * @param  AttemptBatch  $batch  the store's answers to the plan's attempts, in order; empty during the cooldown
+     */
+    public function decide(Plan $plan, AttemptBatch $batch): Evaluation
+    {
+        $failures = $plan->failures;
         $attempts = [];
         $wouldBlock = [];
         $unchecked = [];
         $releaseFailures = [];
         $made = count($batch->attempts);
 
-        foreach ($planned as $index => [$position, $rule]) {
+        foreach ($plan->rules as $index => $rule) {
             if ($index < $made) {
                 $attempt = $batch->attempts[$index];
 
@@ -166,7 +201,7 @@ final readonly class RuleEvaluator
                     // Not counted, and not enforced (ADR-0012).
                     $wouldBlock[] = new RuleAttempt($rule, $attempt);
                 } else {
-                    return Evaluation::rejected(new RuleAttempt($rule, $attempt), $attempts, $this->inOrder($failures), $wouldBlock, $skipped, $releaseFailures, $ignored, $exempted, $exemptionFailures);
+                    return Evaluation::rejected(new RuleAttempt($rule, $attempt), $attempts, $this->inOrder($failures), $wouldBlock, $plan->skipped, $releaseFailures, $plan->ignored, $plan->exempted, $plan->exemptionFailures);
                 }
 
                 continue;
@@ -178,11 +213,11 @@ final readonly class RuleEvaluator
             $failed = $index === $made && $batch->failure instanceof StorageUnavailableException;
 
             if ($failed) {
-                $failures[$position] = new RuleFailure($rule, $batch->failure);
+                $failures[$plan->positions[$index]] = new RuleFailure($rule, $batch->failure);
             }
 
             if ($this->failsClosed($rule)) {
-                return Evaluation::unavailable($rule, $attempts, $this->inOrder($failures), $wouldBlock, $skipped, [], $ignored, $exempted, $exemptionFailures, $unchecked);
+                return Evaluation::unavailable($rule, $attempts, $this->inOrder($failures), $wouldBlock, $plan->skipped, [], $plan->ignored, $plan->exempted, $plan->exemptionFailures, $unchecked);
             }
 
             // The later rules count on the same store, so they go unchecked too.
@@ -191,14 +226,14 @@ final readonly class RuleEvaluator
             }
         }
 
-        if ($stop instanceof CompiledRule) {
+        if ($plan->stop instanceof CompiledRule) {
             // As at a rejection, the request counts nowhere: the call released every count.
-            return Evaluation::unavailable($stop, $attempts, $this->inOrder($failures), $wouldBlock, $skipped, $releaseFailures, $ignored, $exempted, $exemptionFailures, $unchecked);
+            return Evaluation::unavailable($plan->stop, $attempts, $this->inOrder($failures), $wouldBlock, $plan->skipped, $releaseFailures, $plan->ignored, $plan->exempted, $plan->exemptionFailures, $unchecked);
         }
 
         return $failures === []
-            ? Evaluation::allowed($attempts, $wouldBlock, $skipped, $ignored, $exempted, $exemptionFailures, $unchecked)
-            : Evaluation::failed($this->inOrder($failures), $attempts, $wouldBlock, $skipped, $ignored, $exempted, $exemptionFailures, $unchecked);
+            ? Evaluation::allowed($attempts, $wouldBlock, $plan->skipped, $plan->ignored, $plan->exempted, $plan->exemptionFailures, $unchecked)
+            : Evaluation::failed($this->inOrder($failures), $attempts, $wouldBlock, $plan->skipped, $plan->ignored, $plan->exempted, $plan->exemptionFailures, $unchecked);
     }
 
     /**
