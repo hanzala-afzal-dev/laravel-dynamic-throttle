@@ -539,6 +539,20 @@ it('SPEC-014 AC-13: peek() weighs the previous window as attempt() does, and rou
         ->and([$attempt->allowed, $attempt->remaining, $attempt->windowIndex])->toBe([true, 5, 30_000_001]);
 })->with('limiter stores');
 
+it('SPEC-014 AC-13: peek() at the last microsecond of a window gives the attempt attempt() makes', function (StoreUnderTest $subject): void {
+    $subject->clock->setSeconds(FakeClock::T0 + 10);
+    contractAttempts($subject, 3, max: 5);
+    // The previous window's 3 still weigh 3 × 0.000001 / 60, so 1 is counted.
+    $subject->clock->setMicroseconds((FakeClock::T0 + 120) * 1_000_000 - 1);
+
+    $reading = contractReader($subject)->peek(contractKey(), 5, 60);
+    $attempt = $subject->store->attempt(contractKey(), 5, 60);
+
+    expect([$reading->count, $reading->remaining(), $reading->next->remaining])->toBe([1, 4, 3])
+        ->and($reading->next)->toEqual($attempt)
+        ->and($attempt->windowIndex)->toBe(30_000_001);
+})->with('limiter stores');
+
 it('SPEC-014 AC-13: peek() sees a released count leave', function (StoreUnderTest $subject): void {
     $subject->clock->setSeconds(FakeClock::T0 + 10);
     $attempts = array_map(fn (): Attempt => $subject->store->attempt(contractKey(), 5, 60), range(1, 3));

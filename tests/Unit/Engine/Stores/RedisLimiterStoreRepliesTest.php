@@ -474,6 +474,15 @@ it('SPEC-014: reports a script error when peeking as unavailable, and names it',
     expect(exceptionChain($failure ?? new LogicException('Nothing was thrown.')))->toContain('ERR Error running script');
 });
 
+it('SPEC-014: accepts a peek reply at the first and at the last microsecond of the window', function (int $elapsed): void {
+    $reading = stubbedPeek(scriptedPhpRedis(evalsha: [30_000_000, $elapsed, 3, 0]));
+
+    expect([$reading->count, $reading->next->allowed, $reading->next->remaining])->toBe([3, true, 1]);
+})->with([
+    'the first' => [0],
+    'the last' => [59_999_999],
+]);
+
 it('SPEC-014: reports a peek reply that is not the window, the time into it and two counts as unavailable', function (mixed $reply): void {
     expect(fn (): CounterReading => stubbedPeek(scriptedPhpRedis(evalsha: $reply)))
         ->toThrow(StorageUnavailableException::class, 'unexpected reply');

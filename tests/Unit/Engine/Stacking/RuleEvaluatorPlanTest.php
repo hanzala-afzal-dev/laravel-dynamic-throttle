@@ -140,6 +140,12 @@ it('SPEC-014: plan() plans the attempts evaluate() counts, under the scale facto
         ->and($plan->stop)->toBeNull();
 });
 
+it('SPEC-014: plan() without a scale factor plans each rule\'s own limit', function (): void {
+    $plan = (new RuleEvaluator(untouchedStore()))->plan([plannedRule('1', ['max_attempts' => 1000])], planIdentities());
+
+    expect(array_map(fn (PlannedAttempt $attempt): int => $attempt->maxAttempts, $plan->attempts))->toBe([1000]);
+});
+
 it('SPEC-014: plan() ends at an enforcing fail-closed rule whose identity fails, as evaluate() stops there', function (): void {
     $plan = (new RuleEvaluator(untouchedStore()))->plan([
         plannedRule('1'),

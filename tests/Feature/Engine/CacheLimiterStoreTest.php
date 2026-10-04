@@ -369,3 +369,22 @@ it('SPEC-004 AC-15: never leaves a count below 0 when the window key vanishes be
     expect([$allowed->allowed, ...$decisions])->toBe([true, true, false])
         ->and($arrayStore->get("dt:c:1:60:{$hash}:30000000"))->toBe(1);
 });
+
+/*
+| SPEC-014: peek() reads counts as attempt() reads them.
+*/
+
+it('SPEC-014: peek() reads a current-window count of 0 or below as 0', function (int $stored): void {
+    $clock = new FakeClock;
+    $clock->setSeconds(FakeClock::T0 + 10);
+    $store = new CacheLimiterStore(Cache::store('array'), new KeyBuilder('dt:'), $clock);
+    $hash = hash('sha256', 'A');
+    Cache::store('array')->put("dt:c:1:60:{$hash}:30000000", $stored, 125);
+
+    $reading = $store->peek(new CounterKey('1', $hash), 5, 60);
+
+    expect([$reading->count, $reading->remaining(), $reading->next->remaining])->toBe([0, 5, 4]);
+})->with([
+    '0, as a release leaves it' => [0],
+    'below 0, as a release that raced an expiry leaves it' => [-3],
+]);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Afzal\DynamicThrottle\Engine\Attempt;
 use Afzal\DynamicThrottle\Engine\CounterKey;
+use Afzal\DynamicThrottle\Engine\CounterReading;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Stores\CacheLimiterStore;
@@ -80,6 +81,23 @@ it('AC-20: reports a failed read of the previous window as unavailable, not as 0
     expect(fn (): Attempt => $store->attempt(new CounterKey('1', hash('sha256', 'A')), 5, 60))
         ->toThrow(function (StorageUnavailableException $exception): void {
             expect($exception->getMessage())->toMatch('/\AMemcached could not read the previous window: \S/');
+        });
+});
+
+it('SPEC-014: peek() reports a failed read as unavailable, not as 0', function (): void {
+    if (! extension_loaded('memcached')) {
+        $this->markTestSkipped('ext-memcached is not installed.');
+    }
+
+    // Reads go to a server that is down, so get() returns null with an error result code.
+    $down = new Memcached;
+    $down->addServer('127.0.0.1', 1);
+    $store = new CacheLimiterStore(new Repository(new MemcachedStore($down)), new KeyBuilder('dt-memcached-'.bin2hex(random_bytes(4)).':'), new FakeClock);
+
+    // The message names Memcached's own error, such as "SERVER IS MARKED DEAD".
+    expect(fn (): CounterReading => $store->peek(new CounterKey('1', hash('sha256', 'A')), 5, 60))
+        ->toThrow(function (StorageUnavailableException $exception): void {
+            expect($exception->getMessage())->toMatch('/\AMemcached could not read the counter: \S/');
         });
 });
 
