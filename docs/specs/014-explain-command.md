@@ -1,6 +1,6 @@
 # SPEC-014: dynamic-throttle:explain
 
-- Status: In progress
+- Status: Done
 - ADRs: ADR-0008, ADR-0009, ADR-0004, ADR-0011, ADR-0012, ADR-0017, ADR-0020, ADR-0025
 - Roadmap phase: 3
 
@@ -103,6 +103,15 @@ As built:
 - `composer test:mutate`, since `src/Engine` changes (`RuleEvaluator::plan()` and `decide()`, `peek()` in the drivers)
 - `composer bench`: `MiddlewareBench`, since the middleware's steps move
 - the review subagent: the engine and the public API (the command)
+
+Done on `c4681f9`:
+- `composer test`: 1,386 passed. `composer test:drivers`: 617 passed, with `peek()` on every store of the contract suite, and explain on Redis with phpredis and predis. `composer analyse`, `format:check` and `refactor:check` are clean.
+- The arch rules hold, and each fails on a planted violation: explain never uses the compiler, `ManifestRepository`, the rebuilder, `EmergencyControls` or the database, and the middleware lets requests through with `Untouched`.
+- `composer test:mutate`: 97.97%, where the gate is 85%. The first run found five gaps in the new code: `peek()` at a window's last microsecond, a stored count of 0, Memcached's failed read, the Redis reply's bounds, and `plan()` without a factor. `8e4f02d` pins them. The code already behaved. What survives of this spec is `PEEK_SCRIPT`'s constant concatenation, which never runs, as the other scripts' never do; the rest predate it.
+- `composer bench`: on the array store, the request path's cost did not move, from −8 to +9 µs at p50 either way. PHP-FPM with APCu stays under the 0.5 ms target, at 364 to 409 µs at p95 (`benchmarks/results/phase-3-explain.md`).
+- The review subagent found no high-severity defect. It checked `peek()` against `attempt()` on both drivers, the Lua window lines, the SHA, the split of `evaluate()`, and the middleware's behavior. Its findings are fixed test-first, in `e14a721`, then `24c1ef6`, and listed in the edge cases above: `--user` where the middleware counts a guest (decision 3), the route under global middleware, auth events and state, JSON that is not UTF-8 or carries control characters, and the manifest needed only past `except`.
+- Two findings go to the maintainer, in the roadmap: the package's own routes under global middleware, which predates this spec, and whether the API and the dashboard mask identities.
+- Tests changed after the red steps: `8e4f02d` adds the tests mutation testing asked for, and `e14a721` runs three AC-2 tests on routes with `auth` before `dynamic.throttle`, since decision 3 now authenticates only there. None changes what a test asserts.
 
 ## Open questions
 None left. The maintainer answered the one there was on 2026-10-01: decision 1.
