@@ -20,6 +20,7 @@ use Afzal\DynamicThrottle\Events\StorageUnavailable;
 use Afzal\DynamicThrottle\Http\RateLimitHeaders;
 use Afzal\DynamicThrottle\Http\RequestIdentityResolver;
 use Afzal\DynamicThrottle\Http\RequestTarget;
+use Afzal\DynamicThrottle\Http\Untouched;
 use Afzal\DynamicThrottle\Manifest\CompiledRule;
 use Afzal\DynamicThrottle\Manifest\InvalidManifest;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
@@ -32,8 +33,6 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Routing\Route;
-use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
 use Throwable;
@@ -132,20 +131,20 @@ final readonly class DynamicThrottleMiddleware
      * The headers for the response, or the exception to throw: the 429, the 503, or in
      * strict mode a mistake. In order, the first step that lets the request through
      * untouched ends it: the kill switch, the package's own routes, except, bypass,
-     * and no matched rule.
+     * and no matched rule. dynamic-throttle:explain runs the same steps (SPEC-014).
      *
      * @return array<string, int>|Throwable
      */
     private function decide(Request $request): array|Throwable
     {
         try {
-            if ($this->config->get('dynamic-throttle.enabled') !== true || $this->isOwnRoute($request)) {
+            if (Untouched::beforePath($this->config, $request) instanceof Untouched) {
                 return [];
             }
 
             $target = RequestTarget::fromRequest($request);
 
-            if ($this->isExcepted($target->path)) {
+            if (Untouched::except($this->config, $target->path) instanceof Untouched) {
                 return [];
             }
 
@@ -153,13 +152,13 @@ final readonly class DynamicThrottleMiddleware
             // The runtime settings apply until their end time, by this request's clock (SPEC-013).
             $now = intdiv($this->clock->microseconds(), 1_000_000);
 
-            if ($manifest->settings->bypasses($now)) {
+            if (Untouched::bypass($manifest->settings, $now) instanceof Untouched) {
                 return [];
             }
 
             $rules = (new RuleMatcher)->match($manifest, $target->method, $target->path)->rules;
 
-            if ($rules === []) {
+            if (Untouched::noRule($rules) instanceof Untouched) {
                 return [];
             }
 
@@ -188,36 +187,6 @@ final readonly class DynamicThrottleMiddleware
 
             return [];
         }
-    }
-
-    private function isOwnRoute(Request $request): bool
-    {
-        $route = $request->route();
-
-        return $route instanceof Route && str_starts_with((string) $route->getName(), self::OWN_ROUTES);
-    }
-
-    /**
-     * except: paths no rule ever applies to, matched as rule patterns are (SPEC-007).
-     */
-    private function isExcepted(string $path): bool
-    {
-        $patterns = $this->config->get('dynamic-throttle.except');
-
-        foreach (is_array($patterns) ? $patterns : [] as $pattern) {
-            if (! is_string($pattern)) {
-                continue;
-            }
-
-            // A leading slash is ignored, and the root stays "/", as in RuleIndex.
-            $pattern = ltrim($pattern, '/');
-
-            if (Str::is($pattern === '' ? '/' : $pattern, $path)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private function isStrict(): bool

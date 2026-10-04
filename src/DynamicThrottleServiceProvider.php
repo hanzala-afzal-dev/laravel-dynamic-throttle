@@ -11,6 +11,7 @@ use Afzal\DynamicThrottle\Console\BypassCommand;
 use Afzal\DynamicThrottle\Console\CompileCommand;
 use Afzal\DynamicThrottle\Console\DisableRuleCommand;
 use Afzal\DynamicThrottle\Console\EnableRuleCommand;
+use Afzal\DynamicThrottle\Console\ExplainCommand;
 use Afzal\DynamicThrottle\Console\ListCommand;
 use Afzal\DynamicThrottle\Console\ScaleCommand;
 use Afzal\DynamicThrottle\Console\StatusCommand;
@@ -35,6 +36,7 @@ use Afzal\DynamicThrottle\Models\Setting;
 use Afzal\DynamicThrottle\Support\ApcuFailureMemory;
 use Afzal\DynamicThrottle\Support\ApcuManifestCache;
 use Afzal\DynamicThrottle\Support\ConfigMerger;
+use Afzal\DynamicThrottle\Support\Explainer;
 use Afzal\DynamicThrottle\Support\LaravelClock;
 use Afzal\DynamicThrottle\Support\LazyManifestRebuilder;
 use Afzal\DynamicThrottle\Support\LimiterStoreFactory;
@@ -110,6 +112,23 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
             $this->maxRulesPerRequest($app),
             $app->make(Cooldown::class),
         ));
+
+        // On the counter store requests use, with the same fallback, and the same cap (SPEC-014).
+        $this->app->bind(Explainer::class, function (Application $app): Explainer {
+            $store = $this->limiterStore($app);
+
+            return new Explainer(
+                $app,
+                $app->make('config'),
+                $this->manifestCache($app),
+                $app->make(KeyBuilder::class),
+                $app->make(Clock::class),
+                $store,
+                new RuleEvaluator($store, $this->maxRulesPerRequest($app)),
+                $this->maxRulesPerRequest($app),
+                $this->cooldownSeconds($app),
+            );
+        });
 
         // Made now, at boot, so it outlives each request on Octane and in queue workers (SPEC-012).
         $this->app->instance(ProcessFailureMemory::class, new ProcessFailureMemory);
@@ -370,6 +389,7 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
             ListCommand::class,
             DisableRuleCommand::class,
             EnableRuleCommand::class,
+            ExplainCommand::class,
         ]);
 
         // Heals a manifest the cache lost (SPEC-006). manifest.schedule turns it off.

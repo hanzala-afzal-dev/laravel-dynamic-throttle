@@ -79,13 +79,26 @@ final class RequestIdentityResolver implements ExemptionSubjects, IdentityResolv
 
     public function resolve(CompiledRule $rule): ?string
     {
+        $identity = $this->identity($rule);
+
+        return $identity === null ? null : $this->hasher->hash($identity);
+    }
+
+    /**
+     * The identity as given, which resolve() hashes, such as "ip:203.0.113.7" or
+     * "user:App\Models\User:42", for dynamic-throttle:explain (SPEC-014). Null when
+     * the request has none for the rule.
+     *
+     * @throws IdentityUnavailableException
+     */
+    public function identity(CompiledRule $rule): ?string
+    {
         $value = match ($rule->scope) {
             Scope::Ip, Scope::Global => null,
             default => $this->value($rule->scope, $rule->scopeParameter),
         };
-        $identity = ScopeIdentity::for($rule, $value, fn (): string => $this->groupedIp($rule));
 
-        return $identity === null ? null : $this->hasher->hash($identity);
+        return ScopeIdentity::for($rule, $value, fn (): string => $this->groupedIp($rule));
     }
 
     /**
