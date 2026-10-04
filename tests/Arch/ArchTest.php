@@ -8,8 +8,10 @@ use Afzal\DynamicThrottle\Engine\Failure\Cooldown;
 use Afzal\DynamicThrottle\Engine\Failure\ReportThrottle;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
 use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
+use Afzal\DynamicThrottle\Models\AuditEntry;
 use Afzal\DynamicThrottle\Support\ApcuFailureMemory;
 use Afzal\DynamicThrottle\Support\ApcuManifestCache;
+use Afzal\DynamicThrottle\Support\EmergencyControls;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -177,6 +179,15 @@ arch('the manifest\'s APCu cache never touches the database (SPEC-028 AC-13)')
 arch('the manifest read path reaches APCu only through LocalManifestCache (SPEC-028 AC-13)')
     ->expect('Afzal\DynamicThrottle\Manifest')
     ->not->toUse(ApcuManifestCache::class);
+
+/*
+| SPEC-013 AC-23: every change the commands make goes through EmergencyControls,
+| which writes the change and its audit entry in one transaction.
+*/
+
+arch('only EmergencyControls writes the audit log (SPEC-013 AC-23)')
+    ->expect(AuditEntry::class)
+    ->toOnlyBeUsedIn([EmergencyControls::class]);
 
 dataset('built-in classes the arch rules cannot see', [
     'a "now" date in the engine bypasses travel() (ADR-0006)' => [

@@ -20,7 +20,7 @@ Laravel's built-in rate limiting lives in code: changing a limit means a code ch
 - **Safe by default.**
   - Rules are never read from the database per request. They are compiled into a manifest in your cache. With Laravel's `database` cache store, the counters and the manifest themselves live in the database, so use Redis, Valkey or Memcached for busy apps.
   - If storage fails, requests are allowed by default, and you can make a sensitive rule fail closed instead.
-  - Emergency bypass and scaling switch themselves off at the expiry time you set.
+  - Emergency bypass and scaling switch themselves off at their end time, an hour after you set them unless you choose another.
   - An environment kill switch works even when the database and cache are down.
 - **Operable.** It comes with Artisan commands, a JSON API, an append-only audit log, and a [minimal dashboard](docs/adr/0018-minimal-dashboard.md) (server-rendered, strict CSP, no JavaScript build step).
 
@@ -137,6 +137,27 @@ DynamicThrottle::strict(! app()->isProduction());
 ```
 
 The middleware then rethrows config mistakes, such as an unknown `driver`, and errors from your own code, such as a custom scope resolver or a guard that throws. Storage errors, the manifest and a client IP that cannot be read still follow `on_failure`, since no code can prevent them.
+
+### During an incident
+
+Two runtime settings change every rule at once, without a deploy, and end by themselves ([ADR-0011](docs/adr/0011-emergency-controls.md)). They need the package's newest migrations: publish them and run `php artisan migrate`.
+
+```bash
+php artisan dynamic-throttle:bypass on --for=30m   # every request goes through, unlimited
+php artisan dynamic-throttle:scale 2 --for=2h      # every limit doubles; 0.5 halves them
+php artisan dynamic-throttle:status                # what servers apply, and until when
+php artisan dynamic-throttle:bypass off
+php artisan dynamic-throttle:scale off
+```
+
+- **End times.** `--for` takes `90s`, `30m`, `2h` or `1d`, up to 365 days. Without it, a change ends after one hour, and `--forever` sets no end time. Servers stop applying a setting at its end time, by their own clock, even when nothing compiles in between.
+- **Scaling.** The factor goes from 0.1 to 10, with at most two decimals. A rule's limit becomes `max(1, ceil(max_attempts × factor))`, a dry-run rule's too, and the counts made before the change still count.
+- **One bad rule.** `php artisan dynamic-throttle:list` shows every rule with its id. `dynamic-throttle:disable-rule 12` switches rule 12 off, and `enable-rule 12` brings it back.
+- **Confirmation.** In production, turning bypass on, a factor below 1 and disabling an enforcing rule ask first. Scripts pass `--force`.
+- **Propagation.** Each change compiles the manifest, and servers apply it within `manifest.refresh_seconds`. If the manifest cannot be written, the change stays saved, the command exits 1, and servers keep the previous manifest until a compile succeeds.
+- **The audit log.** Each change writes one append-only entry to `dynamic_throttle_audit_log`: the actor (`cli:` and the system user), the action, the target, and the state before and after.
+- **In deploy scripts.** `dynamic-throttle:status` exits 1 when the config is invalid, such as an unknown `driver`, an undefined `store` or an invalid `prefix`.
+- **The last resort.** When the database and the cache are both down, set `DYNAMIC_THROTTLE_ENABLED=false` and reload the config: the middleware then does nothing.
 
 ### In your tests
 

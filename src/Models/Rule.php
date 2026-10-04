@@ -9,6 +9,7 @@ use Afzal\DynamicThrottle\Enums\MissingIdentity;
 use Afzal\DynamicThrottle\Enums\RequestMethod;
 use Afzal\DynamicThrottle\Enums\RuleMode;
 use Afzal\DynamicThrottle\Enums\Scope;
+use Afzal\DynamicThrottle\Models\Concerns\UsesPackageConnection;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -39,6 +40,8 @@ use Illuminate\Support\Carbon;
  */
 final class Rule extends Model
 {
+    use UsesPackageConnection;
+
     protected $table = 'dynamic_throttle_rules';
 
     /** @var list<string> */
@@ -81,25 +84,6 @@ final class Rule extends Model
     public function exemptions(): HasMany
     {
         return $this->hasMany(Exemption::class);
-    }
-
-    /**
-     * The connection from config('dynamic-throttle.database.connection'), or the app's
-     * default. A connection set explicitly, by Rule::on() or by Eloquent when it loads
-     * models from a query, wins.
-     */
-    public function getConnectionName(): ?string
-    {
-        // The parent turns an enum connection name into its value.
-        $explicit = parent::getConnectionName();
-
-        if ($explicit !== null) {
-            return $explicit;
-        }
-
-        $connection = config('dynamic-throttle.database.connection');
-
-        return is_string($connection) && $connection !== '' ? $connection : null;
     }
 
     /**

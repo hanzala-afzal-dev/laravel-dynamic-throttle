@@ -7,9 +7,10 @@ namespace Afzal\DynamicThrottle\Tests\Support;
 use Afzal\DynamicThrottle\Manifest\CompiledExemption;
 use Afzal\DynamicThrottle\Manifest\CompiledRule;
 use Afzal\DynamicThrottle\Manifest\ManifestCodec;
+use Afzal\DynamicThrottle\Manifest\ManifestSettings;
 
 /**
- * Manifests written the way the compiler writes them (SPEC-006, SPEC-009).
+ * Manifests written the way the compiler writes them (SPEC-006, SPEC-009, SPEC-013).
  */
 final class ManifestFixtures
 {
@@ -62,13 +63,15 @@ final class ManifestFixtures
     /**
      * @param  list<array<string, mixed>>  $rules
      * @param  list<array<string, mixed>>  $exemptions
+     * @param  ?ManifestSettings  $settings  the runtime settings (SPEC-013), none by default
      */
-    public static function json(int $version, array $rules = [[]], array $exemptions = []): string
+    public static function json(int $version, array $rules = [[]], array $exemptions = [], ?ManifestSettings $settings = null): string
     {
-        return ManifestCodec::encode(
-            $version,
-            array_map(fn (array $overrides): CompiledRule => CompiledRule::fromArray(self::rule($overrides)), $rules),
-            array_map(fn (array $overrides): CompiledExemption => CompiledExemption::fromArray(self::exemption($overrides)), $exemptions),
-        );
+        $compiledRules = array_map(fn (array $overrides): CompiledRule => CompiledRule::fromArray(self::rule($overrides)), $rules);
+        $compiledExemptions = array_map(fn (array $overrides): CompiledExemption => CompiledExemption::fromArray(self::exemption($overrides)), $exemptions);
+
+        return $settings instanceof ManifestSettings
+            ? ManifestCodec::encode($version, $compiledRules, $compiledExemptions, $settings)
+            : ManifestCodec::encode($version, $compiledRules, $compiledExemptions);
     }
 }

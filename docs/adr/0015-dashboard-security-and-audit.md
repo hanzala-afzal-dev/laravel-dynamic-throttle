@@ -66,3 +66,7 @@ The dashboard can switch off login protection or block all API traffic. Access t
 - A test that every mutation writes exactly one audit entry.
 - A test that the dashboard stays reachable under a `*` rule.
 - A security review by a Claude Code subagent against a checklist (authorization, validation, mass assignment, XSS in rule names, CSRF), plus manual review.
+
+## Decision record
+
+On 2026-10-01, for SPEC-013, the maintainer decided that the audit log's table, and the CLI's entries, ship in Phase 3, so the CLI-only 0.1.0 audits its changes (ADR-0011 point 6). SPEC-019 adds the JSON API's and the dashboard's entries in Phase 4, and reading them.

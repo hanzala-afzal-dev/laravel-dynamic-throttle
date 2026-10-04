@@ -8,7 +8,9 @@ use Afzal\DynamicThrottle\Manifest\CompiledRule;
 use Afzal\DynamicThrottle\Manifest\Manifest;
 use Afzal\DynamicThrottle\Manifest\ManifestCodec;
 use Afzal\DynamicThrottle\Manifest\ManifestRules;
+use Afzal\DynamicThrottle\Manifest\ManifestSettings;
 use Afzal\DynamicThrottle\Manifest\ManifestState;
+use Afzal\DynamicThrottle\Tests\Support\FakeClock;
 use Afzal\DynamicThrottle\Tests\Support\ManifestFixtures;
 
 covers(Manifest::class);
@@ -16,7 +18,7 @@ covers(Manifest::class);
 /*
 | SPEC-028: a manifest reads its rules by position, so one built from L1
 | builds only the rules a request matches, with the index stored in L1
-| (ADR-0023, as amended).
+| (ADR-0023, as amended). SPEC-013 adds the runtime settings.
 */
 
 function manifestRule(string $id, string $pattern): CompiledRule
@@ -65,4 +67,15 @@ it('SPEC-028: is missing with no rules', function (): void {
     $manifest = Manifest::missing();
 
     expect([$manifest->version, $manifest->state, $manifest->rules(), $manifest->rulesJson()])->toBe([0, ManifestState::Missing, [], []]);
+});
+
+it('SPEC-013: has no setting on unless it is given some', function (): void {
+    expect((new Manifest(7, []))->settings)->toEqual(ManifestSettings::none())
+        ->and(Manifest::missing()->settings)->toEqual(ManifestSettings::none());
+});
+
+it('SPEC-013: keeps its settings when it goes stale, so a bypass holds through an outage', function (): void {
+    $settings = new ManifestSettings(bypass: true, bypassUntil: FakeClock::T0 + 60);
+
+    expect((new Manifest(7, [], settings: $settings))->stale()->settings)->toBe($settings);
 });

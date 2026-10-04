@@ -54,3 +54,9 @@
   - Bypass skips all rules.
   - The env kill switch works with the database and cache unavailable.
   - The CLI commands write audit entries.
+
+## Decision record
+
+On 2026-10-01, for SPEC-013, the maintainer settled two points this ADR left open:
+- **The audit log ships with SPEC-013,** so the CLI's changes are audited from 0.1.0 (point 6). SPEC-005 had placed its table in SPEC-019, which still adds the JSON API's and the dashboard's entries, and reading them (ADR-0015).
+- **A change made without an end time ends after one hour.** The end time stays optional, as point 1 says: the commands' `--forever` sets none. So, as the reasoning puts it, undoing the change is the default.

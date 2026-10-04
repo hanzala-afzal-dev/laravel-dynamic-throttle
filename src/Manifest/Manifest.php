@@ -8,7 +8,8 @@ use Afzal\DynamicThrottle\Engine\Exemptions\ExemptionSet;
 use Afzal\DynamicThrottle\Engine\Matching\RuleIndex;
 
 /**
- * The compiled rules and exemptions every request reads (ADR-0007, SPEC-006, SPEC-009).
+ * The compiled rules, exemptions and runtime settings every request reads
+ * (ADR-0007, SPEC-006, SPEC-009, SPEC-013).
  */
 final readonly class Manifest
 {
@@ -18,12 +19,16 @@ final readonly class Manifest
     /** The exemptions, grouped for the request path when the manifest loads (SPEC-009). */
     public ExemptionSet $exemptions;
 
+    /** Bypass and the scale factor, with their end times (ADR-0011, SPEC-013). */
+    public ManifestSettings $settings;
+
     private ManifestRules $rules;
 
     /**
      * @param  list<CompiledRule>|ManifestRules  $rules  sorted by priority, then id
      * @param  list<CompiledExemption>  $exemptions  sorted by id
      * @param  ?RuleIndex  $index  the index L1 stores with the rules (SPEC-028), or null to build it from them
+     * @param  ?ManifestSettings  $settings  the runtime settings (SPEC-013), or null for none
      */
     public function __construct(
         public int $version,
@@ -31,10 +36,12 @@ final readonly class Manifest
         array $exemptions = [],
         public ManifestState $state = ManifestState::Fresh,
         ?RuleIndex $index = null,
+        ?ManifestSettings $settings = null,
     ) {
         $this->rules = $rules instanceof ManifestRules ? $rules : ManifestRules::of($rules);
         $this->index = $index ?? RuleIndex::of($this->rules->all());
         $this->exemptions = new ExemptionSet($exemptions);
+        $this->settings = $settings ?? ManifestSettings::none();
     }
 
     /**
@@ -78,10 +85,11 @@ final readonly class Manifest
 
     /**
      * The same manifest, marked stale. Its rules and index carry over, so a manifest
-     * from L1 builds no rule to go stale.
+     * from L1 builds no rule to go stale, and so do its settings, so a bypass holds
+     * through an outage until its end time (SPEC-013).
      */
     public function stale(): self
     {
-        return new self($this->version, $this->rules, $this->exemptions->all(), ManifestState::Stale, $this->index);
+        return new self($this->version, $this->rules, $this->exemptions->all(), ManifestState::Stale, $this->index, $this->settings);
     }
 }

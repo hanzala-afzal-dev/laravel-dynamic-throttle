@@ -62,10 +62,7 @@ it('AC-2: creates the table on the configured connection', function (): void {
 it('AC-2: ships its migration in the folder published with the rules migration', function (): void {
     $migrations = array_map(basename(...), glob(RuleSchema::MIGRATIONS.'/*.php') ?: []);
 
-    expect($migrations)->toBe([
-        '2026_09_24_000001_create_dynamic_throttle_rules_table.php',
-        '2026_09_25_000001_create_dynamic_throttle_exemptions_table.php',
-    ]);
+    expect($migrations)->toContain('2026_09_24_000001_create_dynamic_throttle_rules_table.php', '2026_09_25_000001_create_dynamic_throttle_exemptions_table.php');
 });
 
 it('AC-3: deletes a rule\'s exemptions with the rule, and no other rule\'s or global ones', function (): void {

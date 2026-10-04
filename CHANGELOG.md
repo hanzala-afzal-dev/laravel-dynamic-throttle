@@ -54,6 +54,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - It lets through, untouched, the paths in `except` (by default Horizon, Telescope, Pulse, Nova, Livewire 3 and 4, `broadcasting/auth`, `sanctum/csrf-cookie` and `up`), the package's own routes, and every request while `enabled` is off.
   - A limited request gets Laravel's 429 through your exception handler, or the rule's `response_override` as its JSON body, with `Retry-After`, `X-RateLimit-Reset`, `X-RateLimit-Limit` and `X-RateLimit-Remaining`. An allowed request gets `X-RateLimit-Limit` and `X-RateLimit-Remaining` from its most restrictive enforcing rule. Dry-run rules set no headers.
   - When something fails while deciding, such as the counter store, a config value or one of your scope resolvers, the request goes through, unless a rule fails closed (below), and the error is reported.
+- Emergency controls: runtime settings that change every rule without a deploy, and end by themselves (ADR-0011).
+  - `php artisan dynamic-throttle:bypass on|off` lets every request through, unlimited. `dynamic-throttle:scale <factor>|off` multiplies every rule's limit by 0.1 to 10, rounding up, dry-run rules too.
+  - `--for` sets how long, such as `30m`, `2h` or `1d`, and one hour without it. `--forever` sets no end time. Every server stops applying a setting at its end time, even without a compile.
+  - In production, turning bypass on, a factor below 1 and disabling an enforcing rule ask for confirmation, and `--force` skips it.
+  - The table `dynamic_throttle_settings`: publish the migrations and run `php artisan migrate`. Until you do, the rules compile without settings, and the missing table is reported.
+- `php artisan dynamic-throttle:list` shows every rule with its id, and `dynamic-throttle:disable-rule` and `enable-rule` switch one off or on.
+- `php artisan dynamic-throttle:status` shows what servers apply: the kill switch, the driver, the manifest, and each setting with its end time. It exits 1 when the config is invalid, so a deploy script can stop on it.
+- The audit log, `dynamic_throttle_audit_log`: each change the commands make writes one append-only entry, with the actor, the action, the target, and the state before and after.
 - `DynamicThrottle::fake()` for your app's tests: the counters and the manifest live in memory, so tests need no Redis and each one starts from zero.
 - The `RateLimitWouldBlock` event: a dry-run rule dispatches it, after the response, on exactly the requests an enforcing copy of the rule would reject.
   - One event for each dry-run rule that would block, in the order the rules run.

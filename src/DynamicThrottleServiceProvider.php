@@ -4,9 +4,16 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle;
 
+use Afzal\DynamicThrottle\Compiler\LastCompile;
 use Afzal\DynamicThrottle\Compiler\ManifestCompiler;
 use Afzal\DynamicThrottle\Compiler\ManifestObserver;
+use Afzal\DynamicThrottle\Console\BypassCommand;
 use Afzal\DynamicThrottle\Console\CompileCommand;
+use Afzal\DynamicThrottle\Console\DisableRuleCommand;
+use Afzal\DynamicThrottle\Console\EnableRuleCommand;
+use Afzal\DynamicThrottle\Console\ListCommand;
+use Afzal\DynamicThrottle\Console\ScaleCommand;
+use Afzal\DynamicThrottle\Console\StatusCommand;
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
 use Afzal\DynamicThrottle\Engine\Contracts\FailureMemory;
 use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
@@ -24,6 +31,7 @@ use Afzal\DynamicThrottle\Manifest\Contracts\LocalManifestCache;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Models\Exemption;
 use Afzal\DynamicThrottle\Models\Rule;
+use Afzal\DynamicThrottle\Models\Setting;
 use Afzal\DynamicThrottle\Support\ApcuFailureMemory;
 use Afzal\DynamicThrottle\Support\ApcuManifestCache;
 use Afzal\DynamicThrottle\Support\ConfigMerger;
@@ -67,6 +75,9 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
         $this->app->scoped(LimiterStore::class, fn (Application $app): LimiterStore => $app->make(LimiterStoreFactory::class)->make());
 
         $this->registerRequestPath();
+
+        // Scoped, so a change reads back its own compile, never another request's (SPEC-013).
+        $this->app->scoped(LastCompile::class);
 
         // Exemption values are hashed as requests hash them (ADR-0024).
         $this->app->bind(ManifestCompiler::class, fn (Application $app): ManifestCompiler => new ManifestCompiler(
@@ -325,9 +336,10 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        // Admins edit rules and exemptions from the dashboard too, so this is not console-only.
+        // Admins edit rules, exemptions and settings from the dashboard too, so this is not console-only.
         Rule::observe(ManifestObserver::class);
         Exemption::observe(ManifestObserver::class);
+        Setting::observe(ManifestObserver::class);
 
         // A route middleware, attached nowhere until the app says so (ADR-0004, ADR-0020 point 11).
         $this->callAfterResolving(Router::class, function (Router $router): void {
@@ -350,7 +362,15 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
             return;
         }
 
-        $this->commands([CompileCommand::class]);
+        $this->commands([
+            CompileCommand::class,
+            StatusCommand::class,
+            BypassCommand::class,
+            ScaleCommand::class,
+            ListCommand::class,
+            DisableRuleCommand::class,
+            EnableRuleCommand::class,
+        ]);
 
         // Heals a manifest the cache lost (SPEC-006). manifest.schedule turns it off.
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule): void {
