@@ -61,6 +61,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - The table `dynamic_throttle_settings`: publish the migrations and run `php artisan migrate`. Until you do, the rules compile without settings, and the missing table is reported.
 - `php artisan dynamic-throttle:list` shows every rule with its id, and `dynamic-throttle:disable-rule` and `enable-rule` switch one off or on.
 - `php artisan dynamic-throttle:status` shows what servers apply: the kill switch, the driver, the manifest, and each setting with its end time. It exits 1 when the config is invalid, so a deploy script can stop on it.
+- `php artisan dynamic-throttle:explain GET /api/orders` shows what the middleware does with a request, without counting it: the rules it matches, in order, who the client counts as under each, the counters and what remains, the route's middleware, and the decision the next request gets, with its headers. `--ip`, `--user`, `--guard` and `--header` describe the client, and `--json` prints the explanation as JSON.
 - The audit log, `dynamic_throttle_audit_log`: each change the commands make writes one append-only entry, with the actor, the action, the target, and the state before and after.
 - `DynamicThrottle::fake()` for your app's tests: the counters and the manifest live in memory, so tests need no Redis and each one starts from zero.
 - The `RateLimitWouldBlock` event: a dry-run rule dispatches it, after the response, on exactly the requests an enforcing copy of the rule would reject.
