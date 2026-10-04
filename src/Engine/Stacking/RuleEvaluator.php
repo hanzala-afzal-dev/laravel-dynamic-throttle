@@ -95,6 +95,8 @@ final readonly class RuleEvaluator
      *
      * @param  list<CompiledRule>  $rules  the matched rules, in manifest order
      * @param  int  $scalePercent  the scale factor as a percentage, 100 for none
+     *
+     * @internal
      */
     public function plan(array $rules, IdentityResolver $identities, int $scalePercent = 100): Plan
     {
@@ -176,6 +178,8 @@ final readonly class RuleEvaluator
      * request would make (SPEC-014 decision 8).
      *
      * @param  AttemptBatch  $batch  the store's answers to the plan's attempts, in order; empty during the cooldown
+     *
+     * @internal
      */
     public function decide(Plan $plan, AttemptBatch $batch): Evaluation
     {

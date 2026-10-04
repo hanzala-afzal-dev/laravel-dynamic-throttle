@@ -90,6 +90,8 @@ final class RequestIdentityResolver implements ExemptionSubjects, IdentityResolv
      * the request has none for the rule.
      *
      * @throws IdentityUnavailableException
+     *
+     * @internal
      */
     public function identity(CompiledRule $rule): ?string
     {

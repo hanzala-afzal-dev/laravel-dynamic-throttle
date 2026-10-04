@@ -8,6 +8,8 @@ namespace Afzal\DynamicThrottle\Engine;
  * What a counter holds for one rule and client, read without counting
  * (SPEC-014): the count in the sliding window, and the attempt the next
  * request would make.
+ *
+ * @internal
  */
 final readonly class CounterReading
 {

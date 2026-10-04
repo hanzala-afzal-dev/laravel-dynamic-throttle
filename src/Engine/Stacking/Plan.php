@@ -11,6 +11,8 @@ use Afzal\DynamicThrottle\Manifest\CompiledRule;
  * The first step of evaluating a request's rules, made without the store
  * (ADR-0026, SPEC-014): the attempts the store will count, and why each other
  * matched rule counts nothing.
+ *
+ * @internal
  */
 final readonly class Plan
 {

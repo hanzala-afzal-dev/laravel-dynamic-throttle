@@ -20,6 +20,7 @@ use Afzal\DynamicThrottle\Engine\Stacking\Plan;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleAttempt;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
 use Afzal\DynamicThrottle\Engine\Stacking\Scale;
+use Afzal\DynamicThrottle\Http\IdentitySettings;
 use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
 use Afzal\DynamicThrottle\Http\RateLimitHeaders;
 use Afzal\DynamicThrottle\Http\RequestIdentityResolver;
@@ -29,6 +30,7 @@ use Afzal\DynamicThrottle\Http\UntouchedReason;
 use Afzal\DynamicThrottle\Manifest\CompiledRule;
 use Afzal\DynamicThrottle\Manifest\Manifest;
 use Afzal\DynamicThrottle\Manifest\ManifestCodec;
+use Afzal\DynamicThrottle\Manifest\ManifestSettings;
 use Afzal\DynamicThrottle\Support\Explanation\DecisionOutcome;
 use Afzal\DynamicThrottle\Support\Explanation\ExplainedDecision;
 use Afzal\DynamicThrottle\Support\Explanation\ExplainedRoute;
@@ -47,7 +49,9 @@ use Illuminate\Contracts\Auth\UserProvider;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Contracts\Container\Container;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
+use Illuminate\Events\NullDispatcher;
 use Illuminate\Foundation\Http\Kernel;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
@@ -83,33 +87,51 @@ final readonly class Explainer
     ) {}
 
     /**
-     * @throws ExplanationFailed when the manifest is missing or cannot be read, or the user or the guard cannot be used
+     * @throws ExplanationFailed when the request needs the manifest and it is missing or cannot be read, or the user or the guard cannot be used
      */
     public function explain(ExplanationRequest $input): Explanation
     {
-        $manifest = $this->manifest();
         $request = $input->toRequest();
         $target = RequestTarget::fromRequest($request);
         $now = intdiv($this->clock->microseconds(), 1_000_000);
+        [$route, $global] = $this->route($request);
+        $manifest = $this->manifest();
 
-        return $this->as($input, $request, function (?string $guard) use ($input, $request, $target, $manifest, $now): Explanation {
-            [$route, $global] = $this->route($request);
+        return $this->as($input, $request, $route, function (?string $guard) use ($input, $request, $target, $route, $global, $manifest, $now): Explanation {
             [$rules, $read, $error, $decision] = $this->evaluate($request, $target, $route, $global, $manifest, $now);
+            $manifestRead = $manifest instanceof Manifest;
 
-            return new Explanation($input, $target->path, $guard, $manifest, $manifest->settings->at($now), $route, $global, $rules, $read, $error, $decision, $this->maxRulesPerRequest);
+            return new Explanation(
+                $input, $target->path, $guard, $manifestRead ? $manifest : null, $manifestRead ? null : $manifest->getMessage(),
+                ($manifestRead ? $manifest->settings : ManifestSettings::none())->at($now), $route, $global, $rules, $read, $error, $decision, $this->maxRulesPerRequest,
+            );
         });
     }
 
     /**
      * The middleware's steps: those that let the request through untouched, the
-     * matching, the plan, and the decision from the counters.
+     * matching, the plan, and the decision from the counters. As in the middleware,
+     * the manifest is needed only once the steps before it let the request on.
      *
+     * @param  Manifest|ExplanationFailed  $manifest  the manifest, or why it cannot be read
      * @param  int  $now  Unix seconds
      * @return array{list<ExplainedRule>, bool, ?string, ExplainedDecision} the rules, whether the counters were read, why not, and the decision
+     *
+     * @throws ExplanationFailed when the request needs the manifest and it cannot be read
      */
-    private function evaluate(Request $request, RequestTarget $target, ?ExplainedRoute $route, bool $global, Manifest $manifest, int $now): array
+    private function evaluate(Request $request, RequestTarget $target, ?ExplainedRoute $route, bool $global, Manifest|ExplanationFailed $manifest, int $now): array
     {
-        $untouched = $this->untouched($request, $target, $route, $global, $manifest, $now);
+        $untouched = $this->beforeManifest($request, $target, $route, $global);
+
+        if ($untouched instanceof Untouched) {
+            return [[], false, null, new ExplainedDecision(DecisionOutcome::Untouched, $untouched)];
+        }
+
+        if ($manifest instanceof ExplanationFailed) {
+            throw $manifest;
+        }
+
+        $untouched = Untouched::bypass($manifest->settings, $now);
         $rules = $untouched instanceof Untouched ? [] : (new RuleMatcher)->match($manifest, $target->method, $target->path)->rules;
         $untouched ??= Untouched::noRule($rules);
 
@@ -128,26 +150,27 @@ final readonly class Explainer
 
     /**
      * The manifest servers read, from the cache store, without L0 or L1, and without
-     * rebuilding a missing one: explain changes nothing (AC-9, AC-12).
-     *
-     * @throws ExplanationFailed
+     * rebuilding a missing one: explain changes nothing (AC-9, AC-12). Or why it
+     * cannot be read, which matters only once a request needs it.
      */
-    private function manifest(): Manifest
+    private function manifest(): Manifest|ExplanationFailed
     {
         try {
             $json = $this->cache->get($this->keys->manifest());
             $manifest = is_string($json) ? ManifestCodec::decode($json) : null;
         } catch (Throwable $exception) {
-            throw new ExplanationFailed('The manifest cannot be read: '.$exception->getMessage(), $exception->getCode(), previous: $exception);
+            return new ExplanationFailed('The manifest cannot be read: '.$exception->getMessage(), $exception->getCode(), previous: $exception);
         }
 
-        return $manifest ?? throw new ExplanationFailed('The manifest is missing: run php artisan dynamic-throttle:compile.');
+        return $manifest ?? new ExplanationFailed('The manifest is missing: run php artisan dynamic-throttle:compile.');
     }
 
     /**
-     * Runs the explanation with the request bound, as Laravel's kernel binds it, and
-     * with the user authenticated on the guard, which becomes the default, as the
-     * auth middleware leaves it (decision 3). Both are put back afterwards.
+     * Runs the explanation with the request bound, as Laravel's kernel binds it. With
+     * --user, the user is looked up, and authenticated on the guard, which becomes the
+     * default, as the auth middleware leaves it, but only where the middleware would
+     * see the user: after authentication, or through scopes.user.guards (decision 3).
+     * Everything is put back afterwards, and no auth event fires (AC-9).
      *
      * @template T
      *
@@ -156,7 +179,7 @@ final readonly class Explainer
      *
      * @throws ExplanationFailed
      */
-    private function as(ExplanationRequest $input, Request $request, Closure $explain): mixed
+    private function as(ExplanationRequest $input, Request $request, ?ExplainedRoute $route, Closure $explain): mixed
     {
         $previousRequest = $this->container->bound('request') ? $this->container->make('request') : null;
         $this->container->instance('request', $request);
@@ -175,20 +198,52 @@ final readonly class Explainer
                 throw new ExplanationFailed("There is no user {$input->user} for the guard {$name}.");
             }
 
-            $previousGuard = $auth->getDefaultDriver();
-            $previousUser = $guard->hasUser() ? $guard->user() : null;
-            $guard->setUser($user);
-            $auth->shouldUse($name);
-
-            try {
+            if ($route?->afterAuth !== true && $this->container->make(IdentitySettings::class)->guards === null) {
+                // Nothing looks the user up before dynamic.throttle runs: it counts a guest.
                 return $explain($name);
-            } finally {
-                $previousUser instanceof Authenticatable ? $guard->setUser($previousUser) : $this->forgetUser($guard);
-                $auth->shouldUse($previousGuard);
             }
+
+            return $this->authenticated($auth, $guard, $name, $user, $explain);
         } finally {
             if ($previousRequest !== null) {
                 $this->container->instance('request', $previousRequest);
+            }
+        }
+    }
+
+    /**
+     * Runs the explanation with the user on the guard, without the events setUser()
+     * dispatches, so the app's listeners never run, then puts back the guard's user,
+     * the default guard and the user resolver.
+     *
+     * @template T
+     *
+     * @param  Closure(?string): T  $explain
+     * @return T
+     */
+    private function authenticated(AuthManager $auth, Guard $guard, string $name, Authenticatable $user, Closure $explain): mixed
+    {
+        $previousGuard = $auth->getDefaultDriver();
+        $previousResolver = $auth->userResolver();
+        $previousUser = $guard->hasUser() ? $guard->user() : null;
+        $events = method_exists($guard, 'getDispatcher') && method_exists($guard, 'setDispatcher') ? $guard->getDispatcher() : null;
+
+        try {
+            if ($events instanceof Dispatcher) {
+                $guard->setDispatcher(new NullDispatcher($events));
+            }
+
+            $guard->setUser($user);
+            $auth->shouldUse($name);
+
+            return $explain($name);
+        } finally {
+            $previousUser instanceof Authenticatable ? $guard->setUser($previousUser) : $this->forgetUser($guard);
+            $auth->setDefaultDriver($previousGuard);
+            $auth->resolveUsersUsing($previousResolver);
+
+            if ($events instanceof Dispatcher) {
+                $guard->setDispatcher($events);
             }
         }
     }
@@ -230,9 +285,11 @@ final readonly class Explainer
     }
 
     /**
-     * The app's route for the request, bound to it as the router binds it, and whether
-     * dynamic.throttle is global middleware. The HTTP kernel is resolved first, so the
-     * router holds the app's groups, aliases and priority list, as for a web request.
+     * The app's route for the request, and whether dynamic.throttle is global
+     * middleware. The HTTP kernel is resolved first, so the router holds the app's
+     * groups, aliases and priority list, as for a web request. The route is bound to
+     * the request only when it runs dynamic.throttle itself: global middleware runs
+     * before routing, and finds none.
      *
      * @return array{?ExplainedRoute, bool}
      */
@@ -248,12 +305,16 @@ final readonly class Explainer
             return [null, $global];
         }
 
-        $request->setRouteResolver(fn (): Route => $route);
         $middleware = array_map(
             fn (mixed $middleware): string => is_string($middleware) ? $middleware : get_debug_type($middleware),
             array_values($router->gatherRouteMiddleware($route)),
         );
         $position = $this->position($middleware);
+
+        if ($position !== null) {
+            $request->setRouteResolver(fn (): Route => $route);
+        }
+
         $afterAuth = match (true) {
             $position !== null => $this->authenticates(array_slice($middleware, 0, $position), $router),
             // Global middleware runs before the route's, its authentication included.
@@ -319,21 +380,18 @@ final readonly class Explainer
     }
 
     /**
-     * The first step before matching that lets the request through untouched, in the
-     * middleware's order, after one of explain's own: a request no route runs
+     * The first step before the manifest that lets the request through untouched, in
+     * the middleware's order, after one of explain's own: a request no route runs
      * dynamic.throttle for.
-     *
-     * @param  int  $now  Unix seconds
      */
-    private function untouched(Request $request, RequestTarget $target, ?ExplainedRoute $route, bool $global, Manifest $manifest, int $now): ?Untouched
+    private function beforeManifest(Request $request, RequestTarget $target, ?ExplainedRoute $route, bool $global): ?Untouched
     {
         if (! $global && $route?->throttled !== true) {
             return new Untouched(UntouchedReason::NotAttached);
         }
 
         return Untouched::beforePath($this->config, $request)
-            ?? Untouched::except($this->config, $target->path)
-            ?? Untouched::bypass($manifest->settings, $now);
+            ?? Untouched::except($this->config, $target->path);
     }
 
     /**

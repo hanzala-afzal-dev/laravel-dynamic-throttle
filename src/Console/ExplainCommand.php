@@ -8,6 +8,7 @@ use Afzal\DynamicThrottle\Engine\CounterReading;
 use Afzal\DynamicThrottle\Enums\RuleMode;
 use Afzal\DynamicThrottle\Http\Untouched;
 use Afzal\DynamicThrottle\Http\UntouchedReason;
+use Afzal\DynamicThrottle\Manifest\Manifest;
 use Afzal\DynamicThrottle\Manifest\ManifestSettings;
 use Afzal\DynamicThrottle\Support\Explainer;
 use Afzal\DynamicThrottle\Support\Explanation\DecisionOutcome;
@@ -108,17 +109,24 @@ final class ExplainCommand extends Command
     }
 
     /**
+     * Pure ASCII: every other character is escaped, a C1 control too, and DEL, which
+     * JSON leaves as is, so nothing in it can drive the terminal. A byte that is not
+     * UTF-8, such as from a path's %FF, becomes U+FFFD instead of failing.
+     *
      * @param  Explanation|array<string, string>  $value
      */
     private function json(Explanation|array $value): string
     {
-        return json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        return str_replace("\x7F", '\u007f', json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR));
     }
 
     private function render(Explanation $explanation): void
     {
         $this->line($this->requestLine($explanation));
-        $this->line("Manifest: version {$explanation->manifest->version}, ".$this->counted(count($explanation->manifest->rules()), 'rule').', '.$this->counted(count($explanation->manifest->exemptions->all()), 'exemption'));
+        $manifest = $explanation->manifest;
+        $this->line('Manifest: '.($manifest instanceof Manifest
+            ? "version {$manifest->version}, ".$this->counted(count($manifest->rules()), 'rule').', '.$this->counted(count($manifest->exemptions->all()), 'exemption')
+            : Printable::text((string) $explanation->manifestError)));
         $this->settings($explanation->settings);
         $this->route($explanation->route, $explanation->global);
 

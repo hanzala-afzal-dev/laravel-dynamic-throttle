@@ -20,6 +20,8 @@ final readonly class Explanation implements JsonSerializable
     /**
      * @param  string  $path  as the rules match it
      * @param  ?string  $guard  the guard the user was looked up with
+     * @param  ?Manifest  $manifest  null when it cannot be read, which only a request the steps before it let through allows
+     * @param  ?string  $manifestError  why it cannot be read
      * @param  ManifestSettings  $settings  those that apply now
      * @param  bool  $global  dynamic.throttle is global middleware
      * @param  list<ExplainedRule>  $rules  in evaluation order
@@ -31,7 +33,8 @@ final readonly class Explanation implements JsonSerializable
         public ExplanationRequest $request,
         public string $path,
         public ?string $guard,
-        public Manifest $manifest,
+        public ?Manifest $manifest,
+        public ?string $manifestError,
         public ManifestSettings $settings,
         public ?ExplainedRoute $route,
         public bool $global,
@@ -58,11 +61,11 @@ final readonly class Explanation implements JsonSerializable
                 'guard' => $this->guard,
                 'headers' => $this->request->headerNames(),
             ],
-            'manifest' => [
+            'manifest' => $this->manifest instanceof Manifest ? [
                 'version' => $this->manifest->version,
                 'rules' => count($this->manifest->rules()),
                 'exemptions' => count($this->manifest->exemptions->all()),
-            ],
+            ] : null,
             'settings' => [
                 'bypass' => $this->settings->bypass ? ['until' => $this->time($this->settings->bypassUntil)] : null,
                 'scale' => $this->settings->scale !== null ? ['factor' => ScaleFactor::format($this->settings->scale), 'until' => $this->time($this->settings->scaleUntil)] : null,
