@@ -25,7 +25,7 @@ The command builds the request it describes, and runs the middleware's decision 
 **Inputs:**
 - The method and the path, as arguments. A leading slash and a query string are ignored, as the middleware ignores them.
 - `--ip`: the client's IP as the app sees it, after its trusted proxies. 127.0.0.1 by default.
-- `--user`: a user's id, looked up by the user provider of `--guard`, or of the default guard. The request is authenticated as that user on that guard, which becomes the default guard, as Laravel's `auth` middleware leaves it (decision 3).
+- `--user`: a user's id, looked up by the user provider of `--guard`, or of the default guard. Where the middleware would see the user, the request is authenticated as that user on that guard, which becomes the default guard, as Laravel's `auth` middleware leaves it. Elsewhere, user rules count a guest, as they do in a request (decision 3).
 - `--header="Name: value"`, repeatable: for header and `api_token` scopes (`Authorization: Bearer …`), and for custom resolvers.
 - `--json`: the same explanation as JSON, for scripts. The JSON API (SPEC-017) and the dashboard's explain tool (SPEC-026) reuse it.
 
@@ -63,14 +63,16 @@ Feature tests run on SQLite with the array cache store, and on Redis for the cou
 - **AC-13 (peek)** On every store of the contract suite, `peek()` gives the count, and the attempt that the next `attempt()` makes, and changes no counter.
 
 ## Interfaces and files
-- `src/Console/ExplainCommand.php` (new): the command and its output.
-- `src/Support/Explainer.php` (new, internal): builds the explanation, as readonly value objects that render as text or as JSON.
-- `src/Engine/Stacking/RuleEvaluator.php`: `plan()`, the planning step, and `decide()`, the deciding step, both without the store. `evaluate()` calls them, and counts in between.
-- `src/Engine/Stacking/Plan.php` (new): what `plan()` returns: the rules that count the request and their attempts, and the rules that do not, with why.
-- `src/Http/Untouched.php` (new, internal): the steps that let a request through untouched, which the middleware and `explain` share.
-- `src/Http/RequestIdentityResolver.php`: `identity()`, the identity as given, which `resolve()` hashes.
-- `src/Engine/Contracts/CounterReader.php` (new, internal): `peek(CounterKey $key, int $maxAttempts, int $windowSeconds): CounterReading`. The cache and Redis drivers implement it, from the current and the previous window and the same `SlidingWindowCounter`. On Redis, one script reads both windows and `TIME`, and changes nothing.
-- `src/Engine/CounterReading.php` (new): the count, and the `Attempt` the next request would make (decision 7).
+As built:
+- `src/Console/ExplainCommand.php` (new): the command, and its text and JSON output. The JSON is pure ASCII.
+- `src/Support/Explainer.php` (new, internal): builds the explanation. The provider binds it on the counter store requests use, with the same fallback for a store that cannot be built (SPEC-012), and the same cap.
+- `src/Support/Explanation/` (new, internal): `ExplanationRequest`, the input, which checks it with the messages of AC-11; and `Explanation`, `ExplainedRoute`, `ExplainedRule`, `ExplainedDecision`, `RuleStatus` and `DecisionOutcome`, readonly values that serialize to the JSON. `ExplanationFailed` carries the errors of AC-11 and AC-12.
+- `src/Engine/Stacking/RuleEvaluator.php`: `plan()`, the planning step, and `decide()`, the deciding step, both without the store, and internal. `evaluate()` calls them, and counts in between.
+- `src/Engine/Stacking/Plan.php` (new, internal): what `plan()` returns: the rules that count the request and their attempts, and the rules that do not, with why.
+- `src/Http/Untouched.php` and `UntouchedReason.php` (new, internal): the steps that let a request through untouched, which the middleware and `explain` share, each giving null when it lets the request on.
+- `src/Http/RequestIdentityResolver.php`: `identity()` (internal), the identity as given, which `resolve()` hashes.
+- `src/Engine/Contracts/CounterReader.php` (new, internal): `peek(CounterKey $key, int $maxAttempts, int $windowSeconds): CounterReading`. The cache and Redis drivers implement it, from the current and the previous window and the same `SlidingWindowCounter`. On Redis, one script reads both windows and `TIME`, and changes nothing. `UnavailableLimiterStore` implements it too, and fails, so a store that cannot be built gives the failure policy's decision.
+- `src/Engine/CounterReading.php` (new, internal): the count, and the `Attempt` the next request would make (decision 7).
 
 ## Out of scope
 - The JSON API's endpoint (SPEC-017) and the dashboard's explain tool (SPEC-026), which reuse the explanation.
@@ -80,7 +82,16 @@ Feature tests run on SQLite with the array cache store, and on Redis for the cou
 - Strict mode's rethrow (SPEC-012 decision 4): `explain` shows a resolver's error, not that strict mode would turn it into an exception.
 
 ## Edge cases and failure modes
-- **A custom resolver that needs more than the request,** such as a tenant from the session: it sees the simulated request only, and its error is shown, as AC-3 says. The matched route is bound to the request, so a resolver that reads route parameters sees them.
+- **A custom resolver that needs more than the request,** such as a tenant from the session: it sees the simulated request only, and its error is shown, as AC-3 says. The matched route is bound to the request when the route runs `dynamic.throttle` itself, so a resolver that reads route parameters sees them. As global middleware, `dynamic.throttle` runs before routing, so there it sees no route, as in a request (found by the review).
+- **`--user` on a route where no authentication runs before `dynamic.throttle`** (found by the review): the middleware never looks the user up there (ADR-0020 point 5), so user rules count a guest, and `explain` says so. With `scopes.user.guards`, the middleware asks those guards itself, so the user counts on every route.
+- **The guards' own lookups:** with `scopes.user.guards`, each guard looks the user up as in a request, and one may write, such as Sanctum's `last_used_at`. The middleware does the same, but AC-9 holds only without them.
+- **The app's auth state:** with `--user`, no `Authenticated` event fires, and the guard's user, the default guard and the user resolver are put back afterwards, even when the explanation fails (found by the review).
+- **The manifest is missing,** or cannot be read: as in the middleware, it is needed only once the kill switch, the package's own routes and `except` let the request on. Before that, the explanation has no manifest (found by the review).
+- **The package's own routes under global middleware** (found by the review, and older than this spec): global middleware runs before routing, so the middleware cannot tell the package's routes by their names, and limits them. `explain` shows what the middleware does. Phase 4 must keep the dashboard reachable under a `*` rule with the middleware global too (the roadmap).
+- **Output:** text from the manifest, the request and exceptions prints through `Printable`. The JSON escapes every character outside ASCII and DEL, and a byte that is not UTF-8, such as from a path's `%FF`, becomes U+FFFD (found by the review).
+- **`counters.read`** is true when the store's counters can be read, even when no rule counts the request; false, with no error, when the request goes through untouched.
+- **`remaining` is what remains now:** the next request's `X-RateLimit-Remaining` is one less, since that request counts too. `decision.headers` gives the headers it gets.
+- **Identities show as given,** a bearer token or a header value included (decision 4). The admin typed them. The JSON API (SPEC-017) and the dashboard (SPEC-026) decide whether to mask them for their viewers (the roadmap).
 - **The counter store is down:** the plan is shown, the store's error, and the decision a request gets from a store that fails: the first fail-closed rule answers 503, and otherwise the request goes through (SPEC-012).
 - **A custom `LimiterStore`** that does not implement `CounterReader`: `explain` shows the plan, and that it cannot read the counters. The decision is `unknown` while an enforcing rule counts the request, since its counter decides.
 - **Counters move meanwhile:** other requests can count between `explain` and the next request. `explain` reads a moment's state, as a request would.
@@ -101,7 +112,7 @@ Recorded as recommended (ADR-0027), except the first, which the maintainer decid
 1. **`explain` reads the counters through an internal read-only interface** (decided by the maintainer). The cache and Redis drivers implement `CounterReader`; a custom `LimiterStore` shows the plan without counters. The public `LimiterStore` contract does not change.
    - Rejected: no counters, which cannot answer "why is this user getting 429s?"; and `peek()` on `LimiterStore`, a breaking change to a public contract.
 2. **The request is given as a method and a path, with `--ip`, `--user`, `--guard` and `--header`.** These are what the scopes read (ADR-0009).
-3. **The user is looked up by the user provider of `--guard`, or of the default guard, and the request is authenticated as that user on that guard, which becomes the default,** as Laravel's `auth` middleware leaves it. Revised while writing the tests: the draft authenticated every guard, which would count an admin guard's client as the default provider's user.
+3. **The user is looked up by the user provider of `--guard`, or of the default guard, and the request is authenticated as that user on that guard, which becomes the default,** as Laravel's `auth` middleware leaves it. Revised while writing the tests: the draft authenticated every guard, which would count an admin guard's client as the default provider's user. Revised again after the review: only where the middleware would see the user, which is after an authentication middleware or `middleware.after`, or through `scopes.user.guards`. Elsewhere the middleware counts a guest, so `explain` does too, and the answer to "why is this user limited?" is the guest counter they share. Rejected: authenticating everywhere and warning, which shows a counter the middleware never uses.
 4. **Identities show as given and as their hash.** The CLI is for admins, and the hash ties the output to counters and to `RateLimitWouldBlock`. Header values are not echoed back in `request`: the identity shows the one a scope hashes.
 5. **The route's middleware is shown in running order**, which answers ADR-0004's question: whether user rules see the user. A route that does not run `dynamic.throttle` leaves the request untouched, so the decision says so.
 6. **`--json` prints the same explanation**, which SPEC-017 and SPEC-026 reuse. Times are ISO 8601 in UTC. An error prints `{"error": …}`, so a script always gets JSON.

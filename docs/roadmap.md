@@ -147,14 +147,14 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 ## Phase 4 — Dashboard API and security (M)
 
 **Specs**
-- SPEC-017: JSON API (rules, exemptions, settings, metrics, audit, health, explain)
+- SPEC-017: JSON API (rules, exemptions, settings, metrics, audit, health, explain). Explain's identities show a bearer token or a header value as given: decide whether the API and the dashboard (SPEC-026) mask them (SPEC-014).
 - SPEC-018: gates, middleware, validation, guardrails (ADR-0015)
 - SPEC-019: audit log: the JSON API's and the dashboard's entries, and reading them. The table ships with SPEC-013.
 
 **Exit criteria**
 - An authorization test for every endpoint × role.
 - Every mutation writes exactly one audit entry.
-- The dashboard stays reachable under a `*` rule.
+- The dashboard stays reachable under a `*` rule, also with `dynamic.throttle` as global middleware. Global middleware runs before routing, so it cannot tell the package's routes by their names (found by SPEC-014's review).
 - A security review is done (subagent + manual checklist).
 
 **Fallback:** if gates are too coarse for early users, add a policy-class override in config.
