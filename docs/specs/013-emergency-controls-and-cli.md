@@ -137,11 +137,11 @@ Feature tests run on SQLite with the array cache store and Laravel's time travel
 - `composer bench`: `MiddlewareBench`, since every request now checks the settings
 - the review subagent: the engine, the public API (commands and schema) and the audit log are all in this spec
 
-Done on `c7bbd77`:
+Done on `030412c`:
 - `composer test`: 1,270 passed. `composer test:apcu`: 60 passed. `composer test:drivers`: 478 passed, with the settings and audit tables on MySQL and PostgreSQL. `composer analyse`, `format:check` and `refactor:check` are clean.
 - `composer test:mutate`: 98.12%, where the gate is 85%. Nothing survives in `Scale` or `RuleEvaluator`; the survivors predate this spec, and the review's fixes did not touch `src/Engine`.
 - `composer bench`: on the array store, a request costs 1 to 21 µs more at p50, of which the added work alone is about 4 µs. PHP-FPM with APCu stays under the 0.5 ms target, at 429 to 437 µs at p95 (`benchmarks/results/phase-3-emergency-controls.md`).
-- The review subagent checked `Scale::limit()` against bcmath on 2.2 million cases, and found no high-severity defect. Its findings are fixed test-first, in `019c4cb`, then `dcdf5e7`:
+- The review subagent checked `Scale::limit()` against bcmath on 2.2 million cases, and found no high-severity defect. Its findings are fixed test-first, in `63053f4`, then `5aa0d82`:
   - names print as text, so a name with console styles can no longer stop `list` or `disable-rule`;
   - a failed compile never says servers apply the change;
   - `status` reports an undefined Redis connection, and shows saved settings with the manifest missing;
@@ -149,7 +149,7 @@ Done on `c7bbd77`:
   - concurrent changes are retried, and a rule is read again in the transaction;
   - an ended setting turned off is a no-op; `--for` needs a duration; `enable-rule` takes `--force`; the commands say when the database is down; the actor names the sudo user; the audit log keeps JSON as written and long user agents.
 - Two findings are proposals for the maintainer before 0.1.0 (the roadmap): the manifest's key naming its format, and the package's times in UTC.
-- Three test-only commits followed the red steps. `8ca4537` runs a pending command before reading what it wrote, which an AC-15 test did not. `ed3e0bb` and `5aabf20` are Rector's style changes. None changes what a test asserts.
+- Three test-only commits followed the red steps. `602b2da` runs a pending command before reading what it wrote, which an AC-15 test did not. `58b2859` and `7023d41` are Rector's style changes. None changes what a test asserts.
 - Not done: the end time is computed before the confirmation in production, so a slow answer to `--for=30s` could save an end time already past. The test harness answers prompts at once, so no test can show it.
 
 ## Open questions

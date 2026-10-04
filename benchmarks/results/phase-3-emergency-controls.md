@@ -5,7 +5,7 @@ SPEC-013 adds two runtime settings to the manifest, bypass and the scale factor.
 - Date: 2026-10-01
 - Code, run alternately, twice, each in the same clone of the repository:
   - Before: `189153b`, SPEC-028's head, with no settings.
-  - After: `5aabf20`, SPEC-013 with its review's fixes. No setting is on, so every request pays the checks and nothing else changes.
+  - After: `7023d41`, SPEC-013 with its review's fixes. No setting is on, so every request pays the checks and nothing else changes.
 - Machine: a Claude Code cloud container: a KVM guest with 4 vCPUs of an Intel Xeon at 2.10 GHz and 15 GiB of RAM, shared with other tenants, as in `phase-3-apcu-manifest.md`. PHP 8.4.19 (NTS) with OPcache, APCu 5.1.28, Laravel 13.33.0, PHPBench 1.7.0, and Redis 7.4.11 in Docker.
 
 `MiddlewareBench`, with 100 rules of which 3 match. Microseconds per request, 200 requests per case.
@@ -28,7 +28,7 @@ SPEC-013 adds two runtime settings to the manifest, bypass and the scale factor.
 - **On the array store,** a request costs 1 to 21 µs more at p50. The added work alone costs about 4 µs (below), so the rest is this machine's noise.
 - **At p95,** the differences go both ways, from −82 to +69 µs on the array store. The added work's own p99 is 12 µs, so they are this shared host's tails, as `phase-3-apcu-manifest.md` saw between runs of the same code.
 - **On local Redis,** both directions again, by up to 135 µs: the round trip to Redis in Docker dominates.
-- **Raw data:** round 2's runs are in `phase-3-emergency-controls-before.xml` and `phase-3-emergency-controls-after.xml`, next to this file. Each run swapped in its code's `src` only, so both dumps name the clone's commit, `5aabf20`. Round 1's numbers are from its console output.
+- **Raw data:** round 2's runs are in `phase-3-emergency-controls-before.xml` and `phase-3-emergency-controls-after.xml`, next to this file. Each run swapped in its code's `src` only, so both dumps name the clone's commit, `5aabf20`: `7023d41` before SPEC-013 was rebased onto main. Round 1's numbers are from its console output.
 
 ### The added work alone
 20,000 samples in one process, of what SPEC-013 adds to a request with no setting on: reading the clock, `bypasses()`, `scalePercent()`, and `Scale::limit()` for three rules. PHP 8.4.19 without OPcache.
