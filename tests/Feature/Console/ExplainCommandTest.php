@@ -21,6 +21,7 @@ use Afzal\DynamicThrottle\Tests\Support\FakeClock;
 use Afzal\DynamicThrottle\Tests\Support\Identities;
 use Afzal\DynamicThrottle\Tests\Support\Settings;
 use Afzal\DynamicThrottle\Tests\Support\Throttling;
+use Illuminate\Auth\Events\Authenticated;
 use Illuminate\Auth\GenericUser;
 use Illuminate\Cache\Repository;
 use Illuminate\Contracts\Http\Kernel;
@@ -32,6 +33,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -117,7 +119,8 @@ it('AC-2: shows the identity as given, and the hash the middleware counts under'
     Explanations::users(42);
     DynamicThrottle::scope('plan', fn (Request $request): ?string => $request->header('X-Plan'));
     Throttling::rule(['scope' => Scope::from($scope), 'scope_parameter' => $parameter]);
-    Throttling::route('api/x');
+    // The user is authenticated by auth, which runs before dynamic.throttle.
+    Throttling::route('api/x', $asUser ? ['auth', 'dynamic.throttle'] : 'dynamic.throttle');
 
     $rule = Explanations::rules(Explanations::json('GET', 'api/x', ['--ip' => '203.0.113.7', ...$options]))['1'];
 
@@ -157,7 +160,7 @@ it('AC-2: looks the user up with the provider of --guard, and authenticates it o
     config()->set('auth.providers.partners', ['driver' => 'database', 'table' => 'users']);
     config()->set('auth.guards.partner', ['driver' => 'session', 'provider' => 'partners']);
     Throttling::rule(['scope' => Scope::User]);
-    Throttling::route('api/x');
+    Throttling::route('api/x', ['auth:partner', 'dynamic.throttle']);
 
     $explanation = Explanations::json('GET', 'api/x', ['--user' => '42', '--guard' => 'partner']);
 
@@ -168,7 +171,7 @@ it('AC-2: looks the user up with the provider of --guard, and authenticates it o
 it('AC-2: shows the user and the guard as text', function (): void {
     Explanations::users(42);
     Throttling::rule(['scope' => Scope::User]);
-    Throttling::route('api/x');
+    Throttling::route('api/x', ['auth', 'dynamic.throttle']);
 
     expect(explainText('GET', 'api/x', ['--user' => '42']))
         ->toContain('Request: GET api/x from 127.0.0.1, as user 42 of guard web')
@@ -180,6 +183,32 @@ it('AC-2: counts a client without the user as a guest when no --user is given', 
     Throttling::route('api/x');
 
     expect(Explanations::json('GET', 'api/x', ['--ip' => '203.0.113.7'])['rules'][0]['identity'])->toBe('guest:203.0.113.7');
+});
+
+it('AC-2: counts the user as a guest on a route where no authentication runs before dynamic.throttle, as the middleware does', function (): void {
+    Explanations::users(42);
+    Throttling::rule(['scope' => Scope::User]);
+    Throttling::route('api/x');
+
+    $rule = Explanations::json('GET', 'api/x', ['--user' => '42'])['rules'][0];
+    // No middleware looks the session's user up before dynamic.throttle, so it counts a guest.
+    $this->get('api/x')->assertOk();
+
+    expect($rule['identity'])->toBe('guest:127.0.0.1')
+        ->and(Explanations::counterHashes('1'))->toBe([$rule['hash']]);
+});
+
+it('AC-2: counts the user on any route when scopes.user.guards names its guard, as the middleware asks those guards itself', function (): void {
+    Explanations::users(42);
+    config()->set('dynamic-throttle.scopes.user.guards', ['web']);
+    Throttling::rule(['scope' => Scope::User]);
+    Throttling::route('api/x');
+
+    $rule = Explanations::json('GET', 'api/x', ['--user' => '42'])['rules'][0];
+    $this->actingAs(User::query()->findOrFail(42))->get('api/x')->assertOk();
+
+    expect($rule['identity'])->toBe('user:'.User::class.':42')
+        ->and(Explanations::counterHashes('1'))->toBe([$rule['hash']]);
 });
 
 /*
@@ -503,6 +532,19 @@ it('AC-8: says no rule applies on a route that does not run dynamic.throttle, an
         ->and(explainText('GET', 'nowhere'))->toContain('Decision: untouched: no route matches, and dynamic.throttle is not global middleware');
 });
 
+it('AC-8: resolves identities without the route when dynamic.throttle runs only as global middleware, as the middleware does', function (): void {
+    app(Kernel::class)->pushMiddleware(DynamicThrottleMiddleware::class);
+    // Global middleware runs before routing, so a resolver that reads the route finds none.
+    DynamicThrottle::scope('order', fn (Request $request): ?string => $request->route()?->parameter('order'));
+    Throttling::rule(['pattern' => '*', 'scope' => Scope::Custom, 'scope_parameter' => 'order']);
+    Route::get('orders/{order}', fn (): string => 'ok');
+
+    $rule = Explanations::json('GET', 'orders/7')['rules'][0];
+    $this->get('orders/7')->assertOk();
+
+    expect(Explanations::counterHashes('1'))->toBe([$rule['hash']]);
+});
+
 it('AC-8: applies the rules to a path no route matches when the app runs dynamic.throttle as global middleware', function (): void {
     app(Kernel::class)->pushMiddleware(DynamicThrottleMiddleware::class);
     Throttling::rule(['pattern' => '*', 'max_attempts' => 5]);
@@ -538,6 +580,28 @@ it('AC-9: changes no counter, writes nothing to the database, and leaves the cac
 
     expect(Explanations::arrayCache())->toBe($cache)
         ->and($writes)->toBe([]);
+});
+
+it('AC-9: fires no auth event for --user, and leaves the guards, the default guard and the user resolver as they were', function (): void {
+    Explanations::users(42);
+    config()->set('auth.providers.partners', ['driver' => 'database', 'table' => 'users']);
+    config()->set('auth.guards.partner', ['driver' => 'session', 'provider' => 'partners']);
+    Throttling::rule(['scope' => Scope::User]);
+    Throttling::route('api/x', ['auth:partner', 'dynamic.throttle']);
+    $resolver = fn (): null => null;
+    Auth::resolveUsersUsing($resolver);
+    $authenticated = [];
+    Event::listen(function (Authenticated $event) use (&$authenticated): void {
+        $authenticated[] = $event->guard;
+    });
+
+    $explanation = Explanations::json('GET', 'api/x', ['--user' => '42', '--guard' => 'partner']);
+
+    expect($explanation['rules'][0]['identity'])->toBe('user:'.GenericUser::class.':42')
+        ->and($authenticated)->toBe([])
+        ->and(Auth::guard('partner')->hasUser())->toBeFalse()
+        ->and(Auth::getDefaultDriver())->toBe('web')
+        ->and(Auth::userResolver())->toBe($resolver);
 });
 
 it('AC-9: rebuilds nothing when the manifest is missing', function (): void {
@@ -579,6 +643,31 @@ it('AC-10: names the headers given, without their values', function (): void {
 
     expect(Explanations::json('GET', 'api/x', ['--header' => ['X-Api-Key: secret', 'Authorization: Bearer abc']])['request']['headers'])
         ->toBe(['X-Api-Key', 'Authorization']);
+});
+
+it('AC-10: prints JSON for a path that is not UTF-8 once decoded, and for an error that quotes one', function (): void {
+    Throttling::rule(['pattern' => '*']);
+
+    $explanation = Explanations::json('GET', '/%FF');
+    $exitCode = Artisan::call('dynamic-throttle:explain', ['method' => "G\xFFT", 'path' => 'api/x', '--json' => true]);
+
+    expect($explanation['request']['path'])->toBe("\u{FFFD}")
+        ->and($exitCode)->toBe(1)
+        ->and(json_decode(trim(Artisan::output()), true, 512, JSON_THROW_ON_ERROR))
+        ->toBe(['error' => "The method must be GET, HEAD, POST, PUT, PATCH, DELETE or OPTIONS, got \"G\u{FFFD}T\"."]);
+});
+
+it('AC-10: escapes control characters in the JSON, so a rule\'s name cannot drive the terminal', function (): void {
+    $name = "Evil\u{9B}31m\x7F\x1B[2J";
+    Throttling::rule(['name' => $name]);
+    Throttling::route('api/x');
+
+    Artisan::call('dynamic-throttle:explain', ['method' => 'GET', 'path' => 'api/x', '--json' => true]);
+    $output = Artisan::output();
+
+    // C0 controls but the newlines of pretty printing, DEL, and C1 controls (U+0080 to U+009F).
+    expect(preg_match('/[\x00-\x09\x0B-\x1F\x7F]|\xC2[\x80-\x9F]/', $output))->toBe(0)
+        ->and(json_decode($output, true, 512, JSON_THROW_ON_ERROR)['rules'][0]['name'])->toBe($name);
 });
 
 it('AC-10: prints an error as one JSON object too, and nothing else', function (): void {
@@ -627,6 +716,19 @@ it('AC-12: says the manifest is missing, and exits 1', function (): void {
     $this->artisan('dynamic-throttle:explain', ['method' => 'GET', 'path' => 'api/x'])
         ->expectsOutputToContain('The manifest is missing: run php artisan dynamic-throttle:compile.')
         ->assertExitCode(1);
+});
+
+it('AC-12: explains a request the kill switch lets through without the manifest, as the middleware does', function (): void {
+    config()->set('dynamic-throttle.enabled', false);
+    Throttling::rule();
+    Throttling::route('api/x');
+    Cache::forget(app(KeyBuilder::class)->manifest());
+
+    $explanation = Explanations::json('GET', 'api/x');
+
+    expect($explanation['manifest'])->toBeNull()
+        ->and($explanation['decision'])->toBe(['outcome' => 'untouched', 'reason' => 'disabled', 'rule' => null, 'headers' => []])
+        ->and(explainText('GET', 'api/x'))->toContain('Decision: untouched: dynamic-throttle.enabled is off');
 });
 
 it('AC-12: says the manifest cannot be read, and exits 1', function (): void {
