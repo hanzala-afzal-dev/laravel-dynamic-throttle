@@ -30,7 +30,10 @@ final readonly class Sampler
         private Randomizer $randomizer = new Randomizer,
     ) {
         if (is_nan($rate) || $rate < 0.0 || $rate > 1.0) {
-            throw new InvalidArgumentException("The sample rate must be from 0 to 1, got {$rate}.");
+            // Named, never converted: PHP 8.5 warns when NaN is converted to a string.
+            $shown = is_nan($rate) ? 'NaN' : $rate;
+
+            throw new InvalidArgumentException("The sample rate must be from 0 to 1, got {$shown}.");
         }
     }
 
