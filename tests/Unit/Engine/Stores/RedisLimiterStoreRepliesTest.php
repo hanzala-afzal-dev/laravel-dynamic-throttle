@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Afzal\DynamicThrottle\Engine\Attempt;
 use Afzal\DynamicThrottle\Engine\AttemptBatch;
 use Afzal\DynamicThrottle\Engine\CounterKey;
+use Afzal\DynamicThrottle\Engine\CounterReading;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\PlannedAttempt;
@@ -409,3 +410,88 @@ it('SPEC-027: returns a reply with more attempts than planned as a failure', fun
 
     expect([$batch->attempts, $batch->failure?->getMessage()])->toBe([[], 'The Redis limiter store returned an unexpected reply.']);
 });
+
+/*
+| SPEC-014: peek() with stubbed clients: what the script receives, its EVAL
+| fallback, and the replies it refuses. The script answers the window, the
+| microseconds into it, and the current and the previous window's counts.
+*/
+
+function stubbedPeek(Redis $client): CounterReading
+{
+    return stubbedRedisStore(new PhpRedisConnection($client))->peek(new CounterKey('1', hash('sha256', 'A')), 5, 60);
+}
+
+it('SPEC-014: peeks with one script: the counter as its key, then the window and the time', function (): void {
+    // At T0+10 with a window of 60 s: window 30,000,000, 10 s into it, 3 counted, none before.
+    $client = scriptedPhpRedis(evalsha: [30_000_000, 10_000_000, 3, 0]);
+
+    $reading = stubbedPeek($client);
+
+    expect($client->received)->toBe([[
+        'evalsha',
+        RedisLimiterStore::peekScriptSha(),
+        ['dt:c:1:60:'.hash('sha256', 'A'), '60', (string) ((FakeClock::T0 + 10) * 1_000_000)],
+        1,
+    ]])
+        ->and([$reading->count, $reading->next->allowed, $reading->next->remaining, $reading->next->retryAfter, $reading->next->windowIndex])->toBe([3, true, 1, 0, 30_000_000]);
+});
+
+it('SPEC-014: weighs the previous window\'s count as the attempt script does', function (): void {
+    // 40 s into the window, the previous one's 10 weigh 10 × 20 / 60 = 3.33, so 4 counted.
+    $reading = stubbedPeek(scriptedPhpRedis(evalsha: [30_000_001, 40_000_000, 0, 10]));
+
+    expect([$reading->count, $reading->remaining(), $reading->next->allowed, $reading->next->remaining, $reading->next->windowIndex])->toBe([4, 1, true, 0, 30_000_001]);
+});
+
+it('SPEC-014: reads a negative count as 0, as the attempt script does', function (): void {
+    $reading = stubbedPeek(scriptedPhpRedis(evalsha: [30_000_000, 10_000_000, -2, -1]));
+
+    expect([$reading->count, $reading->next->remaining])->toBe([0, 4]);
+});
+
+it('SPEC-014: falls back to EVAL of the peek script once when phpredis reports NOSCRIPT', function (): void {
+    $client = scriptedPhpRedis(evalsha: false, lastError: 'NOSCRIPT No matching script. Please use EVAL.', eval: [30_000_000, 10_000_000, 0, 0]);
+
+    $reading = stubbedPeek($client);
+
+    expect(array_map(fn (array $call): array => [$call[0], $call[1]], $client->received))->toBe([
+        ['evalsha', RedisLimiterStore::peekScriptSha()],
+        ['eval', RedisLimiterStore::peekScriptSha()],
+    ])
+        ->and($reading->count)->toBe(0);
+});
+
+it('SPEC-014: reports a script error when peeking as unavailable, and names it', function (): void {
+    $failure = null;
+
+    try {
+        stubbedPeek(scriptedPhpRedis(evalsha: false, lastError: 'ERR Error running script'));
+    } catch (StorageUnavailableException $exception) {
+        $failure = $exception;
+    }
+
+    expect(exceptionChain($failure ?? new LogicException('Nothing was thrown.')))->toContain('ERR Error running script');
+});
+
+it('SPEC-014: accepts a peek reply at the first and at the last microsecond of the window', function (int $elapsed): void {
+    $reading = stubbedPeek(scriptedPhpRedis(evalsha: [30_000_000, $elapsed, 3, 0]));
+
+    expect([$reading->count, $reading->next->allowed, $reading->next->remaining])->toBe([3, true, 1]);
+})->with([
+    'the first' => [0],
+    'the last' => [59_999_999],
+]);
+
+it('SPEC-014: reports a peek reply that is not the window, the time into it and two counts as unavailable', function (mixed $reply): void {
+    expect(fn (): CounterReading => stubbedPeek(scriptedPhpRedis(evalsha: $reply)))
+        ->toThrow(StorageUnavailableException::class, 'unexpected reply');
+})->with([
+    'three integers' => [[30_000_000, 10_000_000, 3]],
+    'a string among them' => [[30_000_000, '10000000', 3, 0]],
+    'five integers' => [[30_000_000, 10_000_000, 3, 0, 1]],
+    'a time beyond the window' => [[30_000_000, 60_000_000, 3, 0]],
+    'a negative time into the window' => [[30_000_000, -1, 3, 0]],
+    'not a list' => [[1 => 30_000_000, 2 => 10_000_000, 3 => 3, 4 => 0]],
+    'a status reply' => ['OK'],
+]);

@@ -7,8 +7,10 @@ namespace Afzal\DynamicThrottle\Engine\Stores;
 use Afzal\DynamicThrottle\Engine\Algorithm\SlidingWindowCounter;
 use Afzal\DynamicThrottle\Engine\Attempt;
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
+use Afzal\DynamicThrottle\Engine\Contracts\CounterReader;
 use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
 use Afzal\DynamicThrottle\Engine\CounterKey;
+use Afzal\DynamicThrottle\Engine\CounterReading;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Engine\Internal\AttemptGuard;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
@@ -28,7 +30,7 @@ use Throwable;
  * Valkey, Memcached, DynamoDB, MySQL and PostgreSQL). File and APCu stores are
  * not atomic: see SPEC-002's edge cases.
  */
-final readonly class CacheLimiterStore implements LimiterStore
+final readonly class CacheLimiterStore implements CounterReader, LimiterStore
 {
     public function __construct(
         /** The cache store the counters live in; public so driver selection can be checked. */
@@ -98,6 +100,44 @@ final readonly class CacheLimiterStore implements LimiterStore
     }
 
     /**
+     * Reads both windows without counting (SPEC-014): the count is the estimate
+     * rounded up, and the next attempt is the one attempt() would make now.
+     */
+    public function peek(CounterKey $key, int $maxAttempts, int $windowSeconds): CounterReading
+    {
+        AttemptGuard::check($maxAttempts, $windowSeconds);
+
+        $now = $this->clock->microseconds();
+        $windowMicroseconds = $windowSeconds * 1_000_000;
+        $windowIndex = intdiv($now, $windowMicroseconds);
+        $elapsed = ($now - $windowIndex * $windowMicroseconds) / 1_000_000;
+
+        $current = $this->read($this->keys->counter($key, $windowSeconds, $windowIndex));
+        $previous = $this->read($this->keys->counter($key, $windowSeconds, $windowIndex - 1));
+
+        $evaluation = $this->counter->evaluate(
+            previous: $previous,
+            current: $current,
+            elapsed: $elapsed,
+            windowSeconds: $windowSeconds,
+            maxAttempts: $maxAttempts,
+        );
+
+        return new CounterReading(
+            count: (int) ceil($evaluation->estimate),
+            next: new Attempt(
+                key: $key,
+                limit: $maxAttempts,
+                windowSeconds: $windowSeconds,
+                windowIndex: $windowIndex,
+                allowed: $evaluation->allowed,
+                remaining: $evaluation->remaining,
+                retryAfter: $evaluation->retryAfter,
+            ),
+        );
+    }
+
+    /**
      * Reads the window's count, and decrements it only when it is above 0 (SPEC-004).
      * A missing key expired or was evicted, and decrementing it would create it at -1,
      * with no expiry, on Redis, file and array stores. The key can still vanish
@@ -144,6 +184,25 @@ final readonly class CacheLimiterStore implements LimiterStore
                 throw StorageUnavailableException::because('The limiter store could not release the request.', $exception);
             }
         }
+    }
+
+    /**
+     * A window's count for peek(): 0 when the key is missing, or below 0 after a
+     * release raced an expiry.
+     */
+    private function read(string $windowKey): int
+    {
+        try {
+            $count = $this->withoutSerialization(fn (): mixed => $this->cache->get($windowKey));
+        } catch (Throwable $exception) {
+            throw StorageUnavailableException::because('The limiter store could not read the counter.', $exception);
+        }
+
+        if ($count === null) {
+            $this->ensureMemcachedSucceeded('read the counter');
+        }
+
+        return is_numeric($count) ? max(0, (int) $count) : 0;
     }
 
     /**

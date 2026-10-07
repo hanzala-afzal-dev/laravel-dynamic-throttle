@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle\Engine\Stores;
 
+use Afzal\DynamicThrottle\Engine\Algorithm\SlidingWindowCounter;
 use Afzal\DynamicThrottle\Engine\Attempt;
 use Afzal\DynamicThrottle\Engine\AttemptBatch;
 use Afzal\DynamicThrottle\Engine\Contracts\BatchLimiterStore;
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
+use Afzal\DynamicThrottle\Engine\Contracts\CounterReader;
 use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
 use Afzal\DynamicThrottle\Engine\CounterKey;
+use Afzal\DynamicThrottle\Engine\CounterReading;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Engine\Internal\AttemptGuard;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
@@ -38,7 +41,7 @@ use Throwable;
  * tests). On Redis Cluster a script may only touch keys in one hash slot, so
  * there a request makes one call per attempt, each touching a single key.
  */
-final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStore
+final readonly class RedisLimiterStore implements BatchLimiterStore, CounterReader, LimiterStore
 {
     /**
      * The time in microseconds, from the argument, or from Redis TIME when it is ''
@@ -176,16 +179,38 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
         LUA;
 
     /**
+     * Reads a counter without counting (SPEC-014). KEYS[1]: the counter's hash.
+     * ARGV[1]: window in seconds. ARGV[2]: the time in microseconds, or ''. Finds
+     * the window as count() does, and returns its index, the microseconds into it,
+     * and the current and the previous window's counts. PHP decides with
+     * SlidingWindowCounter, which makes the same decision as count().
+     */
+    private const string PEEK_SCRIPT = self::FUNCTIONS.<<<'LUA'
+        local now = time_from(ARGV[2])
+        local window_us = tonumber(ARGV[1]) * 1000000
+        local index = math.floor(now / window_us)
+        if index * window_us > now then index = index - 1 end
+        if (index + 1) * window_us <= now then index = index + 1 end
+
+        local current = tonumber(redis.call('HGET', KEYS[1], string.format('%d', index))) or 0
+        local previous = tonumber(redis.call('HGET', KEYS[1], string.format('%d', index - 1))) or 0
+
+        return {index, now - index * window_us, current, previous}
+        LUA;
+
+    /**
      * The scripts' SHA-1s, which EVALSHA sends on every call. Written out, because
      * hashing the batch script costs about 5 µs per request. The stubbed-client
-     * tests check each one against scriptSha(), batchScriptSha() and
-     * releaseScriptSha(), which hash the scripts themselves.
+     * tests check each one against scriptSha(), batchScriptSha(),
+     * releaseScriptSha() and peekScriptSha(), which hash the scripts themselves.
      */
     private const string SCRIPT_SHA = '0d6a138de1be14ff1163308d4385c39eeadecae4';
 
     private const string BATCH_SCRIPT_SHA = '175ee874c5dbaaa6bb0a4baf564e3dff579a1735';
 
     private const string RELEASE_SCRIPT_SHA = 'b1e8534b2f07725a9d90be12c19efa55cf9f6631';
+
+    private const string PEEK_SCRIPT_SHA = '8b561ed44fbf895bfdd418b12b63fef2dfdec4b9';
 
     public function __construct(
         private RedisFactory $redis,
@@ -201,7 +226,7 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
         // Same checks as the cache driver, before touching the store (SPEC-002 AC-16).
         AttemptGuard::check($maxAttempts, $windowSeconds);
 
-        $reply = $this->integers($this->run(self::SCRIPT, self::SCRIPT_SHA, 'count', [$this->keys->counterBase($key, $windowSeconds)], [
+        $reply = $this->integers($this->run(self::SCRIPT, self::SCRIPT_SHA, 'The Redis limiter store could not count the request.', [$this->keys->counterBase($key, $windowSeconds)], [
             (string) $maxAttempts,
             (string) $windowSeconds,
             $this->time(),
@@ -247,7 +272,7 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
         }
 
         try {
-            return $this->batch($attempts, $this->run(self::BATCH_SCRIPT, self::BATCH_SCRIPT_SHA, 'count', $keys, $arguments, $connection));
+            return $this->batch($attempts, $this->run(self::BATCH_SCRIPT, self::BATCH_SCRIPT_SHA, 'The Redis limiter store could not count the request.', $keys, $arguments, $connection));
         } catch (StorageUnavailableException $exception) {
             // Nothing is known about the counts, so none is released: stricter, never looser.
             return new AttemptBatch(failure: $exception);
@@ -261,13 +286,51 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
             return;
         }
 
-        $reply = $this->run(self::RELEASE_SCRIPT, self::RELEASE_SCRIPT_SHA, 'release', [$this->keys->counterBase($attempt->key, $attempt->windowSeconds)], [
+        $reply = $this->run(self::RELEASE_SCRIPT, self::RELEASE_SCRIPT_SHA, 'The Redis limiter store could not release the request.', [$this->keys->counterBase($attempt->key, $attempt->windowSeconds)], [
             (string) $attempt->windowIndex,
         ]);
 
         if (! is_int($reply)) {
             throw StorageUnavailableException::because('The Redis limiter store returned an unexpected reply.');
         }
+    }
+
+    public function peek(CounterKey $key, int $maxAttempts, int $windowSeconds): CounterReading
+    {
+        AttemptGuard::check($maxAttempts, $windowSeconds);
+
+        $reply = $this->integers($this->run(self::PEEK_SCRIPT, self::PEEK_SCRIPT_SHA, 'The Redis limiter store could not read the counter.', [$this->keys->counterBase($key, $windowSeconds)], [
+            (string) $windowSeconds,
+            $this->time(),
+        ]));
+
+        if ($reply === null || count($reply) !== 4 || $reply[1] < 0 || $reply[1] >= $windowSeconds * 1_000_000) {
+            throw StorageUnavailableException::because('The Redis limiter store returned an unexpected reply.');
+        }
+
+        [$windowIndex, $elapsed, $current, $previous] = $reply;
+
+        // The same division as count()'s, so the decision is the attempt script's.
+        $evaluation = (new SlidingWindowCounter)->evaluate(
+            previous: max(0, $previous),
+            current: max(0, $current),
+            elapsed: $elapsed / 1_000_000,
+            windowSeconds: $windowSeconds,
+            maxAttempts: $maxAttempts,
+        );
+
+        return new CounterReading(
+            count: (int) ceil($evaluation->estimate),
+            next: new Attempt(
+                key: $key,
+                limit: $maxAttempts,
+                windowSeconds: $windowSeconds,
+                windowIndex: $windowIndex,
+                allowed: $evaluation->allowed,
+                remaining: $evaluation->remaining,
+                retryAfter: $evaluation->retryAfter,
+            ),
+        );
     }
 
     /**
@@ -299,6 +362,16 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
     public static function batchScriptSha(): string
     {
         return hash('sha1', self::BATCH_SCRIPT);
+    }
+
+    /**
+     * The SHA-1 that EVALSHA uses for the peek script.
+     *
+     * @internal
+     */
+    public static function peekScriptSha(): string
+    {
+        return hash('sha1', self::PEEK_SCRIPT);
     }
 
     /**
@@ -386,11 +459,11 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
      * sends SCRIPT LOAD on every call.
      *
      * @param  string  $sha  the script's SHA-1, for EVALSHA
-     * @param  'count'|'release'  $operation  for the message when Redis cannot be used
+     * @param  string  $failure  the message when Redis cannot be used
      * @param  non-empty-list<string>  $keys
      * @param  list<string>  $arguments
      */
-    private function run(string $script, string $sha, string $operation, array $keys, array $arguments, ?Connection $connection = null): mixed
+    private function run(string $script, string $sha, string $failure, array $keys, array $arguments, ?Connection $connection = null): mixed
     {
         try {
             $connection ??= $this->redis->connection($this->connection);
@@ -401,7 +474,7 @@ final readonly class RedisLimiterStore implements BatchLimiterStore, LimiterStor
                 default => throw new InvalidArgumentException('Unsupported Redis connection '.get_debug_type($connection).'; use phpredis or predis.'),
             };
         } catch (Throwable $exception) {
-            throw StorageUnavailableException::because("The Redis limiter store could not {$operation} the request.", $exception);
+            throw StorageUnavailableException::because($failure, $exception);
         }
     }
 

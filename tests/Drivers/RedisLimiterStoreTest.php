@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Afzal\DynamicThrottle\Engine\Attempt;
 use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
 use Afzal\DynamicThrottle\Engine\CounterKey;
+use Afzal\DynamicThrottle\Engine\CounterReading;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Stores\RedisLimiterStore;
@@ -364,4 +365,66 @@ it('SPEC-004 AC-12: reports a Redis it cannot reach as unavailable when releasin
 
     expect(fn () => $store->release($allowed))
         ->toThrow(StorageUnavailableException::class, 'The Redis limiter store could not release the request.');
+})->with('redis clients');
+
+/*
+| SPEC-014: peek() with the Redis driver: one script reads both windows and
+| TIME, and changes nothing.
+*/
+
+it('SPEC-014: peek() changes nothing: no field, no key and no TTL', function (string $client): void {
+    $clock = new FakeClock;
+    $clock->setSeconds(FakeClock::T0 + 10);
+    $redis = redisDriverManager($client);
+    $prefix = redisDriverPrefix();
+    $store = new RedisLimiterStore($redis, 'default', new KeyBuilder($prefix), $clock);
+    $key = new CounterKey('1', hash('sha256', 'A'));
+    $untouched = new CounterKey('2', hash('sha256', 'A'));
+
+    foreach (range(1, 3) as $ignored) {
+        $store->attempt($key, 5, 60);
+    }
+
+    $hashKey = "{$prefix}c:1:60:{$key->identityHash}";
+    // Longer than the 125 s an attempt sets, so a peek that set a TTL would show.
+    $redis->connection()->pexpire($hashKey, 600_000);
+
+    $reading = $store->peek($key, 5, 60);
+    $nothing = $store->peek($untouched, 5, 60);
+
+    expect([$reading->count, $reading->next->remaining, $nothing->count])->toBe([3, 1, 0])
+        ->and($redis->connection()->hgetall($hashKey))->toEqual(['30000000' => '3'])
+        ->and((int) $redis->connection()->pttl($hashKey))->toBeGreaterThan(500_000)
+        ->and((int) $redis->connection()->exists("{$prefix}c:2:60:{$untouched->identityHash}"))->toBe(0);
+})->with('redis clients');
+
+it('SPEC-014: peek() takes the time from Redis TIME when there is no test clock', function (string $client): void {
+    $redis = redisDriverManager($client);
+    $store = new RedisLimiterStore($redis, 'default', new KeyBuilder(redisDriverPrefix()));
+
+    $before = (int) $redis->connection()->time()[0];
+    $reading = $store->peek(new CounterKey('1', hash('sha256', 'A')), 5, 60);
+    $after = (int) $redis->connection()->time()[0];
+
+    expect($reading->next->windowIndex)->toBeIn([intdiv($before, 60), intdiv($after, 60)]);
+})->with('redis clients');
+
+it('SPEC-014: peek() reads the key with Laravel\'s Redis key prefix', function (string $client): void {
+    $laravelPrefix = 'dt-app-'.bin2hex(random_bytes(4)).':';
+    $clock = new FakeClock;
+    $clock->setSeconds(FakeClock::T0 + 10);
+    $key = new CounterKey('1', hash('sha256', 'A'));
+    $store = new RedisLimiterStore(redisDriverManager($client, options: ['prefix' => $laravelPrefix]), 'default', new KeyBuilder(redisDriverPrefix()), $clock);
+
+    $store->attempt($key, 5, 60);
+    $store->attempt($key, 5, 60);
+
+    expect($store->peek($key, 5, 60)->count)->toBe(2);
+})->with('redis clients');
+
+it('SPEC-014: peek() reports a Redis it cannot reach as unavailable', function (string $client): void {
+    $store = new RedisLimiterStore(redisDriverManager($client, port: 1), 'default', new KeyBuilder('dt:'), new FakeClock);
+
+    expect(fn (): CounterReading => $store->peek(new CounterKey('1', hash('sha256', 'A')), 5, 60))
+        ->toThrow(StorageUnavailableException::class);
 })->with('redis clients');

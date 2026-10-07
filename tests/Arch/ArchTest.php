@@ -2,16 +2,24 @@
 
 declare(strict_types=1);
 
+use Afzal\DynamicThrottle\Compiler\ManifestCompiler;
+use Afzal\DynamicThrottle\Console\ExplainCommand;
 use Afzal\DynamicThrottle\DynamicThrottle;
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
 use Afzal\DynamicThrottle\Engine\Failure\Cooldown;
 use Afzal\DynamicThrottle\Engine\Failure\ReportThrottle;
+use Afzal\DynamicThrottle\Engine\Matching\RuleMatcher;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
 use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
+use Afzal\DynamicThrottle\Http\RequestIdentityResolver;
+use Afzal\DynamicThrottle\Http\Untouched;
+use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Models\AuditEntry;
 use Afzal\DynamicThrottle\Support\ApcuFailureMemory;
 use Afzal\DynamicThrottle\Support\ApcuManifestCache;
 use Afzal\DynamicThrottle\Support\EmergencyControls;
+use Afzal\DynamicThrottle\Support\Explainer;
+use Afzal\DynamicThrottle\Support\LazyManifestRebuilder;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -188,6 +196,40 @@ arch('the manifest read path reaches APCu only through LocalManifestCache (SPEC-
 arch('only EmergencyControls writes the audit log (SPEC-013 AC-23)')
     ->expect(AuditEntry::class)
     ->toOnlyBeUsedIn([EmergencyControls::class]);
+
+/*
+| SPEC-014: dynamic-throttle:explain changes nothing (AC-9). It reads the
+| manifest as status does, never through ManifestRepository, which rebuilds a
+| missing one, and never compiles or changes a rule or a setting. It follows
+| the middleware's own code: the steps that let a request through untouched,
+| the matching, the identities and the evaluator.
+*/
+
+$changes = [ManifestCompiler::class, ManifestRepository::class, LazyManifestRebuilder::class, EmergencyControls::class];
+
+arch('explain\'s command never compiles, rebuilds or changes anything (SPEC-014 AC-9)')
+    ->expect(ExplainCommand::class)
+    ->not->toUse($changes);
+
+arch('explain\'s command never touches the database itself: the user provider does (SPEC-014 AC-9)')
+    ->expect(ExplainCommand::class)
+    ->not->toUse($databaseAccess);
+
+arch('the explanation never compiles, rebuilds or changes anything (SPEC-014 AC-9)')
+    ->expect(Explainer::class)
+    ->not->toUse($changes);
+
+arch('the explanation never touches the database (SPEC-014 AC-9)')
+    ->expect(Explainer::class)
+    ->not->toUse($databaseAccess);
+
+arch('the middleware lets requests through untouched with the steps explain shows (SPEC-014)')
+    ->expect(DynamicThrottleMiddleware::class)
+    ->toUse(Untouched::class);
+
+arch('the explanation follows the middleware\'s steps, matching, identities and evaluator (SPEC-014)')
+    ->expect(Explainer::class)
+    ->toUse([Untouched::class, RuleMatcher::class, RequestIdentityResolver::class, RuleEvaluator::class]);
 
 dataset('built-in classes the arch rules cannot see', [
     'a "now" date in the engine bypasses travel() (ADR-0006)' => [

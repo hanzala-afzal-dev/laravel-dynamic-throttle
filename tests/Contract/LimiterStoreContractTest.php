@@ -5,7 +5,9 @@ declare(strict_types=1);
 use Afzal\DynamicThrottle\Engine\Attempt;
 use Afzal\DynamicThrottle\Engine\AttemptBatch;
 use Afzal\DynamicThrottle\Engine\Contracts\BatchLimiterStore;
+use Afzal\DynamicThrottle\Engine\Contracts\CounterReader;
 use Afzal\DynamicThrottle\Engine\CounterKey;
+use Afzal\DynamicThrottle\Engine\CounterReading;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\PlannedAttempt;
 use Afzal\DynamicThrottle\Engine\Stacking\OneCallPerAttempt;
@@ -22,7 +24,7 @@ use Illuminate\Redis\RedisManager;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 
-covers(CacheLimiterStore::class, RedisLimiterStore::class, OneCallPerAttempt::class);
+covers(CacheLimiterStore::class, RedisLimiterStore::class, OneCallPerAttempt::class, CounterReading::class);
 
 /*
 |--------------------------------------------------------------------------
@@ -478,6 +480,103 @@ it('SPEC-027: rejects an invalid limit or window in a batch before counting any 
 
     expect(fn (): AttemptBatch => contractBatch($subject)->attemptAll($plan, false))->toThrow(InvalidArgumentException::class)
         ->and(contractAttempts($subject, 1, 5, contractKey('a')))->toBe([[true, 4]]);
+})->with('limiter stores')->with([
+    'a limit of 0' => [0, 60],
+    'a window of 0' => [5, 0],
+    'a window over a day' => [5, 86_401],
+]);
+
+/*
+| SPEC-014 AC-13: peek() reads a counter without counting, for
+| dynamic-throttle:explain. Every store of the suite implements CounterReader.
+*/
+
+function contractReader(StoreUnderTest $subject): CounterReader
+{
+    expect($subject->store)->toBeInstanceOf(CounterReader::class);
+
+    return $subject->store;
+}
+
+it('SPEC-014 AC-13: peek() gives the count, and the attempt the next attempt() makes, and counts nothing', function (StoreUnderTest $subject): void {
+    $subject->clock->setSeconds(FakeClock::T0 + 10);
+    $reader = contractReader($subject);
+    $readings = [];
+
+    foreach (range(1, 7) as $request) {
+        $reading = $reader->peek(contractKey(), 5, 60);
+        $again = $reader->peek(contractKey(), 5, 60);
+        $attempt = $subject->store->attempt(contractKey(), 5, 60);
+
+        expect($again)->toEqual($reading)
+            ->and($reading->next)->toEqual($attempt);
+
+        $readings[] = [$reading->count, $reading->remaining(), $reading->next->allowed, $reading->next->remaining, $reading->next->retryAfter];
+    }
+
+    expect($readings)->toBe([
+        [0, 5, true, 4, 0],
+        [1, 4, true, 3, 0],
+        [2, 3, true, 2, 0],
+        [3, 2, true, 1, 0],
+        [4, 1, true, 0, 0],
+        [5, 0, false, 0, 62],
+        [5, 0, false, 0, 62],
+    ]);
+})->with('limiter stores');
+
+it('SPEC-014 AC-13: peek() weighs the previous window as attempt() does, and rounds the count up', function (StoreUnderTest $subject): void {
+    $subject->clock->setSeconds(FakeClock::T0 + 10);
+    contractAttempts($subject, 10, max: 10);
+    // 40 s into the next window, the previous one weighs 10 × 20 / 60 = 3.33.
+    $subject->clock->setSeconds(FakeClock::T0 + 100);
+
+    $reading = contractReader($subject)->peek(contractKey(), 10, 60);
+    $attempt = $subject->store->attempt(contractKey(), 10, 60);
+
+    expect([$reading->count, $reading->remaining()])->toBe([4, 6])
+        ->and($reading->next)->toEqual($attempt)
+        ->and([$attempt->allowed, $attempt->remaining, $attempt->windowIndex])->toBe([true, 5, 30_000_001]);
+})->with('limiter stores');
+
+it('SPEC-014 AC-13: peek() at the last microsecond of a window gives the attempt attempt() makes', function (StoreUnderTest $subject): void {
+    $subject->clock->setSeconds(FakeClock::T0 + 10);
+    contractAttempts($subject, 3, max: 5);
+    // The previous window's 3 still weigh 3 × 0.000001 / 60, so 1 is counted.
+    $subject->clock->setMicroseconds((FakeClock::T0 + 120) * 1_000_000 - 1);
+
+    $reading = contractReader($subject)->peek(contractKey(), 5, 60);
+    $attempt = $subject->store->attempt(contractKey(), 5, 60);
+
+    expect([$reading->count, $reading->remaining(), $reading->next->remaining])->toBe([1, 4, 3])
+        ->and($reading->next)->toEqual($attempt)
+        ->and($attempt->windowIndex)->toBe(30_000_001);
+})->with('limiter stores');
+
+it('SPEC-014 AC-13: peek() sees a released count leave', function (StoreUnderTest $subject): void {
+    $subject->clock->setSeconds(FakeClock::T0 + 10);
+    $attempts = array_map(fn (): Attempt => $subject->store->attempt(contractKey(), 5, 60), range(1, 3));
+
+    $subject->store->release($attempts[1]);
+    $reading = contractReader($subject)->peek(contractKey(), 5, 60);
+
+    expect([$reading->count, $reading->remaining(), $reading->next->remaining])->toBe([2, 3, 2]);
+})->with('limiter stores');
+
+it('SPEC-014 AC-13: peek() keeps the counts exact for limits above 2^53', function (StoreUnderTest $subject, int $max): void {
+    $subject->clock->setSeconds(FakeClock::T0 + 10);
+    $subject->store->attempt(contractKey(), $max, 60);
+
+    $reading = contractReader($subject)->peek(contractKey(), $max, 60);
+
+    expect([$reading->count, $reading->remaining(), $reading->next->allowed, $reading->next->remaining])->toBe([1, $max - 1, true, $max - 2]);
+})->with('limiter stores')->with([
+    '2^53 + 3' => [2 ** 53 + 3],
+    'PHP_INT_MAX' => [PHP_INT_MAX],
+]);
+
+it('SPEC-014 AC-13: peek() rejects an invalid limit or window', function (StoreUnderTest $subject, int $max, int $window): void {
+    expect(fn (): CounterReading => contractReader($subject)->peek(contractKey(), $max, $window))->toThrow(InvalidArgumentException::class);
 })->with('limiter stores')->with([
     'a limit of 0' => [0, 60],
     'a window of 0' => [5, 0],
