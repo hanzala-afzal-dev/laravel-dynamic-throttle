@@ -63,7 +63,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `php artisan dynamic-throttle:status` shows what servers apply: the kill switch, the driver, the manifest, and each setting with its end time. It exits 1 when the config is invalid, so a deploy script can stop on it.
 - `php artisan dynamic-throttle:explain GET /api/orders` shows what the middleware does with a request, without counting it: the rules it matches, in order, who the client counts as under each, the counters and what remains, the route's middleware, and the decision the next request gets, with its headers. `--ip`, `--user`, `--guard` and `--header` describe the client, and `--json` prints the explanation as JSON.
 - The audit log, `dynamic_throttle_audit_log`: each change the commands make writes one append-only entry, with the actor, the action, the target, and the state before and after.
-- `DynamicThrottle::fake()` for your app's tests: the counters and the manifest live in memory, so tests need no Redis and each one starts from zero.
+- `DynamicThrottle::fake()` for your app's tests: the counters, the manifest and the telemetry live in memory, so tests need no Redis and each one starts from zero.
 - The `RateLimitWouldBlock` event: a dry-run rule dispatches it, after the response, on exactly the requests an enforcing copy of the rule would reject.
   - One event for each dry-run rule that would block, in the order the rules run.
   - It carries plain values, so queued listeners work: the rule's id, name, limit, window and scope, the client's identity hash, the `Retry-After` it would have got, and the request's method and path.
@@ -76,3 +76,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - A counter store that cannot be built, such as for an unknown `driver`, counts as a store that failed.
   - The `StorageUnavailable` event, dispatched after the response when the counter store failed, at most once per request. It carries the error's class and message, whether it failed on a release, and the cooldown.
   - `DynamicThrottle::strict()`: the middleware rethrows config mistakes and errors from your own code, such as a custom scope resolver that throws, instead of reporting them. Storage errors, the manifest and a client IP that cannot be read still follow `on_failure`.
+- Telemetry: after each response, the middleware records what each rule did with the request, per minute, in the counter store: its hits, blocks and would-be blocks.
+  - On Redis and Valkey, it also keeps each rule's 100 top offenders and its number of distinct clients, per hour. A request's numbers are one script call, after the response, or one call per key on Redis Cluster.
+  - Config keys `telemetry.enabled` (`DYNAMIC_THROTTLE_TELEMETRY`) and `telemetry.sample_rate` (`DYNAMIC_THROTTLE_SAMPLE_RATE`, from 0 to 1, default 1): a sampled request counts for as many as it stands for, so the totals stay right on average.
+  - A write that fails is reported at most once per cooldown, never affects the request, and is skipped while the counter store's cooldown runs.
+- The `RateLimitExceeded` event, dispatched after the response for each request an enforcing rule answers 429, with the same values as `RateLimitWouldBlock`. A request's events go out in order: the would-blocks, then the 429, then `StorageUnavailable`.
+- The `RuleChanged` event, dispatched after the commit when a rule is created, updated or deleted through the model, with the change and the changed columns before and after.

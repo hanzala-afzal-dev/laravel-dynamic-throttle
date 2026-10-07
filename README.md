@@ -154,6 +154,34 @@ php artisan dynamic-throttle:explain GET /api/orders --ip=203.0.113.7 --user=42 
 - **For scripts.** `--json` prints the same explanation as one JSON object, and an error as `{"error": "…"}`.
 - **It changes nothing.** It reads the counters and the manifest, and never counts, writes or compiles. It decides as a server out of its cooldown does, and other requests can count between it and the next one.
 
+### Traffic and blocks
+
+After each response, the middleware records what each rule did with the request, in the counter store ([ADR-0013](docs/adr/0013-telemetry.md)): per rule and minute, its `hits` (the requests it checked), its `blocks` (the requests an enforcing rule answered 429) and its `would_blocks` (the requests a dry-run rule would have).
+
+- **Who it blocks.** On Redis and Valkey, it also keeps per rule and hour the 100 clients it blocked or would have blocked most, as identity hashes, and how many different clients those were. That is what tells you whether a dry-run rule would block a few heavy clients or many ordinary ones. Below a sample rate of 1, that number counts each sampled client once, so it is a lower bound. The cache driver keeps neither.
+- **Its cost.** On the response path, about 5 µs. The write comes after the response is sent: on Redis, a request's numbers are one script call, or one call per key on Redis Cluster. On another cache store, they are an `add()` and an `increment()` per rule and metric, which on Memcached costs a worker about 1 ms per request ([the benchmark](benchmarks/results/phase-3-telemetry.md)). On a busy app, `telemetry.sample_rate` (`DYNAMIC_THROTTLE_SAMPLE_RATE`, from 0 to 1, default 1) records only that share of requests, each weighed so the totals stay right on average. `telemetry.enabled` (`DYNAMIC_THROTTLE_TELEMETRY`) turns recording off.
+- **Failures.** A write that fails is reported, at most once per cooldown, and never affects the request. While the counter store's cooldown runs, nothing is written, so during an outage the numbers under-count.
+
+### Events
+
+Besides `RateLimitWouldBlock` and `StorageUnavailable` (above), two events tell your integrations what happens. Both carry plain values, so queued listeners work, and a listener that throws is reported, never thrown.
+
+```php
+use Afzal\DynamicThrottle\Events\RateLimitExceeded;
+use Afzal\DynamicThrottle\Events\RuleChanged;
+
+Event::listen(function (RateLimitExceeded $event) {
+    Log::notice("{$event->ruleName} blocked {$event->method} {$event->path} for {$event->retryAfter} s");
+});
+
+Event::listen(function (RuleChanged $event) {
+    Log::info("Rule {$event->ruleId} ({$event->ruleName}) {$event->change->value}", ['before' => $event->before, 'after' => $event->after]);
+});
+```
+
+- **`RateLimitExceeded`** is dispatched after the response, once for each request an enforcing rule answers 429, with the same values as `RateLimitWouldBlock`, so one listener can handle both. A request's events go out in the order the rules met them: the would-blocks, then the 429, then `StorageUnavailable`.
+- **`RuleChanged`** is dispatched when a rule is created, updated or deleted through the model, after the transaction commits, and never for a change that rolls back. Disabling and enabling a rule are updates of `enabled`. `change` is `created`, `updated` or `deleted`, and `before` and `after` hold the rule's columns, without its timestamps, with enums as their values: null before a creation and after a deletion, and only the changed columns for an update. A rule loaded with some of its columns only gives those, and `''` for a name it was loaded without. In nested transactions, the events go out when the outermost one commits, the innermost's first, as Laravel runs after-commit callbacks.
+
 ### During an incident
 
 Two runtime settings change every rule at once, without a deploy, and end by themselves ([ADR-0011](docs/adr/0011-emergency-controls.md)). They need the package's newest migrations: publish them and run `php artisan migrate`.
@@ -177,7 +205,7 @@ php artisan dynamic-throttle:scale off
 
 ### In your tests
 
-Call `DynamicThrottle::fake()` in every test that sends requests through the middleware, for example in your base test case's `setUp()`. The counters and the manifest then live in memory: tests need no Redis, and each one starts from zero. Save rules with the `Rule` model, before or after `fake()`, and assert on the response:
+Call `DynamicThrottle::fake()` in every test that sends requests through the middleware, for example in your base test case's `setUp()`. The counters, the manifest and the telemetry then live in memory: tests need no Redis, and each one starts from zero. Save rules with the `Rule` model, before or after `fake()`, and assert on the response:
 
 ```php
 use Afzal\DynamicThrottle\Facades\DynamicThrottle;

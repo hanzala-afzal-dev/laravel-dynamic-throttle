@@ -130,6 +130,7 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 **Before 0.1.0, from the SPEC-013 review (2026-10-01)**, proposed for the maintainer to decide:
 - The manifest's cache key names its format, such as `dt:m:3`, so servers of two versions never rebuild each other's manifest during a rolling deploy.
 - The package's tables store times in UTC, the exemptions' and the settings' end times and the audit log's, so a daylight-saving change cannot stretch an end time by the repeated hour.
+- Telemetry's default `sample_rate`, the fallback below (SPEC-015's benchmark, `benchmarks/results/phase-3-telemetry.md`): at 1, telemetry costs about 5 µs on the response path, and after it one round trip on Redis, or about 1 ms of worker time on Memcached, where the cache driver makes two round trips per rule and metric. The README tells busy apps on Memcached to lower it.
 
 **Exit criteria**
 - Benchmark, with 100 active rules and 3 matched, restated at the Phase 2 exit:
