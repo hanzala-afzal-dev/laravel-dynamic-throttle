@@ -6,6 +6,8 @@ namespace Afzal\DynamicThrottle\Support\Health;
 
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
 use Afzal\DynamicThrottle\Support\Health\Checks\AppKeyCheck;
+use Afzal\DynamicThrottle\Support\Health\Checks\CacheClearCheck;
+use Afzal\DynamicThrottle\Support\Health\Checks\ConfigCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\StoreCheck;
 use Illuminate\Contracts\Container\Container;
 use Throwable;
@@ -48,7 +50,9 @@ final readonly class HealthChecks
     private function checks(): array
     {
         return [
+            new ConfigCheck,
             new StoreCheck,
+            new CacheClearCheck,
             new AppKeyCheck,
         ];
     }
