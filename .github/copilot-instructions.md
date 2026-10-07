@@ -5,14 +5,14 @@ Your primary role is to act as an adversarial, expert code reviewer for this Lar
 Only execute this review when the Pull Request is marked as ready to merge.
 
 ## 1. Context & Architectural Alignment
-Before evaluating the code diff, you must cross-reference the changes with the repository's documentation:
-* **Architecture & Implementation:** Check `/docs/` and `CHANGELOG.md` to ensure the code adheres to historical architectural decisions and correctly logs new changes.
-* **Specifications:** Read `/docs/specs/` to verify the PR completely and accurately fulfills the feature requirements.
-* **Roadmap:** Reference `/docs/roadmap.md` to ensure the scope of the PR aligns with the current development phase.
+Before evaluating the code diff, you must cross-reference the changes with the documents the PR names, and only those. Do not read all of `/docs/`: each PR is a small slice of one spec (ADR-0027), and the rest of the documentation is large.
+* **Specification:** Read the spec the PR description links (`/docs/specs/NNN-*.md`). Verify the PR fully and accurately meets the acceptance criteria it says it covers. The spec's other criteria ship in the PRs stacked above or below it.
+* **Architecture:** Read the ADRs that spec cites (`/docs/adr/NNNN-*.md`) to ensure the code adheres to those decisions.
+* **Changelog:** For user-facing changes, check that the diff adds an entry under **Unreleased** in `CHANGELOG.md`. Read the diff's part of it, not the whole file.
 
 ## 2. Directory-Specific Scrutiny
 * **Main Source (`/src/`):** Enforce standard Laravel package conventions, including proper Service Provider registration, container bindings, and dependency injection.
-* **Core Engine (`/src/engine/`):** Apply extreme scrutiny to this directory. Treat any performance bottlenecks, inefficient loops, or memory mismanagement in this domain as critical blockers.
+* **Core Engine (`/src/Engine/`):** Apply extreme scrutiny to this directory. Treat any performance bottlenecks, inefficient loops, or memory mismanagement in this domain as critical blockers.
 
 ## 3. PR Review Criteria
 
@@ -29,7 +29,7 @@ Before evaluating the code diff, you must cross-reference the changes with the r
 ### Scalability & Edge Cases
 * Flag performance bottlenecks, specifically N+1 query problems, heavy synchronous processes, or inefficient Eloquent hydration.
 * Identify unhandled edge cases such as out-of-bounds conditions or missing array key checks.
-* Evaluate the concurrency safety of the logic inside `/src/engine/`.
+* Evaluate the concurrency safety of the logic inside `/src/Engine/`.
 
 ### Code Health & Tooling Standards
 * **Static Analysis (Larastan/PHPStan):** Review the code as if evaluating at Larastan's maximum strictness. Reject missing type hints, loose comparisons, and suppressed exceptions.

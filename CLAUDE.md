@@ -14,7 +14,7 @@ Decisions live in docs/adr/ (index: docs/adr/README.md). Feature specs live in d
 - Never write `->not->toThrow(Throwable::class)` (or any interface): Pest reads an interface name as a message, so it passes for any `Error`. Assert what the code did instead.
 - Tests must be safe under `--parallel`, which mutation testing uses. Never write into Testbench's shared skeleton, and never rely on server-wide Redis stats. Tag slow multi-process tests `->group('concurrency')`.
 - `composer test:drivers`: the driver tests plus the LimiterStore contract suite against every docker compose service
-- `composer bench`: PHPBench (needs `docker compose up -d`). Recorded results go in benchmarks/results/ with the hardware stated (ADR-0016).
+- `composer bench`: PHPBench (needs `docker compose up -d`). Recorded results go in benchmarks/results/ as a summary with the hardware stated (ADR-0016). Never commit PHPBench's raw XML (ADR-0027).
 - Cloud sessions (claude.ai/code, where this project now runs): PHP 8.4 and Composer are native (CI covers the 8.3 floor), so run `composer …` directly. A SessionStart hook (`scripts/cloud-session-start.sh`) builds missing PHP extensions, installs the dependencies and starts the services with Docker. `scripts/cloud-setup.sh` is the environment's setup script.
 - Local machine only (it has PHP 8.2): prefix with `docker compose run --rm php`, e.g. `docker compose run --rm php composer test`
 - `docker compose up -d`: Redis, Valkey, Memcached, MySQL, PostgreSQL for driver tests (`composer test:drivers`)
@@ -27,7 +27,7 @@ Decisions live in docs/adr/ (index: docs/adr/README.md). Feature specs live in d
 - One-sentence changes may skip spec and plan. Bug fixes always start with a failing regression test.
 - If a spec conflicts with an ADR, stop and ask. Do not silently pick one.
 - A spec's open questions: record your recommendation as the decision and carry on; the maintainer vetoes in the PR. Ask first only when a question conflicts with an ADR, fixes a public API that would be hard to change after a release, or has no clearly best option.
-- One PR per spec, opened when the spec is done, listing its decisions. While it is in review, start the next spec on a stacked branch `phase-N/spec-NNN`, and rebase it onto main once the first merges.
+- Small PRs (ADR-0027): a spec ships as stacked PRs of about 300–600 `src` lines each plus their tests, each green on its own and naming the ACs it covers. The first carries the spec and lists its decisions; the last closes it. Open each once it is green, on `phase-N/spec-NNN-M` stacked on the one below. When one merges, switch the next one's base to main (main merges with merge commits, so no rebase). Merge review fixes up the stack; never rebase or force-push a branch with an open PR without asking.
 - Right-size the checks: `composer test:mutate` when src/Engine changes, `composer test:drivers` when the stores or their use change, benchmarks when the request path's cost can move, and the review subagent for src/Engine, security-relevant code and the public API.
 - Pace: stop for the maintainer's review at the end of each roadmap phase.
 - Commit failing tests (`test: …`) before the implementation, and check they fail for the right reason.

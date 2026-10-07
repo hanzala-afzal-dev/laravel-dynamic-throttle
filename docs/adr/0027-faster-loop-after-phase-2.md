@@ -4,6 +4,7 @@
 - Date: 2026-09-28
 - Roadmap phase: 3 onward
 - Amends: [ADR-0003](0003-development-method.md) (the loop for every feature)
+- Amended: 2026-10-07, a spec ships as small stacked PRs, and benchmark results without their raw dumps (see the decision record)
 
 ## Context
 
@@ -15,22 +16,29 @@
 
 ## Decision
 
-1. **Recommendations are the default.** A spec's open questions still get options and a recommendation. Claude records the recommendation as the decision and goes on to the tests and the code. The maintainer vetoes decisions in the PR review, and a veto is reworked in the same PR.
+1. **Recommendations are the default.** A spec's open questions still get options and a recommendation. Claude records the recommendation as the decision and goes on to the tests and the code. The maintainer vetoes decisions in the PR review, and a veto is reworked in the PRs whose code it changes.
    - Claude still stops and asks first when a question conflicts with an ADR, when it fixes a public API that would be hard to change after a release, or when no option is clearly best.
-   - Each spec's PR lists its decisions, so the maintainer can veto them.
-2. **One PR per spec, opened when the spec is done.** There is no draft PR for the spec alone. The commits keep ADR-0003's order: the spec and its decisions, the failing tests, the code, the review's fixes, and the close.
-3. **Stacked branches.** While the maintainer reviews a spec's PR, the next spec starts on a branch stacked on it, named `phase-N/spec-NNN`. It is rebased onto `main` once the first merges, and its PR opens then.
-4. **Right-sized checks.**
-   - Every change runs `composer test`, `composer analyse`, `composer format:check` and `composer refactor:check`.
+   - The first PR of each spec lists its decisions, so the maintainer can veto them.
+2. **Small PRs.** A spec ships as several PRs of about 300 to 600 lines of `src` each, with their tests. Each PR names the acceptance criteria it covers and is green on its own.
+   - Each keeps ADR-0003's order: its failing tests in a commit before its code, then the review's fixes.
+   - The first PR carries the spec and its decisions, so there is no PR for the spec alone. The last closes the spec.
+   - A spec small enough for one such PR ships as one.
+3. **Stacked branches, opened at once.** Each PR opens as soon as it is green, on a branch stacked on the one below it, named `phase-N/spec-NNN-M`. The next spec starts stacked on the last PR of the one before it.
+   - The maintainer reviews the stack from the bottom.
+   - When a PR merges, the next one's base switches to `main`. `main` merges with merge commits, so that PR then shows only its own commits, with no rebase or force push.
+   - A change asked for in a lower PR is made there and merged up into the PRs above it.
+4. **Right-sized checks, per PR.**
+   - Every PR runs `composer test`, `composer analyse`, `composer format:check` and `composer refactor:check`.
    - `composer test:mutate` runs when `src/Engine` changes, and `composer test:drivers` when the stores or their use change. CI runs both anyway.
-   - Benchmarks run when a change can move the request path's cost.
+   - Benchmarks run when a change can move the request path's cost. The PR commits their summary, with the hardware stated (ADR-0016), and not PHPBench's raw XML.
    - The review subagent reviews changes to `src/Engine`, to security-relevant code, and to the public API. Claude reviews other changes against their spec itself.
 5. **Unchanged:** failing tests first, in their own commit; never editing tests during implementation; the hard rules; the CI gates; the maintainer merging every PR; and the stop at the end of each phase.
 
 ## Reasoning
 
 - The maintainer reviews every PR anyway. Checking decisions there, instead of before the tests, removes one wait per spec and still checks them.
-- Stacking removes the wait between specs. Rebasing a branch Claude created is cheap, and the maintainer never reviews a moving target, because each PR opens only when the one below it has merged.
+- Small PRs are quicker to review, and to review well, than a whole spec at once.
+- Stacking removes the wait between PRs. Merging review fixes up the stack keeps each PR's diff to its own changes, so the maintainer never reviews a moving target.
 - The checks cost the most when they cannot find anything. Mutation testing, for example, only covers `src/Engine`.
 
 ## Alternatives considered
@@ -43,20 +51,28 @@
 ## Fallback
 
 - If vetoes become common, more than one spec in three reworked, go back to answering open questions before the tests.
-- If stacked branches cause painful rebases, wait for the merge again.
+- If stacked branches cause painful merges, wait for the merge again.
 - **Revisit when:** at the Phase 3 exit, compare the elapsed time per spec with Phase 2's.
 
 ## Consequences
 
-- Good: fewer waits, and the maintainer reviews each spec once, in its PR.
+- Good: fewer waits, and the maintainer reviews each part of a spec once, in its PR.
 - Bad: a veto costs more rework than an early answer would have.
-- Bad: stacked work may need rebasing when the PR below it changes in review.
+- Bad: a change made in a lower PR's review has to be merged up into the PRs above it.
+- Bad: the stack relies on merge commits. A squash merge would need the PRs above it rebased.
 
 ## Verification
 
-- Each spec's PR lists its decisions and marks the ones that were Claude's recommendations.
+- The first PR of each spec lists its decisions and marks the ones that were Claude's recommendations.
+- Each PR names the acceptance criteria it covers.
 - The Phase 3 exit review compares the elapsed time per spec with Phase 2's.
 
 ## Decision record
 
 Accepted on 2026-09-28, at the Phase 2 exit review: the maintainer accepted the proposal as it stands, including pushes to stacked `phase-N/spec-NNN` branches.
+
+Amended on 2026-10-07, after SPEC-014's PR reached about 6,000 added lines, and the branches of SPEC-015 and SPEC-016, built but not yet opened, about 11,300 and 4,400. PHPBench's raw XML was 2,600 of SPEC-014's lines and 6,400 of SPEC-015's. The maintainer asked for smaller PRs to speed up the reviews, and Copilot's code review, which is metered by what it reads, had stopped at the maintainer's quota. The maintainer accepted the recommendation:
+- Point 2: a spec ships as small PRs of about 300 to 600 lines of `src` each, with their tests. SPEC-015 is re-cut into three PRs and SPEC-016 into four. SPEC-014's PR stays as it is.
+- Point 3: the PRs open as soon as they are green, stacked, and the next one's base switches to `main` when one merges.
+- Point 4: the checks run per PR, and a benchmark's raw XML stays out of the repository. The dumps already committed stay.
+- `.github/copilot-instructions.md` asks Copilot to read the PR's spec and the ADRs it cites, rather than all of `docs/` and the changelog.

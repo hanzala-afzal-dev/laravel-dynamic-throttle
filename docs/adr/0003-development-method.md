@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-23
 - Roadmap phase: 0 (applies to every phase)
-- Amended by: [ADR-0018](0018-minimal-dashboard.md) (no `dashboard/` folder or Vitest), [ADR-0027](0027-faster-loop-after-phase-2.md) (recommendations as defaults, one PR per finished spec, stacked branches, right-sized checks)
+- Amended by: [ADR-0018](0018-minimal-dashboard.md) (no `dashboard/` folder or Vitest), [ADR-0027](0027-faster-loop-after-phase-2.md) (recommendations as defaults, small stacked PRs per spec, right-sized checks)
 
 ## Context
 
