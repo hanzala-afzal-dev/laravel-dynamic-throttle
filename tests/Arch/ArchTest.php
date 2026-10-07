@@ -90,6 +90,10 @@ arch('engine code never touches the database (ADR-0007)')
     ->expect('Afzal\DynamicThrottle\Engine')
     ->not->toUse($databaseAccess);
 
+arch('the telemetry buffers never touch the database: only the flush does (SPEC-015 AC-22)')
+    ->expect('Afzal\DynamicThrottle\Engine\Telemetry')
+    ->not->toUse($databaseAccess);
+
 arch('the middleware never touches the database (ADR-0007)')
     ->expect('Afzal\DynamicThrottle\Http\Middleware')
     ->not->toUse($databaseAccess);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle\Engine;
 
+use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryMetric;
 use InvalidArgumentException;
 
 /**
@@ -59,6 +60,61 @@ final readonly class KeyBuilder
     public function manifestRebuild(): string
     {
         return $this->manifest().':rebuild';
+    }
+
+    /**
+     * A minute's telemetry on Redis: one hash, a field per rule and metric (SPEC-015).
+     * Telemetry keys start with "t:", apart from the counters and the manifest.
+     *
+     * @param  int  $minute  Unix minutes
+     */
+    public function telemetryMinute(int $minute): string
+    {
+        return "{$this->prefix}t:{$minute}";
+    }
+
+    /**
+     * One rule's metric for a minute on a cache store: hits, blocks or would_blocks (SPEC-015).
+     *
+     * @param  int  $minute  Unix minutes
+     *
+     * @throws InvalidArgumentException for another metric
+     */
+    public function telemetryCount(int $minute, string $ruleId, string $metric): string
+    {
+        if (! TelemetryMetric::tryFrom($metric) instanceof TelemetryMetric) {
+            throw new InvalidArgumentException("Unknown telemetry metric \"{$metric}\": use hits, blocks or would_blocks.");
+        }
+
+        return $this->telemetryMinute($minute).":{$ruleId}:{$metric}";
+    }
+
+    /**
+     * The clients a rule blocked or would have blocked in an hour, on Redis (SPEC-015).
+     *
+     * @param  int  $hour  Unix hours
+     */
+    public function offenders(string $ruleId, int $hour): string
+    {
+        return "{$this->prefix}t:o:{$ruleId}:{$hour}";
+    }
+
+    /**
+     * How many different clients those were, as a HyperLogLog on Redis (SPEC-015).
+     *
+     * @param  int  $hour  Unix hours
+     */
+    public function clients(string $ruleId, int $hour): string
+    {
+        return "{$this->prefix}t:u:{$ruleId}:{$hour}";
+    }
+
+    /**
+     * The last minute the flush moved (SPEC-015).
+     */
+    public function telemetryFlushed(): string
+    {
+        return "{$this->prefix}t:flushed";
     }
 
     /**
