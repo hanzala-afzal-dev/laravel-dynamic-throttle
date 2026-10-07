@@ -9,7 +9,12 @@ use Afzal\DynamicThrottle\Support\Health\Checks\AppKeyCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\AttachedCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\CacheClearCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\ConfigCheck;
+use Afzal\DynamicThrottle\Support\Health\Checks\DominantIpCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\ExceptCheck;
+use Afzal\DynamicThrottle\Support\Health\Checks\GuestsCheck;
+use Afzal\DynamicThrottle\Support\Health\Checks\IgnoredCheck;
+use Afzal\DynamicThrottle\Support\Health\Checks\ManifestCheck;
+use Afzal\DynamicThrottle\Support\Health\Checks\MetricsCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\MiddlewareOrderCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\StoreCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\TwoLimitersCheck;
@@ -62,6 +67,11 @@ final readonly class HealthChecks
             new ExceptCheck,
             new TwoLimitersCheck,
             new MiddlewareOrderCheck,
+            new ManifestCheck,
+            new MetricsCheck,
+            new GuestsCheck,
+            new DominantIpCheck,
+            new IgnoredCheck,
         ];
     }
 }

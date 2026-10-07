@@ -5,31 +5,39 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle\Support\Health;
 
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
+use Afzal\DynamicThrottle\Engine\Contracts\TelemetryBuffer;
+use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
+use Afzal\DynamicThrottle\Engine\Telemetry\MinuteCounts;
 use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
 use Afzal\DynamicThrottle\Http\Untouched;
 use Afzal\DynamicThrottle\Manifest\CompiledRule;
 use Afzal\DynamicThrottle\Manifest\Manifest;
 use Afzal\DynamicThrottle\Manifest\ManifestCodec;
+use Afzal\DynamicThrottle\Support\ConfigValues;
 use Afzal\DynamicThrottle\Support\LimiterStoreFactory;
 use Afzal\DynamicThrottle\Support\RouteMiddleware;
 use Illuminate\Contracts\Cache\Factory as CacheFactory;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Routing\Route;
+use Illuminate\Support\Facades\Date;
 use InvalidArgumentException;
 use Throwable;
 
 /**
  * What several health checks read, read once for the report: the counter driver,
- * the manifest and the routes (SPEC-016). It only reads: the manifest as
- * dynamic-throttle:status reads it, never rebuilt, and the routes as explain reads
- * them.
+ * the manifest, the routes, and the last hour's numbers (SPEC-016). It only
+ * reads: the manifest as dynamic-throttle:status reads it, never rebuilt, and the
+ * routes as explain reads them.
  *
  * @internal
  */
 final class HealthContext
 {
+    /** How many complete minutes the checks of what the rules saw read (decision 4). */
+    public const int MINUTES = 60;
+
     private string|InvalidArgumentException|null $driver = null;
 
     private ?ManifestRead $manifest = null;
@@ -38,6 +46,9 @@ final class HealthContext
 
     /** @var list<array{Route, list<string>}>|Throwable|null */
     private array|Throwable|null $routeList = null;
+
+    /** @var array<string, MinuteCounts>|string|null */
+    private array|string|null $lastHour = null;
 
     public function __construct(
         public readonly Container $container,
@@ -151,6 +162,49 @@ final class HealthContext
     }
 
     /**
+     * Why the checks of what the rules saw have nothing to read, or null: telemetry
+     * off, or a sample rate of 0, which records nothing (AC-19).
+     */
+    public function telemetryOff(): ?string
+    {
+        if ($this->config->get('dynamic-throttle.telemetry.enabled') === false) {
+            return 'dynamic-throttle.telemetry.enabled is off, so nothing is recorded.';
+        }
+
+        if (ConfigValues::sampleRate($this->config->get('dynamic-throttle.telemetry.sample_rate')) === 0.0) {
+            return 'dynamic-throttle.telemetry.sample_rate is 0, so nothing is recorded.';
+        }
+
+        return null;
+    }
+
+    public function buffer(): TelemetryBuffer
+    {
+        return $this->container->make(TelemetryBuffer::class);
+    }
+
+    /**
+     * Each rule's numbers over the last 60 complete minutes (decision 4), by rule id,
+     * or why they cannot be read. A rule the manifest no longer holds may be among
+     * them, on Redis, whose minutes list every rule they hold.
+     *
+     * @return array<string, MinuteCounts>|string
+     */
+    public function lastHour(): array|string
+    {
+        return $this->lastHour ??= $this->readLastHour();
+    }
+
+    /**
+     * The last complete minute, in Unix minutes, as the flush counts it: a request
+     * writes into the minute it ends in, after its response.
+     */
+    public function lastCompleteMinute(): int
+    {
+        return intdiv($this->now(), 60) - 2;
+    }
+
+    /**
      * An error's message, with its root cause's when it does not already say it, as
      * explain gives it.
      */
@@ -188,6 +242,24 @@ final class HealthContext
         return implode('|', $route->methods()).' '.$route->uri();
     }
 
+    /**
+     * A rule as a message names it: "rule 2, Users".
+     */
+    public static function rule(CompiledRule $rule): string
+    {
+        return "rule {$rule->id}, {$rule->name}";
+    }
+
+    /**
+     * A time in UTC, as the flush prints it.
+     *
+     * @param  int  $seconds  Unix seconds
+     */
+    public static function time(int $seconds, string $format = 'Y-m-d H:i:s'): string
+    {
+        return Date::createFromTimestamp($seconds, 'UTC')->format($format).' UTC';
+    }
+
     private function readManifest(): ManifestRead
     {
         try {
@@ -201,5 +273,47 @@ final class HealthContext
         }
 
         return $manifest instanceof Manifest ? ManifestRead::of($manifest) : ManifestRead::missing();
+    }
+
+    /**
+     * @return array<string, MinuteCounts>|string
+     */
+    private function readLastHour(): array|string
+    {
+        $rules = $this->rules();
+
+        if (is_string($rules)) {
+            return $rules;
+        }
+
+        $ruleIds = array_map(fn (CompiledRule $rule): string => $rule->id, $rules);
+        $last = $this->lastCompleteMinute();
+        $totals = [];
+
+        try {
+            $buffer = $this->buffer();
+
+            foreach (range($last - self::MINUTES + 1, $last) as $minute) {
+                foreach ($buffer->counts($minute, $ruleIds) as $ruleId => $counts) {
+                    $totals[(string) $ruleId] = $this->add($totals[(string) $ruleId] ?? null, $counts);
+                }
+            }
+        } catch (StorageUnavailableException $exception) {
+            return 'The counter store cannot be read: '.self::message($exception);
+        }
+
+        return $totals;
+    }
+
+    private function add(?MinuteCounts $sum, MinuteCounts $counts): MinuteCounts
+    {
+        return $sum instanceof MinuteCounts ? new MinuteCounts(
+            $sum->hits + $counts->hits,
+            $sum->blocks + $counts->blocks,
+            $sum->wouldBlocks + $counts->wouldBlocks,
+            $sum->guests + $counts->guests,
+            $sum->skipped + $counts->skipped,
+            $sum->ignored + $counts->ignored,
+        ) : $counts;
     }
 }
