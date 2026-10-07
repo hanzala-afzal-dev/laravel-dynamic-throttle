@@ -11,6 +11,9 @@ use Afzal\DynamicThrottle\Engine\Exceptions\IdentityUnavailableException;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Engine\Failure\Cooldown;
 use Afzal\DynamicThrottle\Engine\Failure\ReportThrottle;
+use Afzal\DynamicThrottle\Engine\Identity\ClientIp;
+use Afzal\DynamicThrottle\Engine\Identity\IdentityHasher;
+use Afzal\DynamicThrottle\Engine\Identity\ScopeIdentity;
 use Afzal\DynamicThrottle\Engine\Matching\RuleMatcher;
 use Afzal\DynamicThrottle\Engine\Stacking\Evaluation;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleAttempt;
@@ -19,9 +22,11 @@ use Afzal\DynamicThrottle\Engine\Stacking\RuleFailure;
 use Afzal\DynamicThrottle\Engine\Telemetry\Sampler;
 use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryOutcome;
 use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryRecord;
+use Afzal\DynamicThrottle\Enums\Scope;
 use Afzal\DynamicThrottle\Events\RateLimitExceeded;
 use Afzal\DynamicThrottle\Events\RateLimitWouldBlock;
 use Afzal\DynamicThrottle\Events\StorageUnavailable;
+use Afzal\DynamicThrottle\Http\IdentitySettings;
 use Afzal\DynamicThrottle\Http\RateLimitHeaders;
 use Afzal\DynamicThrottle\Http\RequestIdentityResolver;
 use Afzal\DynamicThrottle\Http\RequestTarget;
@@ -46,7 +51,8 @@ use Throwable;
  * Applies the rules to a request (ADR-0004, ADR-0008, SPEC-010). After the
  * response, it tells the app which dry-run rules would have blocked the request
  * (SPEC-011), which rule rejected it, and whether the counter store failed
- * (SPEC-012, SPEC-015), and records what each rule did with it (ADR-0013).
+ * (SPEC-012, SPEC-015), and records what each rule did with it, and who sent
+ * it (ADR-0013, SPEC-016).
  * Only the 429 and the 503 of a fail-closed rule leave it: anything else the
  * package throws is reported, at most once per cause and cooldown, and the
  * request goes through (ADR-0020 point 1). Strict mode rethrows programming
@@ -120,7 +126,7 @@ final readonly class DynamicThrottleMiddleware
         }
 
         $this->dispatchEvents($events);
-        $this->recordTelemetry($records);
+        $this->recordTelemetry($request, $records);
     }
 
     /**
@@ -168,15 +174,15 @@ final readonly class DynamicThrottleMiddleware
     }
 
     /**
-     * Writes the records handle() kept to the buffer, in this minute, when the
-     * sampler picks the request (SPEC-015 decision 6). Never while the counter
-     * store's cooldown runs. A failed write is reported, at most once per cause and
-     * cooldown, and never starts the cooldown, which changes what requests get
-     * (decision 7).
+     * Writes the records handle() kept to the buffer, in this minute, with the
+     * request's client, when the sampler picks the request (SPEC-015 decision 6,
+     * SPEC-016). Never while the counter store's cooldown runs. A failed write is
+     * reported, at most once per cause and cooldown, and never starts the cooldown,
+     * which changes what requests get (decision 7).
      *
      * @param  array<array-key, mixed>  $records
      */
-    private function recordTelemetry(array $records): void
+    private function recordTelemetry(Request $request, array $records): void
     {
         $records = array_values(array_filter($records, fn (mixed $record): bool => $record instanceof TelemetryRecord));
 
@@ -192,11 +198,30 @@ final readonly class DynamicThrottleMiddleware
             $weight = $this->container->make(Sampler::class)->weight();
 
             if ($weight > 0) {
-                $this->container->make(TelemetryBuffer::class)->record(intdiv($this->clock->microseconds(), 60_000_000), $weight, $records);
+                $this->container->make(TelemetryBuffer::class)->record(intdiv($this->clock->microseconds(), 60_000_000), $weight, $records, $this->client($request));
             }
         } catch (Throwable $exception) {
             $this->report($exception);
         }
+    }
+
+    /**
+     * The request's client for the hour's traffic: the identity hash the `ip` scope
+     * gives it, IPv6 grouped (SPEC-016 decision 6), or null when its IP cannot be
+     * read. Read through a copy, as the resolver reads it, so the app's own read is
+     * never touched.
+     */
+    private function client(Request $request): ?string
+    {
+        try {
+            $ip = (clone $request)->ip();
+        } catch (Throwable) {
+            return null;
+        }
+
+        $grouped = ClientIp::group($ip, $this->container->make(IdentitySettings::class)->ipv6Prefix);
+
+        return $this->container->make(IdentityHasher::class)->hash(ScopeIdentity::ip($grouped));
     }
 
     /**
@@ -239,7 +264,7 @@ final readonly class DynamicThrottleMiddleware
             $mistake = $this->strictMistake($evaluation);
             // Also when strict mode rethrows a mistake: an outage in the same request is
             // still told. Its telemetry is not recorded (SPEC-015).
-            $this->keepForTerminate($request, $target, $rules, $evaluation, telemetry: ! $mistake instanceof Throwable);
+            $this->keepForTerminate($request, $target, $rules, $evaluation, $identities, telemetry: ! $mistake instanceof Throwable);
             $this->reportFailures($evaluation, except: $mistake);
 
             if ($mistake instanceof Throwable) {
@@ -312,11 +337,11 @@ final readonly class DynamicThrottleMiddleware
      *
      * @param  list<CompiledRule>  $rules  the rules evaluated, in order
      */
-    private function keepForTerminate(Request $request, RequestTarget $target, array $rules, Evaluation $evaluation, bool $telemetry): void
+    private function keepForTerminate(Request $request, RequestTarget $target, array $rules, Evaluation $evaluation, RequestIdentityResolver $identities, bool $telemetry): void
     {
         try {
             $events = $this->events($target, $evaluation);
-            $records = $telemetry && $this->config->get('dynamic-throttle.telemetry.enabled') !== false ? $this->records($rules, $evaluation) : [];
+            $records = $telemetry && $this->config->get('dynamic-throttle.telemetry.enabled') !== false ? $this->records($rules, $evaluation, $identities) : [];
 
             // Added to what an earlier run kept: an app that also lists the middleware
             // globally runs it twice for one request, which counts it twice (the review).
@@ -382,30 +407,43 @@ final readonly class DynamicThrottleMiddleware
     }
 
     /**
-     * The telemetry records: one for each rule the store checked, in evaluation
-     * order (SPEC-015 decisions 1 and 2). An allowed attempt is a hit, even one
-     * released after a later rule rejected the request. The rejection is a hit and
-     * a block, and each would-block a hit and a would-block. A rule the store did
-     * not check records nothing. Sampling waits for terminate().
+     * The telemetry records, in evaluation order: one for each rule the store
+     * checked (SPEC-015 decisions 1 and 2), and one for each rule skipped for want
+     * of an identity, or ignored over the cap (SPEC-016). An allowed attempt is a
+     * hit, even one released after a later rule rejected the request. The rejection
+     * is a hit and a block, and each would-block a hit and a would-block. A user
+     * rule's hit tells whether it counted a guest. A rule the store did not check
+     * otherwise records nothing. Sampling waits for terminate().
      *
      * @param  list<CompiledRule>  $rules  the rules evaluated, in order
      * @return list<TelemetryRecord>
      */
-    private function records(array $rules, Evaluation $evaluation): array
+    private function records(array $rules, Evaluation $evaluation, RequestIdentityResolver $identities): array
     {
         $positions = array_flip(array_map(fn (CompiledRule $rule): string => $rule->id, $rules));
+        // Asked once: the user scope resolved every user rule's identity alike (decision 7).
+        $guest = $identities->guest() === true;
         $records = [];
 
         foreach ($evaluation->attempts as $attempt) {
-            $records[$positions[$attempt->rule->id]] = $this->record($attempt, TelemetryOutcome::Counted);
+            $records[$positions[$attempt->rule->id]] = $this->record($attempt, TelemetryOutcome::Counted, $guest);
         }
 
         foreach ($evaluation->wouldBlock as $wouldBlock) {
-            $records[$positions[$wouldBlock->rule->id]] = $this->record($wouldBlock, TelemetryOutcome::WouldBlock);
+            $records[$positions[$wouldBlock->rule->id]] = $this->record($wouldBlock, TelemetryOutcome::WouldBlock, $guest);
         }
 
         if ($evaluation->rejection instanceof RuleAttempt) {
-            $records[$positions[$evaluation->rejection->rule->id]] = $this->record($evaluation->rejection, TelemetryOutcome::Blocked);
+            $records[$positions[$evaluation->rejection->rule->id]] = $this->record($evaluation->rejection, TelemetryOutcome::Blocked, $guest);
+        }
+
+        // Neither has an identity to record: one was not found, the other never resolved.
+        foreach ($evaluation->skipped as $rule) {
+            $records[$positions[$rule->id]] = new TelemetryRecord($rule->id, '', TelemetryOutcome::Skipped);
+        }
+
+        foreach ($evaluation->ignored as $rule) {
+            $records[$positions[$rule->id]] = new TelemetryRecord($rule->id, '', TelemetryOutcome::Ignored);
         }
 
         ksort($records);
@@ -413,9 +451,9 @@ final readonly class DynamicThrottleMiddleware
         return array_values($records);
     }
 
-    private function record(RuleAttempt $attempt, TelemetryOutcome $outcome): TelemetryRecord
+    private function record(RuleAttempt $attempt, TelemetryOutcome $outcome, bool $guest): TelemetryRecord
     {
-        return new TelemetryRecord($attempt->rule->id, $attempt->attempt->key->identityHash, $outcome);
+        return new TelemetryRecord($attempt->rule->id, $attempt->attempt->key->identityHash, $outcome, $guest && $attempt->rule->scope === Scope::User);
     }
 
     /**

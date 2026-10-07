@@ -13,7 +13,6 @@ use Illuminate\Redis\Connections\PhpRedisConnection;
 use Illuminate\Redis\Connections\PredisClusterConnection;
 use Illuminate\Redis\Connections\PredisConnection;
 use InvalidArgumentException;
-use LogicException;
 use Predis\Response\ErrorInterface as PredisError;
 use Predis\Response\ServerException as PredisServerException;
 use Redis;
@@ -23,9 +22,11 @@ use Throwable;
 /**
  * Telemetry on Redis and Valkey (SPEC-015 decisions 4 and 5): one hash per minute,
  * with a field per rule and metric, and per rule and hour the offenders in a
- * sorted set and the distinct clients in a HyperLogLog. A request's numbers are
- * one script call, or one per key on Redis Cluster, where a script may only touch
- * keys in one hash slot (AC-3).
+ * sorted set and the distinct clients in a HyperLogLog. Per hour too, the
+ * traffic: each request's client in a sorted set, and a hash that counts the
+ * requests (SPEC-016 decision 16). A request's numbers are one script call, or
+ * one per key on Redis Cluster, where a script may only touch keys in one hash
+ * slot (AC-3).
  *
  * Everything runs in Lua, reads included: a script's reply never goes through a
  * phpredis serializer, which would read the counts back wrong.
@@ -37,10 +38,12 @@ final readonly class RedisTelemetryBuffer implements TelemetryBuffer
     /**
      * Writes keys of three kinds. ARGV[1]: the weight. ARGV[2]: the TTL in seconds.
      * Then for KEYS[i], ARGV[2i + 1] is its kind and ARGV[2i + 2] its argument:
-     * - "h", a minute's hash, and the fields to add the weight to, separated by spaces;
-     * - "o", a rule's offenders in an hour, and the client: a new client that would
-     *   make the set 201 first cuts it back to the top 100, so it stays small, and
-     *   a new heavy hitter can still climb into the top (AC-4);
+     * - "h", a hash, and the fields to add the weight to, separated by spaces: a
+     *   minute's numbers, or an hour's requests;
+     * - "o", a sorted set of clients, and the client: a rule's offenders in an hour,
+     *   or the hour's traffic. A new client that would make the set 201 first cuts
+     *   it back to the top 100, so it stays small, and a new heavy hitter can still
+     *   climb into the top (AC-4);
      * - "u", a rule's distinct clients in an hour, and the client.
      * A key gets its TTL when it is created, so a later write never pushes it back.
      * Returns how many keys it wrote.
@@ -72,9 +75,17 @@ final readonly class RedisTelemetryBuffer implements TelemetryBuffer
         return redis.call('HGETALL', KEYS[1])
         LUA;
 
-    /** KEYS[1]: a rule's offenders in an hour. ARGV[1]: how many. Returns the clients and their counts, in turn, most first. */
-    private const string OFFENDERS_SCRIPT = <<<'LUA'
+    /**
+     * KEYS[1]: a sorted set of clients, a rule's offenders or an hour's traffic.
+     * ARGV[1]: how many. Returns the clients and their counts, in turn, most first.
+     */
+    private const string TOP_SCRIPT = <<<'LUA'
         return redis.call('ZREVRANGE', KEYS[1], 0, tonumber(ARGV[1]) - 1, 'WITHSCORES')
+        LUA;
+
+    /** KEYS[1]: an hour's requests. Returns their count, 0 when there are none. */
+    private const string REQUESTS_SCRIPT = <<<'LUA'
+        return tonumber(redis.call('HGET', KEYS[1], 'requests') or '0')
         LUA;
 
     /** KEYS[1]: a rule's distinct clients in an hour. Returns the estimate, 0 when there are none. */
@@ -116,19 +127,30 @@ final readonly class RedisTelemetryBuffer implements TelemetryBuffer
         $setArguments = [];
 
         foreach ($records as $record) {
-            $fields[] = "{$record->ruleId}:".TelemetryMetric::Hits->value;
+            foreach ($this->metrics($record) as $metric) {
+                $fields[] = "{$record->ruleId}:{$metric->value}";
+            }
 
-            if ($record->outcome === TelemetryOutcome::Counted) {
+            if ($record->outcome !== TelemetryOutcome::Blocked && $record->outcome !== TelemetryOutcome::WouldBlock) {
                 continue;
             }
 
-            $fields[] = "{$record->ruleId}:".($record->outcome === TelemetryOutcome::Blocked ? TelemetryMetric::Blocks : TelemetryMetric::WouldBlocks)->value;
             $sets[] = $this->keys->offenders($record->ruleId, $hour);
             $sets[] = $this->keys->clients($record->ruleId, $hour);
             $setArguments[] = 'o';
             $setArguments[] = $record->identityHash;
             $setArguments[] = 'u';
             $setArguments[] = $record->identityHash;
+        }
+
+        // The hour's traffic: the client, and one more request (SPEC-016 decision 16).
+        if ($client !== null) {
+            $sets[] = $this->keys->traffic($hour);
+            $sets[] = $this->keys->requests($hour);
+            $setArguments[] = 'o';
+            $setArguments[] = $client;
+            $setArguments[] = 'h';
+            $setArguments[] = 'requests';
         }
 
         $keys = [$this->keys->telemetryMinute($minute), ...$sets];
@@ -179,6 +201,9 @@ final readonly class RedisTelemetryBuffer implements TelemetryBuffer
                 $metrics[TelemetryMetric::Hits->value] ?? 0,
                 $metrics[TelemetryMetric::Blocks->value] ?? 0,
                 $metrics[TelemetryMetric::WouldBlocks->value] ?? 0,
+                $metrics[TelemetryMetric::Guests->value] ?? 0,
+                $metrics[TelemetryMetric::Skipped->value] ?? 0,
+                $metrics[TelemetryMetric::Ignored->value] ?? 0,
             );
         }
 
@@ -191,18 +216,7 @@ final readonly class RedisTelemetryBuffer implements TelemetryBuffer
             throw new InvalidArgumentException("The offenders to read must be at least 1, got {$limit}.");
         }
 
-        $reply = $this->run(self::OFFENDERS_SCRIPT, 'read the offenders', [$this->keys->offenders($ruleId, $hour)], [(string) $limit]);
-        $offenders = [];
-
-        foreach ($this->pairs($reply) as [$client, $count]) {
-            if (! is_numeric($count)) {
-                throw $this->unexpectedReply();
-            }
-
-            $offenders[$client] = (int) $count;
-        }
-
-        return $offenders;
+        return $this->top($this->keys->offenders($ruleId, $hour), $limit, 'read the offenders');
     }
 
     public function clients(string $ruleId, int $hour): int
@@ -216,14 +230,24 @@ final readonly class RedisTelemetryBuffer implements TelemetryBuffer
         return $reply;
     }
 
-    public function topClients(int $hour, int $limit = 1): ?array
+    public function topClients(int $hour, int $limit = 1): array
     {
-        throw new LogicException('SPEC-016: not built yet.');
+        if ($limit < 1) {
+            throw new InvalidArgumentException("The top clients to read must be at least 1, got {$limit}.");
+        }
+
+        return $this->top($this->keys->traffic($hour), $limit, 'read the top clients');
     }
 
-    public function requests(int $hour): ?int
+    public function requests(int $hour): int
     {
-        throw new LogicException('SPEC-016: not built yet.');
+        $reply = $this->run(self::REQUESTS_SCRIPT, 'count the requests', [$this->keys->requests($hour)]);
+
+        if (! is_int($reply)) {
+            throw $this->unexpectedReply();
+        }
+
+        return $reply;
     }
 
     public function flushedThrough(): ?int
@@ -240,6 +264,48 @@ final readonly class RedisTelemetryBuffer implements TelemetryBuffer
     public function markFlushed(int $minute): void
     {
         $this->run(self::MARK_FLUSHED_SCRIPT, 'keep the last minute flushed', [$this->keys->telemetryFlushed()], [(string) $minute, (string) self::TTL_SECONDS]);
+    }
+
+    /**
+     * The metrics a record adds its weight to: its outcome's, and its rule's guests
+     * when a user rule counted a guest (SPEC-016).
+     *
+     * @return list<TelemetryMetric>
+     */
+    private function metrics(TelemetryRecord $record): array
+    {
+        $metrics = match ($record->outcome) {
+            TelemetryOutcome::Counted => [TelemetryMetric::Hits],
+            TelemetryOutcome::Blocked => [TelemetryMetric::Hits, TelemetryMetric::Blocks],
+            TelemetryOutcome::WouldBlock => [TelemetryMetric::Hits, TelemetryMetric::WouldBlocks],
+            TelemetryOutcome::Skipped => [TelemetryMetric::Skipped],
+            TelemetryOutcome::Ignored => [TelemetryMetric::Ignored],
+        };
+
+        return $record->guest ? [...$metrics, TelemetryMetric::Guests] : $metrics;
+    }
+
+    /**
+     * The clients of a sorted set with the most requests, most first.
+     *
+     * @return array<string, int>
+     *
+     * @throws StorageUnavailableException
+     */
+    private function top(string $key, int $limit, string $operation): array
+    {
+        $reply = $this->run(self::TOP_SCRIPT, $operation, [$key], [(string) $limit]);
+        $top = [];
+
+        foreach ($this->pairs($reply) as [$client, $count]) {
+            if (! is_numeric($count)) {
+                throw $this->unexpectedReply();
+            }
+
+            $top[$client] = (int) $count;
+        }
+
+        return $top;
     }
 
     /**

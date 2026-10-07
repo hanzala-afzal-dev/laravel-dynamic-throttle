@@ -104,13 +104,21 @@ final class RequestIdentityResolver implements ExemptionSubjects, IdentityResolv
     }
 
     /**
-     * SPEC-016: not built yet.
+     * Whether the user scope found no user for this request, as a user rule counts it,
+     * for telemetry's guests (SPEC-016 decision 7). Null when no rule or exemption
+     * asked the scope, or when it failed: never a lookup of its own.
      *
      * @internal
      */
     public function guest(): ?bool
     {
-        throw new \LogicException('SPEC-016: not built yet.');
+        $name = $this->scopeName(Scope::User, null);
+
+        if (! array_key_exists($name, $this->values) || $this->values[$name] instanceof IdentityUnavailableException) {
+            return null;
+        }
+
+        return $this->values[$name] === null;
     }
 
     /**

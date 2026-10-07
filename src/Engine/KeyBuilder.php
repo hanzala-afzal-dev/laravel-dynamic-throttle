@@ -74,7 +74,8 @@ final readonly class KeyBuilder
     }
 
     /**
-     * One rule's metric for a minute on a cache store: hits, blocks or would_blocks (SPEC-015).
+     * One rule's metric for a minute on a cache store, one of TelemetryMetric's (SPEC-015,
+     * SPEC-016).
      *
      * @param  int  $minute  Unix minutes
      *
@@ -83,7 +84,7 @@ final readonly class KeyBuilder
     public function telemetryCount(int $minute, string $ruleId, string $metric): string
     {
         if (! TelemetryMetric::tryFrom($metric) instanceof TelemetryMetric) {
-            throw new InvalidArgumentException("Unknown telemetry metric \"{$metric}\": use hits, blocks or would_blocks.");
+            throw new InvalidArgumentException("Unknown telemetry metric \"{$metric}\": use ".implode(', ', array_column(TelemetryMetric::cases(), 'value')).'.');
         }
 
         return $this->telemetryMinute($minute).":{$ruleId}:{$metric}";
@@ -110,23 +111,24 @@ final readonly class KeyBuilder
     }
 
     /**
-     * SPEC-016: not built yet.
+     * The clients of the requests recorded in an hour, by the identity the `ip` scope
+     * gives them, on Redis (SPEC-016).
      *
      * @param  int  $hour  Unix hours
      */
     public function traffic(int $hour): string
     {
-        throw new \LogicException('SPEC-016: not built yet.');
+        return "{$this->prefix}t:ip:{$hour}";
     }
 
     /**
-     * SPEC-016: not built yet.
+     * How many requests were recorded in an hour, on Redis (SPEC-016).
      *
      * @param  int  $hour  Unix hours
      */
     public function requests(int $hour): string
     {
-        throw new \LogicException('SPEC-016: not built yet.');
+        return "{$this->prefix}t:n:{$hour}";
     }
 
     /**
