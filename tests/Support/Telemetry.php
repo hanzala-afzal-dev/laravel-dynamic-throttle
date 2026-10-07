@@ -8,12 +8,15 @@ use Afzal\DynamicThrottle\Engine\Contracts\TelemetryBuffer;
 use Afzal\DynamicThrottle\Engine\Telemetry\MinuteCounts;
 use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryOutcome;
 use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryRecord;
+use Illuminate\Support\Facades\DB;
 
 /**
- * Telemetry's buffer, as SPEC-015's tests read it.
+ * Telemetry's buffer and table, as SPEC-015's tests read them.
  */
 final class Telemetry
 {
+    public const string TABLE = 'dynamic_throttle_metrics_hourly';
+
     /**
      * Unix minutes at a Unix time.
      */
@@ -65,5 +68,22 @@ final class Telemetry
     public static function wouldBlock(string $ruleId, string $client = 'A'): TelemetryRecord
     {
         return new TelemetryRecord($ruleId, hash('sha256', $client), TelemetryOutcome::WouldBlock);
+    }
+
+    /**
+     * The table's rows, by rule and hour, as [rule_id, hour, hits, blocks, would_blocks, clients].
+     *
+     * @return list<array{int, string, int, int, int, ?int}>
+     */
+    public static function rows(): array
+    {
+        return DB::table(self::TABLE)->orderBy('rule_id')->orderBy('hour')->get()->map(fn (object $row): array => [
+            (int) $row->rule_id,
+            (string) $row->hour,
+            (int) $row->hits,
+            (int) $row->blocks,
+            (int) $row->would_blocks,
+            $row->clients === null ? null : (int) $row->clients,
+        ])->values()->all();
     }
 }
