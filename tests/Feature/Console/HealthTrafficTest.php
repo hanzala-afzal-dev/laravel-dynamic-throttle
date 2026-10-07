@@ -93,6 +93,21 @@ it('AC-16: warns at exactly half of exactly 100 requests', function (): void {
     expect(Health::status('guests'))->toBe('warning');
 });
 
+it('AC-16: judges a rule on 100 requests recorded, not on what they stand for, so that sampling never warns on a handful', function (int $recorded, string $status): void {
+    // At 0.01, each recorded request stands for 100.
+    config()->set('dynamic-throttle.telemetry.sample_rate', 0.01);
+
+    for ($n = 0; $n < $recorded; $n++) {
+        healthSaw('10:30', 100, [Telemetry::guest('2')]);
+    }
+
+    expect(Health::status('guests'))->toBe($status);
+})->with([
+    'one guest, who stands for 100' => [1, 'ok'],
+    '99 guests' => [99, 'ok'],
+    '100 guests' => [100, 'warning'],
+]);
+
 it('AC-16: never checks a rule that is not a user rule', function (): void {
     healthSaw('10:30', 150, [Telemetry::guest('1')]);
     healthSaw('10:30', 150, [Telemetry::skipped('1')]);

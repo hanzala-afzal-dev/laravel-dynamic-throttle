@@ -141,6 +141,22 @@ it('AC-17: is ok below half, or with too few requests to tell', function (string
     '700 of 900' => [700, [200]],
 ]);
 
+it('AC-17: judges the traffic on 1,000 requests recorded, not on what they stand for, so that sampling never warns on a handful', function (string $client, string $host, int $port, float $rate, array $sent, string $status): void {
+    healthOnRedis($client, $host, $port);
+    Throttling::rule();
+    config()->set('dynamic-throttle.telemetry.sample_rate', $rate);
+
+    foreach ($sent as $n => $weight) {
+        healthTraffic('10:30', $weight, '203.0.113.'.($n + 1));
+    }
+
+    expect(Health::status('dominant-ip'))->toBe($status);
+})->with('health clients and services')->with([
+    'one request at 0.001, which stands for 1,000' => [0.001, [1_000], 'ok'],
+    'two at 0.002, from two clients, half each' => [0.002, [500, 500], 'ok'],
+    'as many at 0.5 as 1,000 recorded, from one client' => [0.5, [2_000], 'warning'],
+]);
+
 it('AC-17: is skipped when Redis cannot be reached, saying so', function (string $client): void {
     healthOnRedis($client, '127.0.0.1', 1);
     Throttling::rule();
