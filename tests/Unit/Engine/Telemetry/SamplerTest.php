@@ -13,7 +13,8 @@ covers(Sampler::class);
 | SPEC-015 AC-7 and decision 6: sampling picks whole requests, and weighs each
 | one so the counts stay unbiased. The sampler draws one float per request to
 | pick it, picked below the rate, and one more to round the weight up, only
-| when 1/rate is not whole.
+| when 1/rate is not whole. The rates 1 and 0 need no draw: they pick every
+| request and none.
 */
 
 /**
@@ -101,8 +102,12 @@ it('AC-7: draws nothing at the rate 1, the default, so no request pays for a dra
     expect((new Sampler(1.0, scriptedDraws([])))->weight())->toBe(1);
 });
 
-it('AC-7: never picks a request at the rate 0, not even for a draw of exactly 0', function (): void {
-    expect((new Sampler(0.0, scriptedDraws([0.0])))->weight())->toBe(0);
+it('AC-7: draws nothing at the rate 0 either, which picks no request', function (): void {
+    expect((new Sampler(0.0, scriptedDraws([])))->weight())->toBe(0);
+});
+
+it('AC-7: never picks a request whose draw equals the rate', function (): void {
+    expect((new Sampler(0.5, scriptedDraws([0.5])))->weight())->toBe(0);
 });
 
 it('AC-7: rounds 1/rate down, and up only for a second draw below the fractional part', function (float $second, int $weight): void {
