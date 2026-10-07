@@ -1,6 +1,6 @@
 # SPEC-016: Health checks
 
-- Status: In progress
+- Status: Done
 - ADRs: ADR-0004, ADR-0005, ADR-0007, ADR-0008, ADR-0009, ADR-0010, ADR-0013, ADR-0017, ADR-0020, ADR-0022, ADR-0024, ADR-0025
 - Roadmap phase: 3
 
@@ -212,6 +212,19 @@ It ships in five stacked PRs (ADR-0027), each green on its own:
 3. **The `config` and `cache-clear` checks:** with `ConfigValues`, which the service provider now reads its config through, and `RouteMiddleware`, which `Explainer` now uses too. AC-4 and AC-6, and AC-21's rule for `RouteMiddleware`.
 4. **The route checks:** `attached`, `except`, `two-limiters` and `middleware-order`. AC-8 to AC-11.
 5. **The state and what the rules saw:** the `manifest`, `metrics`, `guests`, `dominant-ip` and `ignored` checks, then the docs and the spec's close. AC-12, AC-13, AC-16 to AC-19, and AC-1 to AC-3 for all thirteen checks.
+
+Done on `4be4924`, the fifth PR's code:
+- `composer test`: 1,680 passed. `composer test:drivers`: 829 passed, with the hour's traffic and the dominant-IP check on Redis and Valkey with phpredis and predis. `composer analyse`, `format:check` and `refactor:check` are clean.
+- The arch rules hold: the health checks and the command never compile, rebuild, flush or change anything, or touch the database; request handling never runs them; `RouteMiddleware` changes nothing.
+- `composer test:mutate`: 96.53%, where the gate is 85%, on the branch SPEC-016 was built on. The five PRs carry its `src/Engine` unchanged; the review's fixes are in `src/Http` and `src/Support`.
+- `composer bench` (`benchmarks/results/phase-3-health-telemetry.md`), one round on the first PR's code: on the array store, the response path costs at most 11 µs more at p50, 4.9% on PHP-FPM with APCu, within AC-22's 10%. After the response, Redis's one script call costs about 50 µs more with the hour's traffic, and the array store 15 µs for the client's hash.
+- The review subagent found no high-severity defect. It checked the request path, the Lua with the traffic keys and Redis Cluster's split, the replies, the windows and thresholds against the ACs, the command's JSON, exit codes and promise to change nothing, and that no secret reaches a message. Its findings were fixed test-first, each in the PR its code is in, and are in the edge cases above:
+  - a controller that cannot be built made only the first route check err (medium);
+  - at a low sample rate, a handful of samples reached the guests and dominant-IP minimums (medium, decision 5 revised);
+  - the traffic's client could differ from the IP the rules counted, when the app trusts its proxy after `dynamic.throttle` (low);
+  - the `except` check read an `except` that is not a list as one pattern (low).
+  - Its other finding is left to the maintainer, in the roadmap: `dominant-ip` misses a load balancer with several nodes (medium).
+- Tests changed after the first red step, on the branch SPEC-016 was built on: four mistakes in the red step's setups, each checked red on the red step's code and green on the implementation (a skip rule ignored before it could skip, a flush test that recorded before it moved the clock, a JSON test that read the output twice, and a dominant-IP case whose other requests came from one client), and Rector's narrower closure types. In the five PRs, each red step holds its PR's tests, and the review's tests come red before their fixes. The command's tests have a version for the second to fourth PRs, which hold only some of the checks; the fifth gives them their final form.
 
 ## Open questions
 None. The maintainer decided the first two on 2026-10-05. The others are recorded as recommended (ADR-0027), for the maintainer to veto in the PR.
