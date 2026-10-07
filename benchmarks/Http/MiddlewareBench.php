@@ -32,13 +32,17 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * phpbench.json enables APCu in the CLI, for SPEC-028's case. Each process
  * starts with an APCu of its own, as each PHP-FPM server has.
+ *
+ * With telemetry on, handle() also collects the records terminate() writes;
+ * against telemetry off, that is telemetry's cost on the response path
+ * (SPEC-015 decision 12). TelemetryBench times the write itself.
  */
 #[Bench\Revs(1)]
 #[Bench\Iterations(200)]
 #[Bench\Warmup(20)]
 #[Bench\BeforeMethods('setUp')]
 #[Bench\AfterMethods('tearDown')]
-#[Bench\ParamProviders(['stores', 'manifests'])]
+#[Bench\ParamProviders(['stores', 'manifests', 'telemetry'])]
 final class MiddlewareBench
 {
     private const string PATH = 'api/users/42/export';
@@ -78,7 +82,16 @@ final class MiddlewareBench
     }
 
     /**
-     * @param  array{store: string, refresh: int, empty_memory: bool}  $params
+     * @return iterable<string, array{telemetry: bool}>
+     */
+    public function telemetry(): iterable
+    {
+        yield 'telemetry on' => ['telemetry' => true];
+        yield 'telemetry off' => ['telemetry' => false];
+    }
+
+    /**
+     * @param  array{store: string, refresh: int, empty_memory: bool, telemetry: bool}  $params
      */
     public function setUp(array $params): void
     {
@@ -96,6 +109,7 @@ final class MiddlewareBench
         $config->set('dynamic-throttle.store', 'bench');
         $config->set('dynamic-throttle.prefix', Services::prefix());
         $config->set('dynamic-throttle.manifest.refresh_seconds', $params['refresh']);
+        $config->set('dynamic-throttle.telemetry.enabled', $params['telemetry']);
         $this->emptyMemory = $params['empty_memory'];
         ManifestRepository::flushState();
 

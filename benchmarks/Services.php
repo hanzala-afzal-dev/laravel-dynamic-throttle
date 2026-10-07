@@ -44,6 +44,16 @@ final class Services
         return ['host' => self::env('REDIS_HOST', '127.0.0.1'), 'port' => (int) self::env('REDIS_PORT', '6379'), 'database' => 0];
     }
 
+    /**
+     * The local Memcached as the servers of a memcached store in Laravel's cache config.
+     *
+     * @return list<array{host: string, port: int, weight: int}>
+     */
+    public static function memcachedServers(): array
+    {
+        return [['host' => self::env('MEMCACHED_HOST', '127.0.0.1'), 'port' => (int) self::env('MEMCACHED_PORT', '11211'), 'weight' => 100]];
+    }
+
     public static function cache(string $store): Repository
     {
         return match ($store) {
