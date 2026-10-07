@@ -6,6 +6,7 @@ namespace Afzal\DynamicThrottle\Support\Health\Checks;
 
 use Afzal\DynamicThrottle\Engine\Contracts\TelemetryBuffer;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
+use Afzal\DynamicThrottle\Support\ConfigValues;
 use Afzal\DynamicThrottle\Support\Health\Check;
 use Afzal\DynamicThrottle\Support\Health\CheckResult;
 use Afzal\DynamicThrottle\Support\Health\HealthContext;
@@ -14,13 +15,15 @@ use Afzal\DynamicThrottle\Support\Health\HealthContext;
  * One client IP that sent most of the recorded requests, over the current and the
  * previous hour (SPEC-016 AC-17): often a load balancer's or a proxy's, because
  * the trusted proxies are not set (ADR-0009). Half or more of at least 1,000
- * requests (decision 5). Only the Redis driver keeps the traffic per client.
+ * requests recorded (decision 5): below a sample rate of 1, the requests they
+ * stand for would let a handful of samples warn. Only the Redis driver keeps the
+ * traffic per client.
  *
  * @internal
  */
 final readonly class DominantIpCheck implements Check
 {
-    /** Fewer requests tell nothing. */
+    /** Fewer requests recorded tell nothing. */
     private const int MIN_REQUESTS = 1_000;
 
     public function id(): string
@@ -54,8 +57,11 @@ final readonly class DominantIpCheck implements Check
 
         $since = HealthContext::time(($hour - 1) * 3_600, 'Y-m-d H:i');
 
-        if ($requests < self::MIN_REQUESTS) {
-            return CheckResult::ok($this->id(), 'Too few requests to tell: '.number_format($requests)." since {$since}.");
+        $recorded = (int) round($requests * ConfigValues::sampleRate($context->config->get('dynamic-throttle.telemetry.sample_rate')));
+
+        if ($recorded < self::MIN_REQUESTS) {
+            return CheckResult::ok($this->id(), 'Too few requests to tell: '.number_format($requests)." since {$since}"
+                .($recorded < $requests ? ', of which '.number_format($recorded).' recorded' : '').'.');
         }
 
         arsort($clients);
