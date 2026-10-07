@@ -13,6 +13,7 @@ use Illuminate\Redis\Connections\PhpRedisConnection;
 use Illuminate\Redis\Connections\PredisClusterConnection;
 use Illuminate\Redis\Connections\PredisConnection;
 use InvalidArgumentException;
+use LogicException;
 use Predis\Response\ErrorInterface as PredisError;
 use Predis\Response\ServerException as PredisServerException;
 use Redis;
@@ -99,7 +100,7 @@ final readonly class RedisTelemetryBuffer implements TelemetryBuffer
         private KeyBuilder $keys,
     ) {}
 
-    public function record(int $minute, int $weight, array $records): void
+    public function record(int $minute, int $weight, array $records, ?string $client = null): void
     {
         if ($weight < 1) {
             throw new InvalidArgumentException("A request stands for at least 1 request, got {$weight}.");
@@ -213,6 +214,16 @@ final readonly class RedisTelemetryBuffer implements TelemetryBuffer
         }
 
         return $reply;
+    }
+
+    public function topClients(int $hour, int $limit = 1): ?array
+    {
+        throw new LogicException('SPEC-016: not built yet.');
+    }
+
+    public function requests(int $hour): ?int
+    {
+        throw new LogicException('SPEC-016: not built yet.');
     }
 
     public function flushedThrough(): ?int

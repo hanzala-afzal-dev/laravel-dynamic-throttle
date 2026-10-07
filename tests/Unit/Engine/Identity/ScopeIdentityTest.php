@@ -90,3 +90,8 @@ it('reads the client IP only when the identity needs it', function (string $scop
     'a present custom value' => ['custom', 'ip', 'gold', 'custom:gold'],
     'a guest on a skip rule' => ['user', 'skip', null, null],
 ]);
+
+it('SPEC-016: gives a grouped IP the identity an ip rule counts it under, which the traffic records', function (): void {
+    expect([ScopeIdentity::ip('203.0.113.7'), ScopeIdentity::ip('2001:db8::/64')])->toBe(['ip:203.0.113.7', 'ip:2001:db8::/64'])
+        ->and(ScopeIdentity::ip('203.0.113.7'))->toBe(ScopeIdentity::for(identityRule('ip'), null, identityIp('203.0.113.7')));
+});

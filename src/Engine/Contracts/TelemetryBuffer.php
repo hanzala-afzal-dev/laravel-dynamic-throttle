@@ -29,10 +29,11 @@ interface TelemetryBuffer
      * @param  int  $minute  Unix minutes: Unix seconds divided by 60
      * @param  int  $weight  how many requests the request stands for, at least 1 (decision 6)
      * @param  list<TelemetryRecord>  $records
+     * @param  ?string  $client  the request's client, the `ip` scope's identity hash, for the hour's traffic (SPEC-016)
      *
      * @throws StorageUnavailableException
      */
-    public function record(int $minute, int $weight, array $records): void;
+    public function record(int $minute, int $weight, array $records, ?string $client = null): void;
 
     /**
      * A minute's numbers, by rule id, for the rules that have any.
@@ -65,6 +66,27 @@ interface TelemetryBuffer
      * @throws StorageUnavailableException
      */
     public function clients(string $ruleId, int $hour): ?int;
+
+    /**
+     * The clients that sent the most recorded requests in an hour, by identity hash,
+     * most first, or null when the driver keeps none (SPEC-016).
+     *
+     * @param  int  $hour  Unix hours
+     * @return array<string, int>|null
+     *
+     * @throws StorageUnavailableException
+     */
+    public function topClients(int $hour, int $limit = 1): ?array;
+
+    /**
+     * How many requests were recorded in an hour, or null when the driver keeps no
+     * count (SPEC-016).
+     *
+     * @param  int  $hour  Unix hours
+     *
+     * @throws StorageUnavailableException
+     */
+    public function requests(int $hour): ?int;
 
     /**
      * The last minute the flush moved, or null when it is not known.

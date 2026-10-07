@@ -12,6 +12,7 @@ use Illuminate\Cache\RedisStore;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Redis\Connections\PhpRedisConnection;
 use InvalidArgumentException;
+use LogicException;
 use Memcached;
 use Throwable;
 
@@ -32,7 +33,7 @@ final readonly class CacheTelemetryBuffer implements TelemetryBuffer
         private KeyBuilder $keys,
     ) {}
 
-    public function record(int $minute, int $weight, array $records): void
+    public function record(int $minute, int $weight, array $records, ?string $client = null): void
     {
         if ($weight < 1) {
             throw new InvalidArgumentException("A request stands for at least 1 request, got {$weight}.");
@@ -119,6 +120,16 @@ final readonly class CacheTelemetryBuffer implements TelemetryBuffer
     public function clients(string $ruleId, int $hour): ?int
     {
         return null;
+    }
+
+    public function topClients(int $hour, int $limit = 1): ?array
+    {
+        throw new LogicException('SPEC-016: not built yet.');
+    }
+
+    public function requests(int $hour): ?int
+    {
+        throw new LogicException('SPEC-016: not built yet.');
     }
 
     public function flushedThrough(): ?int

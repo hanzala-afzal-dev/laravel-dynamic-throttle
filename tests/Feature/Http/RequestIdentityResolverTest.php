@@ -537,3 +537,29 @@ it('AC-13: asks a scope that fails once per request, and fails every rule that u
         ->and($exceptions[2])->toBe($exceptions[0])
         ->and($exceptions[0]->getPrevious()?->getMessage())->toBe('The service is down.');
 })->with(['a custom resolver that throws' => ['custom'], 'a guard that throws' => ['user']]);
+
+it('SPEC-016 AC-14: tells whether the user scope found no user, once a rule or an exemption asked it', function (): void {
+    $guestResolver = Identities::resolver(Identities::request());
+    $before = $guestResolver->guest();
+    $guestResolver->resolve(Identities::rule('user'));
+    $guest = $guestResolver->guest();
+
+    Auth::setUser(new TestUser(['id' => 42]));
+    $userResolver = Identities::resolver(Identities::request());
+    $userResolver->resolve(Identities::rule('user', 'skip'));
+
+    // An IP rule never asks the user scope.
+    $ipResolver = Identities::resolver(Identities::request());
+    $ipResolver->resolve(Identities::rule('ip'));
+
+    expect([$before, $guest, $userResolver->guest(), $ipResolver->guest()])->toBe([null, true, false, null]);
+});
+
+it('SPEC-016 AC-14: tells nothing when the user scope failed (decision 7)', function (): void {
+    config()->set('dynamic-throttle.scopes.user.guards', ['broken']);
+    config()->set('auth.guards.broken', ['driver' => 'missing-driver']);
+    $resolver = Identities::resolver(Identities::request());
+
+    expect(fn (): ?string => $resolver->resolve(Identities::rule('user')))->toThrow(IdentityUnavailableException::class)
+        ->and($resolver->guest())->toBeNull();
+});

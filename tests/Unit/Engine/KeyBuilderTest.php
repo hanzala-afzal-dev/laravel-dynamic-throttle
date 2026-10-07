@@ -92,3 +92,21 @@ it('SPEC-015: builds the telemetry keys under the prefix, apart from the counter
 it('SPEC-015: rejects a telemetry metric other than hits, blocks and would_blocks', function (): void {
     expect(fn (): string => (new KeyBuilder('dt:'))->telemetryCount(30_000_000, '12', 'misses'))->toThrow(InvalidArgumentException::class);
 });
+
+it('SPEC-016: builds the keys of the new metrics, and of an hour\'s traffic, under the prefix, apart from the other telemetry keys', function (): void {
+    $keys = new KeyBuilder('dt:');
+
+    expect([
+        $keys->telemetryCount(30_000_000, '12', 'guests'),
+        $keys->telemetryCount(30_000_000, '12', 'skipped'),
+        $keys->telemetryCount(30_000_000, '12', 'ignored'),
+        $keys->traffic(500_000),
+        $keys->requests(500_000),
+    ])->toBe([
+        'dt:t:30000000:12:guests',
+        'dt:t:30000000:12:skipped',
+        'dt:t:30000000:12:ignored',
+        'dt:t:ip:500000',
+        'dt:t:n:500000',
+    ]);
+});

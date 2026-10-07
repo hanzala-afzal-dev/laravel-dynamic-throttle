@@ -18,7 +18,8 @@ covers(CacheTelemetryBuffer::class);
 /*
 | SPEC-015: what only the cache driver's buffer does. One key per minute, rule
 | and metric, created with its time to live before it is incremented, as the
-| counters are (decision 5). No offenders and no distinct clients (AC-4, AC-5).
+| counters are (decision 5). No offenders and no distinct clients (AC-4, AC-5),
+| and no traffic per client (SPEC-016 AC-15).
 */
 
 beforeEach(function (): void {
@@ -127,4 +128,40 @@ it('AC-1: reads a count that is not a whole number above 0 as 0', function (): v
     $cache->put("dt:t:{$minute}:2:hits", -1, 60);
 
     expect(Telemetry::counts($minute, ['1', '2'], cacheTelemetry()))->toBe(['1' => [2, 0, 0]]);
+});
+
+it('SPEC-016 AC-15: keeps no traffic, whatever client a request names, and says so with null', function (): void {
+    $buffer = cacheTelemetry();
+    $buffer->record(Telemetry::minute(FakeClock::T0), 1, [Telemetry::counted('1')], hash('sha256', 'ip:203.0.113.7'));
+
+    expect([$buffer->requests(Telemetry::hour(FakeClock::T0)), $buffer->topClients(Telemetry::hour(FakeClock::T0), 10)])->toBe([null, null])
+        ->and(array_keys(cacheTelemetryExpiries()))->toBe(['dt:t:'.Telemetry::minute(FakeClock::T0).':1:hits']);
+});
+
+it('SPEC-016 AC-14: keeps a key per new metric too, which expires 7,200 seconds after it is first written', function (): void {
+    $buffer = cacheTelemetry();
+    $minute = Telemetry::minute(FakeClock::T0);
+
+    $buffer->record($minute, 2, [Telemetry::guest('1'), Telemetry::skipped('2'), Telemetry::ignored('3')]);
+
+    expect(cacheTelemetryExpiries())->toBe([
+        "dt:t:{$minute}:1:hits" => (float) FakeClock::T0 + 7_200,
+        "dt:t:{$minute}:1:guests" => (float) FakeClock::T0 + 7_200,
+        "dt:t:{$minute}:2:skipped" => (float) FakeClock::T0 + 7_200,
+        "dt:t:{$minute}:3:ignored" => (float) FakeClock::T0 + 7_200,
+    ])->and(Telemetry::all($minute, ['1', '2', '3'], $buffer))->toBe([
+        '1' => [2, 0, 0, 2, 0, 0],
+        '2' => [0, 0, 0, 0, 2, 0],
+        '3' => [0, 0, 0, 0, 0, 2],
+    ]);
+});
+
+it('SPEC-016 AC-14: reads a new metric that is not a whole number above 0 as 0', function (): void {
+    $minute = Telemetry::minute(FakeClock::T0);
+    $cache = Cache::store('array');
+    $cache->put("dt:t:{$minute}:1:guests", 'many', 60);
+    $cache->put("dt:t:{$minute}:1:skipped", -2, 60);
+    $cache->put("dt:t:{$minute}:1:ignored", 4, 60);
+
+    expect(Telemetry::all($minute, ['1'], cacheTelemetry()))->toBe(['1' => [0, 0, 0, 0, 0, 4]]);
 });

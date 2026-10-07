@@ -35,6 +35,16 @@ final class ScopeIdentity
     }
 
     /**
+     * SPEC-016: not built yet.
+     *
+     * @param  string  $groupedIp  the client IP, grouped (ClientIp)
+     */
+    public static function ip(string $groupedIp): string
+    {
+        throw new \LogicException('SPEC-016: not built yet.');
+    }
+
+    /**
      * @param  Closure(): string  $ip
      */
     private static function identity(CompiledRule $rule, ?string $value, string $prefix, string $fallbackPrefix, Closure $ip): ?string

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Afzal\DynamicThrottle\Engine\Contracts\TelemetryBuffer;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
+use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryOutcome;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Models\HourlyMetric;
 use Afzal\DynamicThrottle\Models\Rule;
@@ -337,4 +338,18 @@ it('AC-10: reads a row\'s hour back in UTC with the date class the app uses', fu
     }
 
     expect([$hour::class, $hour->getTimestamp(), $hour->getTimezone()->getName()])->toBe([CarbonImmutable::class, flushAt('10:00'), 'UTC']);
+});
+
+it('SPEC-016 AC-20: moves only the hits, blocks and would-blocks, and gives a rule that was only skipped or ignored no row', function (): void {
+    Throttling::rule(['name' => 'Members']);
+    // First, as the other tests do: the store expires the keys by the clock.
+    $this->travelTo(Carbon::createFromTimestamp(flushAt('11:00:30')));
+    $buffer = Telemetry::buffer();
+    $buffer->record(flushMinute('10:58'), 2, [Telemetry::guest('1'), Telemetry::skipped('2'), Telemetry::ignored('3')], hash('sha256', 'ip:203.0.113.7'));
+    $buffer->record(flushMinute('10:58'), 1, [Telemetry::guest('1', 'B', TelemetryOutcome::Blocked), Telemetry::skipped('2')]);
+
+    $this->artisan('dynamic-throttle:flush-metrics')->assertExitCode(0);
+
+    expect(Telemetry::rows())->toBe([[1, '2027-01-15 10:00:00', 3, 1, 0, null]])
+        ->and(Schema::getColumnListing(Telemetry::TABLE))->toBe(['id', 'rule_id', 'hour', 'hits', 'blocks', 'would_blocks', 'clients', 'flushed_minute']);
 });

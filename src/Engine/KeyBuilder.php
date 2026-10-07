@@ -110,6 +110,26 @@ final readonly class KeyBuilder
     }
 
     /**
+     * SPEC-016: not built yet.
+     *
+     * @param  int  $hour  Unix hours
+     */
+    public function traffic(int $hour): string
+    {
+        throw new \LogicException('SPEC-016: not built yet.');
+    }
+
+    /**
+     * SPEC-016: not built yet.
+     *
+     * @param  int  $hour  Unix hours
+     */
+    public function requests(int $hour): string
+    {
+        throw new \LogicException('SPEC-016: not built yet.');
+    }
+
+    /**
      * The last minute the flush moved (SPEC-015).
      */
     public function telemetryFlushed(): string

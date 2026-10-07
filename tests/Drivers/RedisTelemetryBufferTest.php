@@ -22,7 +22,8 @@ covers(RedisTelemetryBuffer::class);
 /*
 | SPEC-015: what only the Redis driver's buffer does. One hash per minute, an
 | offender set and a HyperLogLog per rule and hour, and one script call per
-| request outside Redis Cluster (AC-3 to AC-6).
+| request outside Redis Cluster (AC-3 to AC-6). SPEC-016 adds the hour's
+| traffic: a sorted set of the clients and a count of the requests (AC-15).
 */
 
 dataset('telemetry clients and services', function (): iterable {
@@ -232,4 +233,152 @@ it('AC-8: reports a Redis it cannot reach as unavailable, when recording and whe
     expect(fn () => $buffer->record($minute, 1, [Telemetry::counted('1')]))->toThrow(StorageUnavailableException::class)
         ->and(fn (): array => $buffer->counts($minute, ['1']))->toThrow(StorageUnavailableException::class)
         ->and(fn (): ?int => $buffer->flushedThrough())->toThrow(StorageUnavailableException::class);
+})->with(['phpredis', 'predis']);
+
+/**
+ * A Redis buffer on a Redis Cluster connection to one node, as SPEC-027's cluster
+ * test makes one, whose connection reports every command it sends to $commands.
+ *
+ * @param  list<string>  $commands
+ * @return array{RedisTelemetryBuffer, Connection, string} the buffer, its connection, and its prefix
+ */
+function clusterTelemetry(string $client, string $host, int $port, array &$commands = []): array
+{
+    if ($client === 'phpredis' && ! extension_loaded('redis')) {
+        test()->markTestSkipped('ext-redis is not installed.');
+    }
+
+    if ($client === 'phpredis') {
+        $phpredis = new Redis;
+        $phpredis->connect($host, $port, 2.0);
+        $connection = new PhpRedisClusterConnection($phpredis);
+    } else {
+        $connection = new PredisClusterConnection(new PredisClient(['host' => $host, 'port' => $port]));
+    }
+
+    $events = new Dispatcher(new Container);
+    $events->listen(CommandExecuted::class, function (CommandExecuted $event) use (&$commands): void {
+        $commands[] = strtolower($event->command);
+    });
+    $connection->setEventDispatcher($events);
+    $factory = new readonly class($connection) implements RedisFactory
+    {
+        public function __construct(private Connection $connection) {}
+
+        public function connection($name = null): Connection
+        {
+            return $this->connection;
+        }
+    };
+    $prefix = 'dt-rtel-'.bin2hex(random_bytes(4)).':';
+
+    return [new RedisTelemetryBuffer($factory, 'default', new KeyBuilder($prefix)), $connection, $prefix];
+}
+
+it('SPEC-016 AC-15: counts an hour\'s recorded requests and each client\'s, most first, in the request\'s one script call', function (string $client, string $host, int $port): void {
+    $commands = [];
+    [$buffer] = redisTelemetry($client, $host, $port, $commands);
+    $time = 1_800_000_000;
+    $hour = Telemetry::hour($time);
+    $a = hash('sha256', 'ip:203.0.113.7');
+    $b = hash('sha256', 'ip:198.51.100.1');
+    // Redis may not have the script yet: the first call loads it, two hours before.
+    $buffer->record(Telemetry::minute($time) - 120, 1, [Telemetry::counted('warm')], $a);
+    $commands = [];
+
+    $buffer->record(Telemetry::minute($time), 1, [Telemetry::counted('1'), Telemetry::blocked('2', 'X')], $a);
+    $buffer->record(Telemetry::minute($time) + 1, 1, [Telemetry::skipped('1'), Telemetry::ignored('2')], $a);
+    $buffer->record(Telemetry::minute($time) + 2, 1, [Telemetry::guest('1', 'Y')], $b);
+
+    expect($commands)->toBe(['evalsha', 'evalsha', 'evalsha'])
+        ->and($buffer->requests($hour))->toBe(3)
+        ->and($buffer->topClients($hour, 10))->toBe([$a => 2, $b => 1])
+        ->and($buffer->topClients($hour))->toBe([$a => 2])
+        // An hour without traffic: none, which a driver that keeps traffic counts as 0.
+        ->and([$buffer->requests($hour + 1), $buffer->topClients($hour + 1, 10)])->toBe([0, []]);
+})->with('telemetry clients and services');
+
+it('SPEC-016 AC-15: weighs a sampled request\'s traffic, and leaves a request without a client out of it', function (string $client, string $host, int $port): void {
+    [$buffer] = redisTelemetry($client, $host, $port);
+    $time = 1_800_000_000;
+    $a = hash('sha256', 'ip:203.0.113.7');
+
+    $buffer->record(Telemetry::minute($time), 4, [Telemetry::counted('1')], $a);
+    // The client IP could not be read.
+    $buffer->record(Telemetry::minute($time), 1, [Telemetry::counted('1')]);
+
+    expect([$buffer->requests(Telemetry::hour($time)), $buffer->topClients(Telemetry::hour($time), 10)])->toBe([4, [$a => 4]])
+        ->and(Telemetry::counts(Telemetry::minute($time), ['1'], $buffer))->toEqual(['1' => [5, 0, 0]]);
+})->with('telemetry clients and services');
+
+it('SPEC-016 AC-15: keeps an hour\'s clients to the top 100 as the offenders are, and still counts every request', function (string $client, string $host, int $port): void {
+    [$buffer, $connection, $prefix] = redisTelemetry($client, $host, $port);
+    $time = 1_800_000_000;
+    $hour = Telemetry::hour($time);
+    $largest = 0;
+
+    // Client k sends k requests, as one request that stands for k.
+    foreach (range(1, 250) as $k) {
+        $buffer->record(Telemetry::minute($time), $k, [Telemetry::counted('1')], hash('sha256', "ip:client {$k}"));
+        $largest = max($largest, (int) $connection->command('zcard', [$prefix."t:ip:{$hour}"]));
+    }
+
+    $top = $buffer->topClients($hour, 100);
+
+    expect($largest)->toBe(200)
+        ->and($top)->toHaveCount(100)
+        ->and(array_slice($top, 0, 2, true))->toBe([hash('sha256', 'ip:client 250') => 250, hash('sha256', 'ip:client 249') => 249])
+        ->and($buffer->requests($hour))->toBe(250 * 251 / 2);
+})->with('telemetry clients and services');
+
+it('SPEC-016 AC-15: lets the hour\'s traffic keys expire 7,200 seconds after they are first written', function (string $client, string $host, int $port): void {
+    [$buffer, $connection, $prefix] = redisTelemetry($client, $host, $port);
+    $time = 1_800_000_000;
+    $hour = Telemetry::hour($time);
+    $a = hash('sha256', 'ip:203.0.113.7');
+    $buffer->record(Telemetry::minute($time), 1, [Telemetry::counted('1')], $a);
+    // A later write never pushes the expiry back.
+    $connection->command('expire', [$prefix."t:ip:{$hour}", 7_000]);
+    $buffer->record(Telemetry::minute($time), 1, [Telemetry::counted('1')], $a);
+
+    $ttls = array_map(fn (string $key): int => (int) $connection->command('ttl', [$prefix.$key]), ["t:ip:{$hour}", "t:n:{$hour}"]);
+
+    expect($ttls[0])->toBeGreaterThan(6_990)->toBeLessThanOrEqual(7_000)
+        ->and($ttls[1])->toBeGreaterThan(7_190)->toBeLessThanOrEqual(7_200);
+})->with('telemetry clients and services');
+
+it('SPEC-016 AC-15: writes the hour\'s traffic with one call per key on Redis Cluster, with the same numbers', function (string $client, string $host, int $port): void {
+    $commands = [];
+    [$buffer, $connection, $prefix] = clusterTelemetry($client, $host, $port, $commands);
+    $time = 1_800_000_000;
+    $minute = Telemetry::minute($time);
+    $hour = Telemetry::hour($time);
+    $a = hash('sha256', 'ip:203.0.113.7');
+    // Redis may not have the script yet: the first call loads it, two hours before.
+    $buffer->record($minute - 120, 1, [Telemetry::counted('warm')], $a);
+    $commands = [];
+
+    $buffer->record($minute, 2, [Telemetry::counted('1'), Telemetry::skipped('2')], $a);
+    $sent = $commands;
+    $ttls = array_map(fn (string $key): int => (int) $connection->command('ttl', [$prefix.$key]), ["t:{$minute}", "t:ip:{$hour}", "t:n:{$hour}"]);
+
+    // The minute's hash, then the hour's clients and requests: three keys, three calls.
+    expect($sent)->toBe(['evalsha', 'evalsha', 'evalsha'])
+        ->and(Telemetry::all($minute, ['1', '2'], $buffer))->toEqual(['1' => [2, 0, 0, 0, 0, 0], '2' => [0, 0, 0, 0, 2, 0]])
+        ->and([$buffer->requests($hour), $buffer->topClients($hour, 10)])->toBe([2, [$a => 2]])
+        ->and(array_filter($ttls, fn (int $ttl): bool => $ttl <= 7_190 || $ttl > 7_200))->toBe([]);
+})->with('telemetry clients and services');
+
+it('SPEC-016 AC-19: reports a Redis it cannot reach as unavailable when reading the traffic', function (string $client): void {
+    if ($client === 'phpredis' && ! extension_loaded('redis')) {
+        test()->markTestSkipped('ext-redis is not installed.');
+    }
+
+    $manager = new RedisManager(new Container, $client, [
+        'default' => ['host' => '127.0.0.1', 'port' => 1, 'database' => 0, 'timeout' => 0.5, 'read_timeout' => 0.5],
+    ]);
+    $buffer = new RedisTelemetryBuffer($manager, 'default', new KeyBuilder('dt:'));
+
+    expect(fn (): int => $buffer->requests(500_000))->toThrow(StorageUnavailableException::class)
+        ->and(fn (): array => $buffer->topClients(500_000))->toThrow(StorageUnavailableException::class);
 })->with(['phpredis', 'predis']);

@@ -7,6 +7,7 @@ use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Telemetry\CacheTelemetryBuffer;
 use Afzal\DynamicThrottle\Engine\Telemetry\MinuteCounts;
 use Afzal\DynamicThrottle\Engine\Telemetry\RedisTelemetryBuffer;
+use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryOutcome;
 use Afzal\DynamicThrottle\Tests\Support\Telemetry;
 use Illuminate\Cache\RedisStore;
 use Illuminate\Cache\Repository;
@@ -21,7 +22,7 @@ covers(CacheTelemetryBuffer::class, RedisTelemetryBuffer::class, MinuteCounts::c
 
 /*
 |--------------------------------------------------------------------------
-| SPEC-015: the shared suite every TelemetryBuffer passes
+| SPEC-015 and SPEC-016: the shared suite every TelemetryBuffer passes
 |--------------------------------------------------------------------------
 |
 | Local stores always run; service stores run with DYNAMIC_THROTTLE_DRIVERS=1,
@@ -164,4 +165,41 @@ it('SPEC-015 AC-14: remembers the last minute flushed, and knows none at first',
     $buffer->markFlushed(30_000_005);
 
     expect([$first, $marked, $buffer->flushedThrough()])->toBe([null, 30_000_000, 30_000_005]);
+})->with('telemetry buffers');
+
+it('SPEC-016 AC-14: adds a guest\'s request to its rule\'s guests as well as to its hits, weighted', function (TelemetryBuffer $buffer): void {
+    $minute = Telemetry::minute(1_800_000_000);
+
+    $buffer->record($minute, 1, [Telemetry::guest('1'), Telemetry::counted('2')]);
+    $buffer->record($minute, 3, [Telemetry::guest('1', 'B', TelemetryOutcome::Blocked), Telemetry::guest('2', 'C', TelemetryOutcome::WouldBlock)]);
+
+    expect(Telemetry::all($minute, ['1', '2'], $buffer))->toEqual([
+        '1' => [4, 3, 0, 4, 0, 0],
+        '2' => [4, 0, 3, 3, 0, 0],
+    ]);
+})->with('telemetry buffers');
+
+it('SPEC-016 AC-14: counts the requests a rule skipped or was ignored for apart, as no hit, weighted', function (TelemetryBuffer $buffer): void {
+    $minute = Telemetry::minute(1_800_000_000);
+
+    $buffer->record($minute, 1, [Telemetry::counted('1'), Telemetry::skipped('2'), Telemetry::ignored('3')]);
+    $buffer->record($minute, 2, [Telemetry::skipped('2'), Telemetry::ignored('3')]);
+
+    expect(Telemetry::all($minute, ['1', '2', '3'], $buffer))->toEqual([
+        '1' => [1, 0, 0, 0, 0, 0],
+        '2' => [0, 0, 0, 0, 3, 0],
+        '3' => [0, 0, 0, 0, 0, 3],
+    ]);
+})->with('telemetry buffers');
+
+it('SPEC-016 AC-15: records the same numbers with a client, and the hour\'s traffic when the driver keeps it, but nothing for a request without records', function (TelemetryBuffer $buffer): void {
+    $time = 1_800_000_000;
+    $client = hash('sha256', 'ip:203.0.113.7');
+
+    $buffer->record(Telemetry::minute($time), 2, [Telemetry::counted('1')], $client);
+    $buffer->record(Telemetry::minute($time), 1, [], $client);
+
+    // A driver that keeps no traffic gives null for both.
+    expect(Telemetry::counts(Telemetry::minute($time), ['1'], $buffer))->toEqual(['1' => [2, 0, 0]])
+        ->and([$buffer->requests(Telemetry::hour($time)), $buffer->topClients(Telemetry::hour($time))])->toBeIn([[null, null], [2, [$client => 2]]]);
 })->with('telemetry buffers');

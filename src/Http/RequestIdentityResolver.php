@@ -104,6 +104,16 @@ final class RequestIdentityResolver implements ExemptionSubjects, IdentityResolv
     }
 
     /**
+     * SPEC-016: not built yet.
+     *
+     * @internal
+     */
+    public function guest(): ?bool
+    {
+        throw new \LogicException('SPEC-016: not built yet.');
+    }
+
+    /**
      * For exemptions: the whole address, before IPv6 grouping (SPEC-009).
      *
      * @throws IdentityUnavailableException

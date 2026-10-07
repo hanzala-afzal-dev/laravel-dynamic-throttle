@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Telemetry\RedisTelemetryBuffer;
+use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryOutcome;
 use Afzal\DynamicThrottle\Tests\Support\Telemetry;
 use Illuminate\Contracts\Redis\Factory as RedisFactory;
 use Illuminate\Redis\Connections\Connection;
@@ -18,10 +19,10 @@ use Predis\Response\ServerException as PredisServerException;
 covers(RedisTelemetryBuffer::class);
 
 /*
-| SPEC-015: the Redis buffer with stubbed clients, as RedisLimiterStore's
-| replies test does (ADR-0016 allows mocks for this): what each script
-| receives, the EVAL fallback, the errors it names, and the replies it
-| refuses. Against a real Redis, another process can load a script at any
+| SPEC-015 and SPEC-016: the Redis buffer with stubbed clients, as
+| RedisLimiterStore's replies test does (ADR-0016 allows mocks for this): what
+| each script receives, the EVAL fallback, the errors it names, and the
+| replies it refuses. Against a real Redis, another process can load a script at any
 | moment, so only stubs make these paths certain.
 */
 
@@ -335,4 +336,77 @@ it('AC-14: keeps the last minute flushed as long as the numbers, and reads it ba
             [['dt:t:flushed'], 1],
             [['dt:t:flushed'], 1],
         ]);
+});
+
+it('SPEC-016 AC-14 and AC-15: sends the new metrics as the minute\'s fields, and the hour\'s clients and requests as the last keys', function (): void {
+    $client = telemetryPhpRedis([5]);
+    $minute = Telemetry::minute(1_800_000_000);
+    $a = hash('sha256', 'A');
+    $ip = hash('sha256', 'ip:203.0.113.7');
+
+    stubbedTelemetry(new PhpRedisConnection($client))->record($minute, 3, [
+        Telemetry::guest('1'),
+        Telemetry::skipped('2'),
+        Telemetry::ignored('3'),
+        Telemetry::guest('4', 'A', TelemetryOutcome::Blocked),
+    ], $ip);
+
+    expect($client->received)->toHaveCount(1)
+        ->and([$client->received[0][2], $client->received[0][3]])->toBe([[
+            'dt:t:30000000', 'dt:t:o:4:500000', 'dt:t:u:4:500000', 'dt:t:ip:500000', 'dt:t:n:500000',
+            '3', '7200',
+            'h', '1:hits 1:guests 2:skipped 3:ignored 4:hits 4:blocks 4:guests',
+            'o', $a, 'u', $a,
+            'o', $ip,
+            'h', 'requests',
+        ], 5]);
+});
+
+it('SPEC-016 AC-15: sends no traffic key for a request without a client', function (): void {
+    $client = telemetryPhpRedis([1]);
+
+    stubbedTelemetry(new PhpRedisConnection($client))->record(30_000_000, 1, [Telemetry::skipped('1')]);
+
+    expect([$client->received[0][2], $client->received[0][3]])->toBe([['dt:t:30000000', '1', '7200', 'h', '1:skipped'], 1]);
+});
+
+it('SPEC-016 AC-15: reads an hour\'s top clients, as many as it is asked for, most first, and sends how many', function (): void {
+    $a = hash('sha256', 'ip:203.0.113.7');
+    $b = hash('sha256', 'ip:198.51.100.1');
+    $client = telemetryPhpRedis([[$a, '5'], [$a, '5', $b, '2']]);
+    $buffer = stubbedTelemetry(new PhpRedisConnection($client));
+
+    expect([$buffer->topClients(500_000), $buffer->topClients(500_000, 10)])->toBe([[$a => 5], [$a => 5, $b => 2]])
+        ->and(array_map(fn (array $call): array => [$call[2], $call[3]], $client->received))->toBe([
+            [['dt:t:ip:500000', '1'], 1],
+            [['dt:t:ip:500000', '10'], 1],
+        ]);
+});
+
+it('SPEC-016 AC-15: refuses to read fewer than 1 top client, before calling Redis', function (): void {
+    $factory = telemetryUnreachable();
+
+    expect(fn (): array => (new RedisTelemetryBuffer($factory, 'default', new KeyBuilder('dt:')))->topClients(500_000, 0))
+        ->toThrow(InvalidArgumentException::class, 'The top clients to read must be at least 1, got 0.')
+        ->and($factory->connections)->toBe(0);
+});
+
+it('SPEC-016 AC-15: reports a top clients reply it cannot read as unavailable', function (mixed $reply): void {
+    $buffer = stubbedTelemetry(new PhpRedisConnection(telemetryPhpRedis([$reply])));
+
+    expect(fn (): array => $buffer->topClients(500_000))
+        ->toThrow(StorageUnavailableException::class, 'The Redis telemetry buffer returned an unexpected reply.');
+})->with([
+    'a client without its count' => [[hash('sha256', 'A')]],
+    'a count that is not a number' => [[hash('sha256', 'A'), 'many']],
+    'a status reply' => ['OK'],
+]);
+
+it('SPEC-016 AC-15: reads an hour\'s requests, and refuses a reply that is not an integer', function (): void {
+    $client = telemetryPhpRedis([7, 0, '7']);
+    $buffer = stubbedTelemetry(new PhpRedisConnection($client));
+
+    expect([$buffer->requests(500_000), $buffer->requests(500_001)])->toBe([7, 0])
+        ->and(fn (): int => $buffer->requests(500_000))->toThrow(StorageUnavailableException::class, 'The Redis telemetry buffer returned an unexpected reply.')
+        ->and([$client->received[0][2], $client->received[0][3]])->toBe([['dt:t:n:500000'], 1]);
 });
