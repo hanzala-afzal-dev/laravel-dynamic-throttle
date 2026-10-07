@@ -20,6 +20,7 @@ use Afzal\DynamicThrottle\Models\Setting;
 use Afzal\DynamicThrottle\Tests\Support\Auth\TestUser;
 use Afzal\DynamicThrottle\Tests\Support\FailingStore;
 use Afzal\DynamicThrottle\Tests\Support\FakeClock;
+use Afzal\DynamicThrottle\Tests\Support\Http\TrustProxyLater;
 use Afzal\DynamicThrottle\Tests\Support\Identities;
 use Afzal\DynamicThrottle\Tests\Support\RecordingTelemetryBuffer;
 use Afzal\DynamicThrottle\Tests\Support\Settings;
@@ -396,4 +397,24 @@ it('SPEC-016 AC-15: gives no client when the client IP cannot be read, and still
 
     expect($buffer->clients)->toBe([null])
         ->and(array_map(fn (array $call): array => $call[2], $buffer->recorded))->toBe([[['1', Identities::hashed('global'), 'counted']]]);
+});
+
+it('SPEC-016 AC-15: gives the client the rules counted, though the app trusts its proxy only after dynamic.throttle', function (): void {
+    $buffer = recordingTelemetry();
+    // An ip rule, which counts the client as handle() reads it.
+    Throttling::rule();
+    Throttling::route('api/x', ['dynamic.throttle', TrustProxyLater::class]);
+
+    try {
+        $this->withServerVariables(['REMOTE_ADDR' => TrustProxyLater::PROXY])->get('api/x', ['X-Forwarded-For' => '203.0.113.7'])->assertOk();
+    } finally {
+        // Trusted proxies are static on Symfony's Request: back to its defaults.
+        Request::setTrustedProxies([], -1);
+    }
+
+    // The rule counted the proxy, so the traffic names the proxy: that is what the dominant-ip check must see.
+    $proxy = Identities::hashed('ip:'.TrustProxyLater::PROXY);
+
+    expect(array_map(fn (array $call): array => $call[2], $buffer->recorded))->toBe([[['1', $proxy, 'counted']]])
+        ->and($buffer->clients)->toBe([$proxy]);
 });
