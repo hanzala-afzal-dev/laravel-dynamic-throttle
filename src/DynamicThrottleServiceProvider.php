@@ -18,6 +18,7 @@ use Afzal\DynamicThrottle\Console\StatusCommand;
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
 use Afzal\DynamicThrottle\Engine\Contracts\FailureMemory;
 use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
+use Afzal\DynamicThrottle\Engine\Contracts\TelemetryBuffer;
 use Afzal\DynamicThrottle\Engine\Exemptions\ExemptionSet;
 use Afzal\DynamicThrottle\Engine\Failure\Cooldown;
 use Afzal\DynamicThrottle\Engine\Failure\ProcessFailureMemory;
@@ -25,6 +26,7 @@ use Afzal\DynamicThrottle\Engine\Failure\ReportThrottle;
 use Afzal\DynamicThrottle\Engine\Identity\IdentityHasher;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
+use Afzal\DynamicThrottle\Engine\Telemetry\Sampler;
 use Afzal\DynamicThrottle\Http\IdentitySettings;
 use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
 use Afzal\DynamicThrottle\Http\RequestIdentityResolver;
@@ -32,6 +34,7 @@ use Afzal\DynamicThrottle\Manifest\Contracts\LocalManifestCache;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Models\Exemption;
 use Afzal\DynamicThrottle\Models\Rule;
+use Afzal\DynamicThrottle\Models\RuleObserver;
 use Afzal\DynamicThrottle\Models\Setting;
 use Afzal\DynamicThrottle\Support\ApcuFailureMemory;
 use Afzal\DynamicThrottle\Support\ApcuManifestCache;
@@ -75,6 +78,9 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
 
         // Scoped: Octane builds it once per request, so config changes apply on the next request.
         $this->app->scoped(LimiterStore::class, fn (Application $app): LimiterStore => $app->make(LimiterStoreFactory::class)->make());
+
+        // In the counters' store, on their driver, scoped as they are (SPEC-015).
+        $this->app->scoped(TelemetryBuffer::class, fn (Application $app): TelemetryBuffer => $app->make(LimiterStoreFactory::class)->telemetry());
 
         $this->registerRequestPath();
 
@@ -192,6 +198,9 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
             );
         });
 
+        // terminate() builds it for each request it records (SPEC-015).
+        $this->app->bind(Sampler::class, fn (Application $app): Sampler => new Sampler($this->sampleRate($app)));
+
         $this->app->bind(LimiterStoreFactory::class, fn (Application $app): LimiterStoreFactory => new LimiterStoreFactory(
             $app->make('config'),
             $app->make('cache'),
@@ -306,6 +315,17 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
     }
 
     /**
+     * telemetry.sample_rate, from 0 to 1. Anything else records every request, as
+     * the default does.
+     */
+    private function sampleRate(Application $app): float
+    {
+        $rate = $app->make('config')->get('dynamic-throttle.telemetry.sample_rate');
+
+        return (is_int($rate) || is_float($rate)) && $rate >= 0 && $rate <= 1 ? (float) $rate : 1.0;
+    }
+
+    /**
      * Where failures are remembered (SPEC-012 decision 1): in the process, and in APCu
      * when the extension is enabled, where a server's PHP-FPM workers share them.
      *
@@ -359,6 +379,8 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
         Rule::observe(ManifestObserver::class);
         Exemption::observe(ManifestObserver::class);
         Setting::observe(ManifestObserver::class);
+        // RuleChanged, for integrations (SPEC-015).
+        Rule::observe(RuleObserver::class);
 
         // A route middleware, attached nowhere until the app says so (ADR-0004, ADR-0020 point 11).
         $this->callAfterResolving(Router::class, function (Router $router): void {

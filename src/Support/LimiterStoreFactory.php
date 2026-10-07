@@ -6,16 +6,20 @@ namespace Afzal\DynamicThrottle\Support;
 
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
 use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
+use Afzal\DynamicThrottle\Engine\Contracts\TelemetryBuffer;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Stores\CacheLimiterStore;
 use Afzal\DynamicThrottle\Engine\Stores\RedisLimiterStore;
+use Afzal\DynamicThrottle\Engine\Telemetry\CacheTelemetryBuffer;
+use Afzal\DynamicThrottle\Engine\Telemetry\RedisTelemetryBuffer;
 use Illuminate\Contracts\Cache\Factory as CacheFactory;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Contracts\Redis\Factory as RedisFactory;
 use InvalidArgumentException;
 
 /**
- * Picks and builds the counter driver from config, without network calls (ADR-0005, SPEC-003).
+ * Picks and builds the counter driver from config, without network calls (ADR-0005,
+ * SPEC-003), and the telemetry buffer on the same driver and store (SPEC-015).
  */
 final readonly class LimiterStoreFactory
 {
@@ -35,6 +39,20 @@ final readonly class LimiterStoreFactory
         [$driver, $target] = $this->pick();
 
         return $driver === 'redis' ? $this->redisStore((string) $target) : $this->cacheStore($target);
+    }
+
+    /**
+     * The telemetry buffer, in the store the counters use (ADR-0013 point 2).
+     *
+     * @throws InvalidArgumentException for an unknown driver, an undefined store or an invalid prefix
+     */
+    public function telemetry(): TelemetryBuffer
+    {
+        [$driver, $target] = $this->pick();
+
+        return $driver === 'redis'
+            ? new RedisTelemetryBuffer($this->redis, (string) $target, $this->keys)
+            : new CacheTelemetryBuffer($this->cache->store($target), $this->keys);
     }
 
     /**

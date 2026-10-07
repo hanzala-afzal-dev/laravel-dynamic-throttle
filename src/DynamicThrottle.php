@@ -8,6 +8,7 @@ use Afzal\DynamicThrottle\Compiler\ManifestCompileFailed;
 use Afzal\DynamicThrottle\Compiler\ManifestCompiler;
 use Afzal\DynamicThrottle\Contracts\ScopeResolver;
 use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
+use Afzal\DynamicThrottle\Engine\Contracts\TelemetryBuffer;
 use Afzal\DynamicThrottle\Engine\Failure\ProcessFailureMemory;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
@@ -101,9 +102,10 @@ final class DynamicThrottle
     }
 
     /**
-     * For the app's tests (ADR-0020 point 12, SPEC-010): moves the counters and the
-     * manifest into a fresh in-memory cache store, so tests need no Redis and share
-     * no counts. The counters read Laravel's clock, so travel() moves their windows.
+     * For the app's tests (ADR-0020 point 12, SPEC-010): moves the counters, the
+     * manifest and the telemetry into a fresh in-memory cache store, so tests need
+     * no Redis and share no counts. The counters read Laravel's clock, so travel()
+     * moves their windows.
      *
      * Rules still come from the rules table. The ones already saved are compiled
      * now, so they apply from the first request, and each request reads the
@@ -134,6 +136,7 @@ final class DynamicThrottle
 
         // Built on the store the fake replaces, so they are built again on the fake one.
         $app->forgetInstance(LimiterStore::class);
+        $app->forgetInstance(TelemetryBuffer::class);
         $app->forgetInstance(RuleEvaluator::class);
         $app->forgetInstance(ManifestRepository::class);
         ManifestRepository::flushState();
