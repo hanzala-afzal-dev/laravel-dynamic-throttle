@@ -184,14 +184,17 @@ Feature tests run on SQLite with the array cache store and the clock frozen. The
   - the checks of what the rules saw are skipped, saying the store cannot be read;
   - the other checks still run.
 - **The database is down:** no check reads it. The checks of what the rules saw take the rules from the manifest.
-- **Too little traffic:** the guests and dominant-IP checks say ok below their minimums, 100 and 1,000 requests, since a few requests tell nothing.
-- **Sampling:** the numbers are weighed estimates. The thresholds are shares, so sampling does not bias them. A sample rate of 0 records nothing, so the checks of what the rules saw are skipped.
+- **Too little traffic:** the guests and dominant-IP checks say ok below their minimums, 100 and 1,000 requests recorded, since a few requests tell nothing.
+- **Sampling:** the numbers are weighed estimates. The thresholds are shares, so sampling does not bias them. The minimums count the requests recorded, the weighed numbers times the sample rate, so a handful of samples never warns (the review). They use the sample rate in the config now, so a rate changed in the last two hours moves them for that time. A sample rate of 0 records nothing, so the checks of what the rules saw are skipped.
 - **A heavy legitimate client,** such as a partner's server, can dominate the traffic. The warning names the share and the likely cause, and says to ignore it when the client is known.
+- **Several proxies:** behind a load balancer with several nodes, such as one per availability zone, each node's IP sends a share of the traffic, and none may reach half. `dominant-ip` then says ok, while `ip` rules count each node as one client. The review found it; how to catch it is left to the maintainer, in the roadmap.
+- **An app that trusts its proxy after `dynamic.throttle`,** such as with `TrustProxies` as route middleware: the rules count the proxy's IP. The hour's traffic names the IP the rules counted, kept from `handle()`, so `dominant-ip` sees what they saw (the review). `terminate()` reads the client IP itself only when no rule or exemption read it.
 - **A public route** that a user rule matches counts guests there, and the guests check warns about it. Its message says to scope the rule to authenticated routes, or to use an IP rule for public ones.
 - **A request rejected by an earlier rule** still records the later rules it skipped or ignored, which planning decided before the store answered (ADR-0026).
 - **Global middleware** runs before every route's middleware, so authentication on any route runs after it.
 - **Many routes:** each route check names at most ten routes, then how many more.
-- **Reading the routes builds each route's controller** to read its middleware, as `php artisan route:list` does. A controller that cannot be built makes the route checks err, with its message.
+- **Reading the routes builds each route's controller** to read its middleware, as `php artisan route:list` does. A controller that cannot be built makes every route check that reads the routes err, with its message. Laravel keeps a route's middleware as computed before the failure, so the checks after the first would read it without the failure: the context remembers the failure for them (the review).
+- **`except` that is not a list,** such as a string, covers nothing in the middleware, and the `except` check reads it the same way (the review).
 - **The manifest's version is its compile time** in milliseconds, unless a server's clock ran ahead when it compiled. The version then stays ahead until the clocks catch up, and its age reads as 0, so a stopped scheduler goes unseen until then.
 - **A store that expires keys when it reads them,** such as the database store, deletes its own expired telemetry keys while the checks read. That is the store's housekeeping, not a change.
 - **Redis Cluster:** the two hour keys add two calls per recorded request, after the response, since each key is one call there (SPEC-015 AC-3, decision 16).
@@ -235,8 +238,9 @@ None. The maintainer decided the first two on 2026-10-05. The others are recorde
    - `guests` and `ignored` read the last 60 complete minutes. `dominant-ip` reads the current and the previous hour's keys.
    - **Rejected:** new columns in `dynamic_throttle_metrics_hourly`, a schema change for numbers that nothing shows yet.
 5. **The thresholds are fixed, not config:** a check is advice, and its message gives the numbers.
-   - `guests`: half or more of at least 100 matched requests.
-   - `dominant-ip`: half or more of at least 1,000 requests.
+   - `guests`: half or more of at least 100 matched requests recorded.
+   - `dominant-ip`: half or more of at least 1,000 requests recorded.
+   - The minimums count the requests recorded, not what they stand for: below a sample rate of 1, a handful of samples would reach them (revised after the review).
    - `ignored`: any.
    - `manifest`: 10 minutes without a compile, two scheduled compiles missed; 500 rules, ADR-0007's number; 1,000 exemptions, where a load of the manifest took about 2.5 ms in Phase 2 (`benchmarks/results/phase-2-exemptions.md`), which every request pays on PHP-FPM without APCu. SPEC-009 left that number to the Phase 2 exit, which did not set one.
    - `metrics`: 10 minutes, ADR-0013's number.
