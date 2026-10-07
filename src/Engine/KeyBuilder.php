@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle\Engine;
 
+use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryMetric;
 use InvalidArgumentException;
-use LogicException;
 
 /**
  * Builds every cache and Redis key the package uses (CLAUDE.md hard rule).
@@ -64,22 +64,29 @@ final readonly class KeyBuilder
 
     /**
      * A minute's telemetry on Redis: one hash, a field per rule and metric (SPEC-015).
+     * Telemetry keys start with "t:", apart from the counters and the manifest.
      *
      * @param  int  $minute  Unix minutes
      */
     public function telemetryMinute(int $minute): string
     {
-        throw new LogicException('SPEC-015: not built yet.');
+        return "{$this->prefix}t:{$minute}";
     }
 
     /**
      * One rule's metric for a minute on a cache store: hits, blocks or would_blocks (SPEC-015).
      *
      * @param  int  $minute  Unix minutes
+     *
+     * @throws InvalidArgumentException for another metric
      */
     public function telemetryCount(int $minute, string $ruleId, string $metric): string
     {
-        throw new LogicException('SPEC-015: not built yet.');
+        if (! TelemetryMetric::tryFrom($metric) instanceof TelemetryMetric) {
+            throw new InvalidArgumentException("Unknown telemetry metric \"{$metric}\": use hits, blocks or would_blocks.");
+        }
+
+        return $this->telemetryMinute($minute).":{$ruleId}:{$metric}";
     }
 
     /**
@@ -89,7 +96,7 @@ final readonly class KeyBuilder
      */
     public function offenders(string $ruleId, int $hour): string
     {
-        throw new LogicException('SPEC-015: not built yet.');
+        return "{$this->prefix}t:o:{$ruleId}:{$hour}";
     }
 
     /**
@@ -99,7 +106,7 @@ final readonly class KeyBuilder
      */
     public function clients(string $ruleId, int $hour): string
     {
-        throw new LogicException('SPEC-015: not built yet.');
+        return "{$this->prefix}t:u:{$ruleId}:{$hour}";
     }
 
     /**
@@ -107,7 +114,7 @@ final readonly class KeyBuilder
      */
     public function telemetryFlushed(): string
     {
-        throw new LogicException('SPEC-015: not built yet.');
+        return "{$this->prefix}t:flushed";
     }
 
     /**
