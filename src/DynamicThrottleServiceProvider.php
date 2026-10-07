@@ -12,7 +12,9 @@ use Afzal\DynamicThrottle\Console\CompileCommand;
 use Afzal\DynamicThrottle\Console\DisableRuleCommand;
 use Afzal\DynamicThrottle\Console\EnableRuleCommand;
 use Afzal\DynamicThrottle\Console\ExplainCommand;
+use Afzal\DynamicThrottle\Console\FlushMetricsCommand;
 use Afzal\DynamicThrottle\Console\ListCommand;
+use Afzal\DynamicThrottle\Console\PruneCommand;
 use Afzal\DynamicThrottle\Console\ScaleCommand;
 use Afzal\DynamicThrottle\Console\StatusCommand;
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
@@ -326,6 +328,17 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
     }
 
     /**
+     * telemetry.retention_hours, the hours the scheduled prune keeps: 720, 30 days,
+     * unless it is a whole number of at least 1, and at most the prune's maximum.
+     */
+    private function retentionHours(Application $app): int
+    {
+        $hours = $app->make('config')->get('dynamic-throttle.telemetry.retention_hours');
+
+        return is_int($hours) && $hours >= 1 ? min($hours, PruneCommand::MAX_HOURS) : 720;
+    }
+
+    /**
      * Where failures are remembered (SPEC-012 decision 1): in the process, and in APCu
      * when the extension is enabled, where a server's PHP-FPM workers share them.
      *
@@ -412,12 +425,24 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
             DisableRuleCommand::class,
             EnableRuleCommand::class,
             ExplainCommand::class,
+            FlushMetricsCommand::class,
+            PruneCommand::class,
         ]);
 
-        // Heals a manifest the cache lost (SPEC-006). manifest.schedule turns it off.
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule): void {
-            if ($this->app->make('config')->get('dynamic-throttle.manifest.schedule') !== false) {
+            $config = $this->app->make('config');
+
+            // Heals a manifest the cache lost (SPEC-006). manifest.schedule turns it off.
+            if ($config->get('dynamic-throttle.manifest.schedule') !== false) {
                 $schedule->command('dynamic-throttle:compile')->everyFiveMinutes();
+            }
+
+            // Moves the numbers to the database before the store lets them expire, and
+            // deletes the old ones (SPEC-015). A flush that dies holds the lock 10 minutes
+            // at most, well within the 2 hours the store keeps the numbers.
+            if ($config->get('dynamic-throttle.telemetry.enabled') !== false && $config->get('dynamic-throttle.telemetry.schedule') !== false) {
+                $schedule->command('dynamic-throttle:flush-metrics')->everyMinute()->withoutOverlapping(10);
+                $schedule->command('dynamic-throttle:prune', ['--hours' => $this->retentionHours($this->app)])->daily();
             }
         });
 
