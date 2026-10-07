@@ -36,8 +36,8 @@ final class HealthContext
 
     private ?RouteMiddleware $routes = null;
 
-    /** @var list<array{Route, list<string>}>|null */
-    private ?array $routeList = null;
+    /** @var list<array{Route, list<string>}>|Throwable|null */
+    private array|Throwable|null $routeList = null;
 
     public function __construct(
         public readonly Container $container,
@@ -101,17 +101,32 @@ final class HealthContext
      * own, which are never limited (ADR-0004 point 5).
      *
      * @return list<array{Route, list<string>}>
+     *
+     * @throws Throwable when a route's middleware cannot be read, to every caller
      */
     public function routeList(): array
     {
         if ($this->routeList === null) {
-            $this->routeList = [];
+            try {
+                $routes = [];
 
-            foreach ($this->routes()->router()->getRoutes()->getRoutes() as $route) {
-                if (! str_starts_with((string) $route->getName(), DynamicThrottleMiddleware::OWN_ROUTES)) {
-                    $this->routeList[] = [$route, $this->routes()->middleware($route)];
+                foreach ($this->routes()->router()->getRoutes()->getRoutes() as $route) {
+                    if (! str_starts_with((string) $route->getName(), DynamicThrottleMiddleware::OWN_ROUTES)) {
+                        $routes[] = [$route, $this->routes()->middleware($route)];
+                    }
                 }
+
+                $this->routeList = $routes;
+            } catch (Throwable $exception) {
+                // A route whose middleware cannot be read, such as for a controller that cannot be
+                // built, makes every check that reads the routes err. Read again, it would not throw:
+                // Laravel keeps the middleware it computed before the failure.
+                $this->routeList = $exception;
             }
+        }
+
+        if ($this->routeList instanceof Throwable) {
+            throw $this->routeList;
         }
 
         return $this->routeList;

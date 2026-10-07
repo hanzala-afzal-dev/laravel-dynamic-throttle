@@ -103,8 +103,10 @@ final readonly class ExceptCheck implements Check
     private function patterns(Config $config): array
     {
         $patterns = [];
+        $except = $config->get('dynamic-throttle.except');
 
-        foreach ((array) $config->get('dynamic-throttle.except') as $pattern) {
+        // As Untouched reads it: anything but a list of patterns covers nothing.
+        foreach (is_array($except) ? $except : [] as $pattern) {
             if (is_string($pattern)) {
                 $trimmed = ltrim($pattern, '/');
                 $patterns[] = $trimmed === '' ? '/' : $trimmed;
