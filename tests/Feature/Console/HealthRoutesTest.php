@@ -7,6 +7,7 @@ use Afzal\DynamicThrottle\Enums\Scope;
 use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Tests\Support\Health;
+use Afzal\DynamicThrottle\Tests\Support\Http\UnbuildableController;
 use Afzal\DynamicThrottle\Tests\Support\Throttling;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Support\Carbon;
@@ -185,4 +186,37 @@ it('AC-11: is skipped without a manifest, whose rules it needs', function (): vo
     Cache::store('health')->forget(app(KeyBuilder::class)->manifest());
 
     expect(Health::status('middleware-order'))->toBe('skipped');
+});
+
+it('AC-8 to AC-11: errs in every check that reads the routes when a route\'s controller cannot be built, not only in the first', function (bool $global, string $attached): void {
+    Health::passing();
+    Throttling::rule(['name' => 'Users', 'scope' => Scope::User]);
+
+    if ($global) {
+        app(Kernel::class)->pushMiddleware(DynamicThrottleMiddleware::class);
+    }
+
+    Route::get('api/broken', UnbuildableController::class);
+    Route::middleware('auth')->get('api/account', fn (): string => 'ok');
+
+    $checks = Health::checks();
+
+    expect([$checks['attached'][0], $checks['two-limiters'][0], $checks['middleware-order'][0]])->toBe([$attached, 'error', 'error'])
+        ->and($checks['two-limiters'][1])->toContain(UnbuildableController::MESSAGE)
+        ->and($checks['middleware-order'][1])->toContain(UnbuildableController::MESSAGE);
+})->with([
+    // attached reads the routes first, and errs.
+    'dynamic.throttle on routes' => [false, 'error'],
+    // attached needs no route under the global middleware, so two-limiters reads them first.
+    'dynamic.throttle as global middleware' => [true, 'ok'],
+]);
+
+it('AC-9: reads except as the middleware does, so a pattern that is not in a list covers nothing', function (): void {
+    Health::passing();
+    config()->set(['horizon.path' => 'horizon', 'dynamic-throttle.except' => 'horizon*']);
+
+    [$status, $message] = Health::check('except');
+
+    expect($status)->toBe('warning')
+        ->and($message)->toContain('Horizon');
 });
