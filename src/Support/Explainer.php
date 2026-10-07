@@ -21,7 +21,6 @@ use Afzal\DynamicThrottle\Engine\Stacking\RuleAttempt;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
 use Afzal\DynamicThrottle\Engine\Stacking\Scale;
 use Afzal\DynamicThrottle\Http\IdentitySettings;
-use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
 use Afzal\DynamicThrottle\Http\RateLimitHeaders;
 use Afzal\DynamicThrottle\Http\RequestIdentityResolver;
 use Afzal\DynamicThrottle\Http\RequestTarget;
@@ -41,21 +40,16 @@ use Afzal\DynamicThrottle\Support\Explanation\ExplanationRequest;
 use Afzal\DynamicThrottle\Support\Explanation\RuleStatus;
 use Closure;
 use Illuminate\Auth\AuthManager;
-use Illuminate\Auth\Middleware\AuthenticateWithBasicAuth;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Auth\Guard;
-use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Contracts\Auth\UserProvider;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Events\Dispatcher;
-use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Events\NullDispatcher;
-use Illuminate\Foundation\Http\Kernel;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
-use Illuminate\Routing\Router;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Throwable;
 
@@ -295,88 +289,31 @@ final readonly class Explainer
      */
     private function route(Request $request): array
     {
-        $global = $this->isGlobal($this->container->make(HttpKernel::class));
-        $router = $this->container->make(Router::class);
+        // Read as the health checks read routes (SPEC-016 decision 10).
+        $routes = RouteMiddleware::of($this->container);
 
         try {
-            $route = $router->getRoutes()->match($request);
+            $route = $routes->router()->getRoutes()->match($request);
         } catch (HttpException) {
             // No route, or none for the method: 404 or 405.
-            return [null, $global];
+            return [null, $routes->global];
         }
 
-        $middleware = array_map(
-            fn (mixed $middleware): string => is_string($middleware) ? $middleware : get_debug_type($middleware),
-            array_values($router->gatherRouteMiddleware($route)),
-        );
-        $position = $this->position($middleware);
+        $middleware = $routes->middleware($route);
+        $position = $routes->position($middleware);
 
         if ($position !== null) {
             $request->setRouteResolver(fn (): Route => $route);
         }
 
         $afterAuth = match (true) {
-            $position !== null => $this->authenticates(array_slice($middleware, 0, $position), $router),
+            $position !== null => $routes->authenticates(array_slice($middleware, 0, $position)),
             // Global middleware runs before the route's, its authentication included.
-            $global => false,
+            $routes->global => false,
             default => null,
         };
 
-        return [new ExplainedRoute($route->uri(), $route->getName(), $middleware, $position !== null || $global, $afterAuth), $global];
-    }
-
-    /**
-     * Whether the app runs dynamic.throttle as global middleware. Another kernel than
-     * Laravel's has no list to ask.
-     */
-    private function isGlobal(HttpKernel $kernel): bool
-    {
-        return $kernel instanceof Kernel && $kernel->hasMiddleware(DynamicThrottleMiddleware::class);
-    }
-
-    /**
-     * Where dynamic.throttle runs among the route's middleware.
-     *
-     * @param  list<string>  $middleware
-     */
-    private function position(array $middleware): ?int
-    {
-        foreach ($middleware as $position => $name) {
-            if (explode(':', $name, 2)[0] === DynamicThrottleMiddleware::class) {
-                return $position;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Whether one of the middleware logs users in: Laravel's authentication, its basic
-     * authentication, or one listed in middleware.after (ADR-0004 point 2).
-     *
-     * @param  list<string>  $middleware  those that run before dynamic.throttle
-     */
-    private function authenticates(array $middleware, Router $router): bool
-    {
-        $aliases = $router->getMiddleware();
-        $after = [];
-
-        foreach ((array) $this->config->get('dynamic-throttle.middleware.after') as $name) {
-            if (is_string($name) && $name !== '') {
-                $name = explode(':', $name, 2)[0];
-                $after[] = is_string($aliases[$name] ?? null) ? $aliases[$name] : $name;
-            }
-        }
-
-        foreach ($middleware as $name) {
-            $class = explode(':', $name, 2)[0];
-
-            if (is_a($class, AuthenticatesRequests::class, true) || is_a($class, AuthenticateWithBasicAuth::class, true) || in_array($class, $after, true)) {
-                return true;
-            }
-        }
-
-        return false;
+        return [new ExplainedRoute($route->uri(), $route->getName(), $middleware, $position !== null || $routes->global, $afterAuth), $routes->global];
     }
 
     /**
