@@ -66,12 +66,13 @@ it('AC-7: keeps the total within 2% of the requests made at the rate 0.3, over 1
     expect(abs($total - 100_000))->toBeLessThan(2_000);
 });
 
-it('AC-7: rejects a rate outside 0 to 1', function (float $rate): void {
-    expect(fn (): Sampler => new Sampler($rate))->toThrow(InvalidArgumentException::class);
+it('AC-7: rejects a rate outside 0 to 1, and names it', function (float $rate, string $message): void {
+    expect(fn (): Sampler => new Sampler($rate))->toThrow(InvalidArgumentException::class, $message);
 })->with([
-    'below 0' => [-0.1],
-    'above 1' => [1.5],
-    'NaN' => [NAN],
+    'below 0' => [-0.1, 'The sample rate must be from 0 to 1, got -0.1.'],
+    'above 1' => [1.5, 'The sample rate must be from 0 to 1, got 1.5.'],
+    // Named, never converted: PHP 8.5 warns when NaN is converted to a string.
+    'NaN' => [NAN, 'The sample rate must be from 0 to 1, got NaN.'],
 ]);
 
 /**
