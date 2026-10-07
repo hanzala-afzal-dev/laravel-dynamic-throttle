@@ -47,7 +47,11 @@ final readonly class Sampler
             return 1;
         }
 
-        // A draw is never below 0, so the rate 0 picks nothing.
+        // The rate 0 picks nothing, and needs no draw either.
+        if ($this->rate === 0.0) {
+            return 0;
+        }
+
         if ($this->randomizer->nextFloat() >= $this->rate) {
             return 0;
         }
