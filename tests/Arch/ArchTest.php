@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Afzal\DynamicThrottle\Compiler\ManifestCompiler;
 use Afzal\DynamicThrottle\Console\ExplainCommand;
+use Afzal\DynamicThrottle\Console\HealthCommand;
 use Afzal\DynamicThrottle\DynamicThrottle;
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
 use Afzal\DynamicThrottle\Engine\Failure\Cooldown;
@@ -239,6 +240,35 @@ arch('the middleware lets requests through untouched with the steps explain show
 arch('the explanation follows the middleware\'s steps, matching, identities and evaluator (SPEC-014)')
     ->expect(Explainer::class)
     ->toUse([Untouched::class, RuleMatcher::class, RequestIdentityResolver::class, RuleEvaluator::class]);
+
+/*
+| SPEC-016 AC-21: dynamic-throttle:health changes nothing (AC-3). Its checks
+| read the config, the routes and the counter store, never the database, and
+| never compile, rebuild, flush or change anything. Nothing on the request
+| path runs them.
+*/
+
+$healthChanges = [...$changes, MetricsFlusher::class];
+
+arch('the health checks never compile, rebuild, flush or change anything (SPEC-016 AC-21)')
+    ->expect('Afzal\DynamicThrottle\Support\Health')
+    ->not->toUse($healthChanges);
+
+arch('the health checks never touch the database (SPEC-016 AC-21)')
+    ->expect('Afzal\DynamicThrottle\Support\Health')
+    ->not->toUse($databaseAccess);
+
+arch('the health command never compiles, rebuilds, flushes or changes anything (SPEC-016 AC-21)')
+    ->expect(HealthCommand::class)
+    ->not->toUse($healthChanges);
+
+arch('the health command never touches the database (SPEC-016 AC-21)')
+    ->expect(HealthCommand::class)
+    ->not->toUse($databaseAccess);
+
+arch('request handling never runs the health checks (SPEC-016 AC-21)')
+    ->expect('Afzal\DynamicThrottle\Http')
+    ->not->toUse('Afzal\DynamicThrottle\Support\Health');
 
 dataset('built-in classes the arch rules cannot see', [
     'a "now" date in the engine bypasses travel() (ADR-0006)' => [
