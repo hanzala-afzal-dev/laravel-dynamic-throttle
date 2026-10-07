@@ -122,6 +122,24 @@ final class RequestIdentityResolver implements ExemptionSubjects, IdentityResolv
     }
 
     /**
+     * The client IP as the rules counted it, grouped, for the hour's traffic (SPEC-016
+     * decision 6): what a rule or an exemption read, so the traffic names the IP the
+     * rules saw, even when the app trusts its proxy only after dynamic.throttle. Null
+     * when nothing read it, and false when it could not be read: never a read of its
+     * own.
+     *
+     * @internal
+     */
+    public function countedIp(): string|false|null
+    {
+        if (! $this->ipRead) {
+            return null;
+        }
+
+        return $this->ipFailure instanceof Throwable ? false : $this->groupedIp ??= ClientIp::group($this->ipAddress, $this->settings->ipv6Prefix);
+    }
+
+    /**
      * For exemptions: the whole address, before IPv6 grouping (SPEC-009).
      *
      * @throws IdentityUnavailableException

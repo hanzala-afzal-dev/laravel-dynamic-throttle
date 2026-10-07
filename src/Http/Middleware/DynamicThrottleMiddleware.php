@@ -117,6 +117,7 @@ final readonly class DynamicThrottleMiddleware
         try {
             $events = $this->kept($request, 'events');
             $records = $this->kept($request, 'telemetry');
+            $ip = $this->keptIp($request);
             // Taken, not read: a middleware the app also lists globally terminates twice.
             $request->attributes->remove(self::AFTER_RESPONSE);
         } catch (Throwable $exception) {
@@ -126,7 +127,7 @@ final readonly class DynamicThrottleMiddleware
         }
 
         $this->dispatchEvents($events);
-        $this->recordTelemetry($request, $records);
+        $this->recordTelemetry($request, $records, $ip);
     }
 
     /**
@@ -141,6 +142,19 @@ final readonly class DynamicThrottleMiddleware
         $list = is_array($kept) ? $kept[$what] ?? null : null;
 
         return is_array($list) ? $list : [];
+    }
+
+    /**
+     * The client IP the rules counted, grouped, as handle() kept it for the hour's
+     * traffic (SPEC-016): false when it could not be read, and null when no rule or
+     * exemption read it.
+     */
+    private function keptIp(Request $request): string|false|null
+    {
+        $kept = $request->attributes->get(self::AFTER_RESPONSE);
+        $ip = is_array($kept) ? $kept['ip'] ?? null : null;
+
+        return is_string($ip) || $ip === false ? $ip : null;
     }
 
     /**
@@ -181,8 +195,9 @@ final readonly class DynamicThrottleMiddleware
      * which changes what requests get (decision 7).
      *
      * @param  array<array-key, mixed>  $records
+     * @param  string|false|null  $ip  the client IP the rules counted, as keptIp() gives it
      */
-    private function recordTelemetry(Request $request, array $records): void
+    private function recordTelemetry(Request $request, array $records, string|false|null $ip): void
     {
         $records = array_values(array_filter($records, fn (mixed $record): bool => $record instanceof TelemetryRecord));
 
@@ -198,7 +213,7 @@ final readonly class DynamicThrottleMiddleware
             $weight = $this->container->make(Sampler::class)->weight();
 
             if ($weight > 0) {
-                $this->container->make(TelemetryBuffer::class)->record(intdiv($this->clock->microseconds(), 60_000_000), $weight, $records, $this->client($request));
+                $this->container->make(TelemetryBuffer::class)->record(intdiv($this->clock->microseconds(), 60_000_000), $weight, $records, $this->client($request, $ip));
             }
         } catch (Throwable $exception) {
             $this->report($exception);
@@ -208,20 +223,30 @@ final readonly class DynamicThrottleMiddleware
     /**
      * The request's client for the hour's traffic: the identity hash the `ip` scope
      * gives it, IPv6 grouped (SPEC-016 decision 6), or null when its IP cannot be
-     * read. Read through a copy, as the resolver reads it, so the app's own read is
-     * never touched.
+     * read. It is the IP the rules counted when one read it, so the traffic sees what
+     * they saw, even when the app trusts its proxy only after dynamic.throttle (the
+     * review). Otherwise it is read now, through a copy, as the resolver reads it, so
+     * the app's own read is never touched.
+     *
+     * @param  string|false|null  $counted  the client IP the rules counted, as keptIp() gives it
      */
-    private function client(Request $request): ?string
+    private function client(Request $request, string|false|null $counted): ?string
     {
-        try {
-            $ip = (clone $request)->ip();
-        } catch (Throwable) {
+        if ($counted === false) {
             return null;
         }
 
-        $grouped = ClientIp::group($ip, $this->container->make(IdentitySettings::class)->ipv6Prefix);
+        if ($counted === null) {
+            try {
+                $ip = (clone $request)->ip();
+            } catch (Throwable) {
+                return null;
+            }
 
-        return $this->container->make(IdentityHasher::class)->hash(ScopeIdentity::ip($grouped));
+            $counted = ClientIp::group($ip, $this->container->make(IdentitySettings::class)->ipv6Prefix);
+        }
+
+        return $this->container->make(IdentityHasher::class)->hash(ScopeIdentity::ip($counted));
     }
 
     /**
@@ -349,6 +374,8 @@ final readonly class DynamicThrottleMiddleware
                 $request->attributes->set(self::AFTER_RESPONSE, [
                     'events' => [...$this->kept($request, 'events'), ...$events],
                     'telemetry' => [...$this->kept($request, 'telemetry'), ...$records],
+                    // The client IP the rules counted, for the hour's traffic (SPEC-016).
+                    'ip' => $this->keptIp($request) ?? $identities->countedIp(),
                 ]);
             }
         } catch (Throwable $exception) {
