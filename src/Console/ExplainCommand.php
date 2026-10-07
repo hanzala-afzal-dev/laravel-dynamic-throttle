@@ -109,15 +109,11 @@ final class ExplainCommand extends Command
     }
 
     /**
-     * Pure ASCII: every other character is escaped, a C1 control too, and DEL, which
-     * JSON leaves as is, so nothing in it can drive the terminal. A byte that is not
-     * UTF-8, such as from a path's %FF, becomes U+FFFD instead of failing.
-     *
      * @param  Explanation|array<string, string>  $value
      */
     private function json(Explanation|array $value): string
     {
-        return str_replace("\x7F", '\u007f', json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR));
+        return Printable::json($value);
     }
 
     private function render(Explanation $explanation): void

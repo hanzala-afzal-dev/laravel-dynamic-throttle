@@ -11,7 +11,7 @@ use Symfony\Component\Console\Formatter\OutputFormatter;
  * found by the review). Its control characters, C0, DEL and C1, become \xNN or
  * \u{NN} escapes, so a rule's name cannot move the cursor, retitle the terminal or
  * hide output. Its tags are escaped, so the console formatter never reads <fg=…>
- * as a style, which would stop the command.
+ * as a style, which would stop the command. And the commands' JSON.
  *
  * @internal
  */
@@ -27,5 +27,17 @@ final class Printable
         );
 
         return OutputFormatter::escape($visible ?? $value);
+    }
+
+    /**
+     * A value as JSON in pure ASCII, as explain prints it (SPEC-014 decision 6) and the
+     * health check does (SPEC-016): every other character is escaped, a C1 control
+     * too, and DEL, which JSON leaves as is, so nothing in it can drive the terminal.
+     * A byte that is not UTF-8, such as from a path's %FF, becomes U+FFFD instead of
+     * failing.
+     */
+    public static function json(mixed $value): string
+    {
+        return str_replace("\x7F", '\u007f', json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR));
     }
 }

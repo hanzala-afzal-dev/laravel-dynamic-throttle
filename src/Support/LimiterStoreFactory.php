@@ -76,6 +76,19 @@ final readonly class LimiterStoreFactory
     }
 
     /**
+     * The driver make() picks, and its cache store, null for the default one, or its
+     * Redis connection, from the config alone, for dynamic-throttle:health (SPEC-016).
+     *
+     * @return array{'cache', ?string}|array{'redis', string}
+     *
+     * @throws InvalidArgumentException for an unknown driver
+     */
+    public function driver(): array
+    {
+        return $this->pick();
+    }
+
+    /**
      * As Laravel's RedisManager finds a connection: under database.redis, or among its clusters.
      */
     private function redisConnectionExists(string $name): bool
