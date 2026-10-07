@@ -68,3 +68,27 @@ it('SPEC-028: builds the key of the manifest in APCu under the prefix, for one a
 it('SPEC-028 AC-15: builds the key of the claim on the refresh of the manifest in APCu, next to the manifest\'s', function (): void {
     expect((new KeyBuilder('dt:'))->localManifestRefresh('app1', '0865f7e'))->toBe('dt:manifest:app1:0865f7e:refresh');
 });
+
+it('SPEC-015: builds the telemetry keys under the prefix, apart from the counters and the manifest', function (): void {
+    $keys = new KeyBuilder('dt:');
+
+    expect([
+        $keys->telemetryMinute(30_000_000),
+        $keys->telemetryCount(30_000_000, '12', 'hits'),
+        $keys->telemetryCount(30_000_000, '12', 'would_blocks'),
+        $keys->offenders('12', 500_000),
+        $keys->clients('12', 500_000),
+        $keys->telemetryFlushed(),
+    ])->toBe([
+        'dt:t:30000000',
+        'dt:t:30000000:12:hits',
+        'dt:t:30000000:12:would_blocks',
+        'dt:t:o:12:500000',
+        'dt:t:u:12:500000',
+        'dt:t:flushed',
+    ]);
+});
+
+it('SPEC-015: rejects a telemetry metric other than hits, blocks and would_blocks', function (): void {
+    expect(fn (): string => (new KeyBuilder('dt:'))->telemetryCount(30_000_000, '12', 'misses'))->toThrow(InvalidArgumentException::class);
+});

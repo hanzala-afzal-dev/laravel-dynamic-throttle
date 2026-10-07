@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle\Engine;
 
 use InvalidArgumentException;
+use LogicException;
 
 /**
  * Builds every cache and Redis key the package uses (CLAUDE.md hard rule).
@@ -59,6 +60,54 @@ final readonly class KeyBuilder
     public function manifestRebuild(): string
     {
         return $this->manifest().':rebuild';
+    }
+
+    /**
+     * A minute's telemetry on Redis: one hash, a field per rule and metric (SPEC-015).
+     *
+     * @param  int  $minute  Unix minutes
+     */
+    public function telemetryMinute(int $minute): string
+    {
+        throw new LogicException('SPEC-015: not built yet.');
+    }
+
+    /**
+     * One rule's metric for a minute on a cache store: hits, blocks or would_blocks (SPEC-015).
+     *
+     * @param  int  $minute  Unix minutes
+     */
+    public function telemetryCount(int $minute, string $ruleId, string $metric): string
+    {
+        throw new LogicException('SPEC-015: not built yet.');
+    }
+
+    /**
+     * The clients a rule blocked or would have blocked in an hour, on Redis (SPEC-015).
+     *
+     * @param  int  $hour  Unix hours
+     */
+    public function offenders(string $ruleId, int $hour): string
+    {
+        throw new LogicException('SPEC-015: not built yet.');
+    }
+
+    /**
+     * How many different clients those were, as a HyperLogLog on Redis (SPEC-015).
+     *
+     * @param  int  $hour  Unix hours
+     */
+    public function clients(string $ruleId, int $hour): string
+    {
+        throw new LogicException('SPEC-015: not built yet.');
+    }
+
+    /**
+     * The last minute the flush moved (SPEC-015).
+     */
+    public function telemetryFlushed(): string
+    {
+        throw new LogicException('SPEC-015: not built yet.');
     }
 
     /**

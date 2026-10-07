@@ -1,0 +1,61 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Afzal\DynamicThrottle\Tests\Support;
+
+use Afzal\DynamicThrottle\Engine\Contracts\TelemetryBuffer;
+use Afzal\DynamicThrottle\Engine\Telemetry\MinuteCounts;
+use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryOutcome;
+use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryRecord;
+
+/**
+ * Telemetry's buffer, as SPEC-015's tests read it.
+ */
+final class Telemetry
+{
+    /**
+     * Unix minutes at a Unix time.
+     */
+    public static function minute(int $seconds): int
+    {
+        return intdiv($seconds, 60);
+    }
+
+    /**
+     * Unix hours at a Unix time.
+     */
+    public static function hour(int $seconds): int
+    {
+        return intdiv($seconds, 3_600);
+    }
+
+    /**
+     * A minute's numbers as [hits, blocks, would_blocks], by rule id.
+     *
+     * @param  list<string>  $ruleIds
+     * @return array<string, array{int, int, int}>
+     */
+    public static function counts(int $minute, array $ruleIds, TelemetryBuffer $buffer): array
+    {
+        return array_map(
+            fn (MinuteCounts $counts): array => [$counts->hits, $counts->blocks, $counts->wouldBlocks],
+            $buffer->counts($minute, $ruleIds),
+        );
+    }
+
+    public static function counted(string $ruleId, string $client = 'A'): TelemetryRecord
+    {
+        return new TelemetryRecord($ruleId, hash('sha256', $client), TelemetryOutcome::Counted);
+    }
+
+    public static function blocked(string $ruleId, string $client = 'A'): TelemetryRecord
+    {
+        return new TelemetryRecord($ruleId, hash('sha256', $client), TelemetryOutcome::Blocked);
+    }
+
+    public static function wouldBlock(string $ruleId, string $client = 'A'): TelemetryRecord
+    {
+        return new TelemetryRecord($ruleId, hash('sha256', $client), TelemetryOutcome::WouldBlock);
+    }
+}
