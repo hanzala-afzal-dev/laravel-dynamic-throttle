@@ -1,7 +1,5 @@
-<h1 align="center">Laravel Dynamic Throttle</h1>
-
 <p align="center">
-  <strong>Change rate limits while your app runs, per IP, user, token or tenant,<br>and dry-run them before you enforce them.</strong>
+  <img src="art/banner.svg" width="100%" alt="Dynamic Throttle for Laravel: requests from IPs, users, tokens, headers and tenants pass through a throttle into your Laravel app, and the excess gets a 429.">
 </p>
 
 <p align="center">
@@ -15,6 +13,8 @@
 
 > [!NOTE]
 > **Not released yet.** 0.1.0 is the first release, and it manages rules from code and Artisan. A dashboard and a JSON API follow in 0.2.
+
+**Dynamic Throttle for Laravel** is an open-source package for Laravel 12 and 13, built and maintained by [Hanzala Afzal](https://github.com/hanzala-afzal-dev).
 
 Laravel's `throttle` middleware lives in your code, so changing a limit means a deploy. With this package, **rate limits are data**: you add or change a rule while the app runs, and every server applies it within seconds, without touching a route.
 
