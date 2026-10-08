@@ -131,6 +131,7 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 - The manifest's cache key names its format, such as `dt:m:3`, so servers of two versions never rebuild each other's manifest during a rolling deploy.
 - The package's tables store times in UTC, the exemptions' and the settings' end times and the audit log's, so a daylight-saving change cannot stretch an end time by the repeated hour.
 - Telemetry's default `sample_rate`, the fallback below (SPEC-015's benchmark, `benchmarks/results/phase-3-telemetry.md`): at 1, telemetry costs about 5 µs on the response path, and after it one round trip on Redis, or about 1 ms of worker time on Memcached, where the cache driver makes two round trips per rule and metric. The README tells busy apps on Memcached to lower it.
+- The `dominant-ip` check behind several proxies (SPEC-016's review): behind a load balancer with several nodes, such as one per availability zone, each node's IP sends a share of the traffic and none may reach half, so the check says ok while `ip` rules count each node as one client. Either also warn when a few clients, say five, send most of at least 1,000 requests, which also warns about a few known heavy clients, or count each hour's requests from private and reserved ranges, a sign of an untrusted proxy that stores no client IP.
 
 **Exit criteria**
 - Benchmark, with 100 active rules and 3 matched, restated at the Phase 2 exit:

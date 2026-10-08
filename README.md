@@ -154,6 +154,36 @@ php artisan dynamic-throttle:explain GET /api/orders --ip=203.0.113.7 --user=42 
 - **For scripts.** `--json` prints the same explanation as one JSON object, and an error as `{"error": "…"}`.
 - **It changes nothing.** It reads the counters and the manifest, and never counts, writes or compiles. It decides as a server out of its cooldown does, and other requests can count between it and the next one.
 
+### Is everything set up right?
+
+The package lets requests through when something is wrong ([ADR-0010](docs/adr/0010-failure-policy.md)), so a mistake in its setup can switch limits off without a sound. `dynamic-throttle:health` looks for those mistakes:
+
+```bash
+php artisan dynamic-throttle:health            # a line per check
+php artisan dynamic-throttle:health --strict   # exits 1 on a warning too, for deploy scripts
+php artisan dynamic-throttle:health --json
+```
+
+Each check is `ok`, `warning`, `error` or `skipped`, with what it found and what to do. The command exits 1 when a check errs, and with `--strict` when one warns too. It changes nothing.
+
+| Check | What it looks for |
+|---|---|
+| `config` | A config the counter driver cannot be built from, as `status` reports it. The kill switch off. A value the package replaces with its default, such as a `sample_rate` written as a string. An `auto_attach` group or a `middleware.after` entry that names nothing. |
+| `store` | What the counter store guarantees. The `file`, `apc` and `octane` stores count per server, so limits multiply by your servers, and `file` and `apc` lose counts under load. The `database` store writes to your database on every limited request. `array` is for tests, and `null` counts nothing. |
+| `cache-clear` | The Redis driver in the Redis database of a cache store, which `php artisan cache:clear` flushes, every limit with it. |
+| `app-key` | No `APP_KEY`, so identities are hashed without a key. |
+| `attached` | `dynamic.throttle` on no route, and not global middleware, so no rule applies. |
+| `except` | Horizon, Telescope, Pulse, Nova or Sanctum at a path `except` does not cover, so a rule can limit them. |
+| `two-limiters` | Routes that run Laravel's `throttle` too, which writes the same headers. |
+| `middleware-order` | Routes where authentication runs after `dynamic.throttle`, so user rules count your users as guests. |
+| `manifest` | No manifest in the cache, so no rule applies. One that the scheduled compile has not rewritten for 10 minutes. More than 500 rules or 1,000 exemptions, which every load of it pays for. |
+| `metrics` | Metrics not flushed for more than 10 minutes: the scheduler is not running. |
+| `guests` | A user rule that saw mostly guests in the last hour, half or more of at least 100 requests recorded: authentication the route check cannot see, or a rule on public routes. |
+| `dominant-ip` | One client IP behind half or more of at least 1,000 requests recorded over the current and the previous hour: usually a load balancer's, because the trusted proxies are not set. Redis and Valkey only. |
+| `ignored` | Rules ignored in the last hour because more than `matching.max_rules_per_request` rules of their mode matched a request. |
+
+The last three read telemetry (below), and are skipped while it is off. For them, the middleware also records per rule and minute the guests a user rule counted, the requests a rule skipped for want of an identity, and those it was ignored for. On Redis and Valkey, it also counts each hour's requests per client, by the hash an `ip` rule gives the client, in the same script call. None of these reach the hourly table.
+
 ### Traffic and blocks
 
 After each response, the middleware records what each rule did with the request, in the counter store ([ADR-0013](docs/adr/0013-telemetry.md)): per rule and minute, its `hits` (the requests it checked), its `blocks` (the requests an enforcing rule answered 429) and its `would_blocks` (the requests a dry-run rule would have). The scheduler then moves the numbers into the `dynamic_throttle_metrics_hourly` table, one row per rule and hour. Publish the package's newest migrations and run `php artisan migrate` to create it.
