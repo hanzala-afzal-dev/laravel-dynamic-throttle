@@ -6,6 +6,7 @@
 - Related: ADR-0003, ADR-0005, ADR-0006
 - Amended by: [ADR-0018](0018-minimal-dashboard.md) (Vitest and Playwright replaced by Pest feature tests)
 - Amended: 2026-09-25, mutation testing waits for a PR to leave draft and runs in parallel parts (see the decision record)
+- Amended: 2026-10-08, a PR mutates only the engine files it changes, and a weekly run mutates the whole engine (see the decision record)
 
 ## Context
 
@@ -45,10 +46,13 @@ Tests are the verification loop for Claude Code (ADR-0003), and the only reliabl
 
 ### Mutation testing
 
-- `pest --mutate` on `src/Engine`, minimum score 85%. CI runs it in parallel parts, and each part must reach 85% on its own.
-- Run on PRs that touch the engine, once they are ready for review, and nightly:
-  - A PR touches the engine when it changes `src/Engine`, a test that covers an engine class, or what every test runs on. `scripts/touches-engine.sh` decides.
+- `pest --mutate` on `src/Engine`, minimum score 85%. Each CI run must reach 85% on its own.
+- A PR mutates what it can move the score of, once it is ready for review. `scripts/mutation-paths.sh` decides:
+  - the `src/Engine` files it changes, and the engine classes its changed tests name in `covers()`, with the driver tests and their services;
+  - the whole engine, when it changes what every test runs on: `composer.json`, `phpunit.xml.dist`, `tests/Pest.php`, `tests/TestCase.php` or CI;
+  - nothing, when it changes none of these. A change to `tests/Support` alone is left to the next run of the whole engine.
   - A draft PR skips it. Marking the PR ready runs it.
+- The whole engine is mutated nightly while the repository is public, weekly while it is private, and on manual runs, in parallel parts.
 
 ### CI
 
@@ -100,3 +104,9 @@ Amended on 2026-09-25, after a mutation run took about 8.5 of a pull request's C
 - It runs in three parallel parts: the Redis store, the cache store, and the rest of the engine. The Redis store part takes the longest, and the rest needs no service containers.
 - A draft pull request skips it, and marking the pull request ready runs it.
 - Mutating only the files a pull request changes was rejected for now. The nightly run is off while the repository is private, so nothing would check the whole engine's score. Revisit it when the nightly run is back.
+
+Amended on 2026-10-08, after mutation testing took 18 minutes of a pull request's 19-minute CI run, and 37 of its 50 billed minutes, however little of the engine the pull request changed. PR #22 changed one engine file, the Sampler, and each of its pushes mutated the whole engine. The maintainer accepted the recommendation:
+- A pull request mutates only the engine files it changes and the engine classes its changed tests cover. This reverses the rejection above: a weekly run of the whole engine, while the repository is private, answers the reason for it.
+- Measured with CI's flags on a 4-CPU machine: the Sampler alone took 38 seconds, PR #24's nine engine files 213 seconds, and the whole engine without the stores 438 seconds, which took 1,086 seconds on CI's 2-CPU runner. On CI, a one-file change takes about 2 minutes instead of 19.
+- The run of the changed files includes the driver tests and their services. Without them, PR #24's nine files scored 79%, because the Redis telemetry buffer's own tests are driver tests. The whole engine's 92% hides that.
+- The trade-off: a change that weakens the tests of a file it does not touch, such as a change to `tests/Support`, is caught by the next run of the whole engine, within a week, not by its pull request.
