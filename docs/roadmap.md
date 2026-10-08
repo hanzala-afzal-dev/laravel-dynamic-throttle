@@ -126,6 +126,7 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 - SPEC-014: `dynamic-throttle:explain` (simulate a request and show matched rules, identity and decision)
 - SPEC-015: telemetry buffer, flush, prune, events (ADR-0013)
 - SPEC-016: health checks (store type warnings, middleware order, scheduler, dominant IP)
+- SPEC-029: the runbook, `docs/runbook.md`, with a test per scenario, and the `emergency` health check for settings left on
 
 **Before the first release, 0.1.0, from the SPEC-013 review (2026-10-01)**, proposed for the maintainer to decide:
 - The manifest's cache key names its format, such as `dt:m:3`, so servers of two versions never rebuild each other's manifest during a rolling deploy.
