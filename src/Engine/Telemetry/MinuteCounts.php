@@ -18,5 +18,11 @@ final readonly class MinuteCounts
         public int $blocks,
         /** The requests a dry-run rule would have rejected. */
         public int $wouldBlocks,
+        /** The requests a user rule counted without a user (SPEC-016). */
+        public int $guests = 0,
+        /** The requests the rule let pass without an identity (SPEC-016). */
+        public int $skipped = 0,
+        /** The requests the rule was ignored for, over the cap (SPEC-016). */
+        public int $ignored = 0,
     ) {}
 }

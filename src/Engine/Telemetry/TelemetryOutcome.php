@@ -20,4 +20,10 @@ enum TelemetryOutcome: string
 
     /** A dry-run rule would have rejected it (ADR-0012). */
     case WouldBlock = 'would_block';
+
+    /** The rule let the request pass because it had no identity for it: no hit (SPEC-016, ADR-0022). */
+    case Skipped = 'skipped';
+
+    /** The rule was ignored over the cap: no hit (SPEC-016, ADR-0025). */
+    case Ignored = 'ignored';
 }

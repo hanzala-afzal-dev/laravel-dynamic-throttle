@@ -6,6 +6,7 @@ use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
 use Afzal\DynamicThrottle\Engine\Contracts\TelemetryBuffer;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Engine\Failure\Cooldown;
+use Afzal\DynamicThrottle\Engine\Telemetry\Sampler;
 use Afzal\DynamicThrottle\Enums\FailurePolicy;
 use Afzal\DynamicThrottle\Enums\MissingIdentity;
 use Afzal\DynamicThrottle\Enums\RuleMode;
@@ -16,23 +17,29 @@ use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Models\Exemption;
 use Afzal\DynamicThrottle\Models\Setting;
+use Afzal\DynamicThrottle\Tests\Support\Auth\TestUser;
 use Afzal\DynamicThrottle\Tests\Support\FailingStore;
 use Afzal\DynamicThrottle\Tests\Support\FakeClock;
+use Afzal\DynamicThrottle\Tests\Support\Http\TrustProxyLater;
 use Afzal\DynamicThrottle\Tests\Support\Identities;
 use Afzal\DynamicThrottle\Tests\Support\RecordingTelemetryBuffer;
 use Afzal\DynamicThrottle\Tests\Support\Settings;
 use Afzal\DynamicThrottle\Tests\Support\Telemetry;
 use Afzal\DynamicThrottle\Tests\Support\Throttling;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
+use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Exceptions;
+use Random\Engine;
+use Random\Randomizer;
 
 /*
 | SPEC-015 AC-1, AC-2 and AC-7 to AC-9: the middleware collects each request's
-| numbers in handle() and writes them in terminate(). SQLite and the array
-| cache store; the clock stands at T0+10, in minute T0/60.
+| numbers in handle() and writes them in terminate(). SPEC-016 AC-14 and AC-15
+| add the guests, the skipped and ignored rules, and the request's client.
+| SQLite and the array cache store; the clock stands at T0+10, in minute T0/60.
 */
 
 beforeEach(function (): void {
@@ -71,7 +78,7 @@ it('AC-1: records each rule\'s hits, blocks and would-blocks for the minute', fu
         ]);
 });
 
-it('AC-1: records nothing for a rule the client is exempt from, a skipped rule, or a rule over the cap', function (): void {
+it('AC-1: records no hit for a rule the client is exempt from, a skipped rule, or a rule over the cap, and SPEC-016 counts the last two apart', function (): void {
     config()->set('dynamic-throttle.matching.max_rules_per_request', 1);
     $exempt = Throttling::rule(['name' => 'Exempt', 'priority' => 10]);
     Throttling::rule(['name' => 'Partners', 'priority' => 20, 'scope' => Scope::Header, 'scope_parameter' => 'X-Partner', 'on_missing_identity' => MissingIdentity::Skip]);
@@ -82,7 +89,12 @@ it('AC-1: records nothing for a rule the client is exempt from, a skipped rule, 
 
     $this->get('api/x')->assertOk();
 
-    expect(Telemetry::counts(Telemetry::minute(FakeClock::T0 + 10), ['1', '2', '3', '4']))->toBe(['3' => [1, 0, 0]]);
+    // As [hits, blocks, would_blocks, guests, skipped, ignored]: SPEC-015 recorded only rule 3.
+    expect(Telemetry::all(Telemetry::minute(FakeClock::T0 + 10), ['1', '2', '3', '4']))->toBe([
+        '2' => [0, 0, 0, 0, 1, 0],
+        '3' => [1, 0, 0, 0, 0, 0],
+        '4' => [0, 0, 0, 0, 0, 1],
+    ]);
 });
 
 it('AC-1: records nothing for a fail-closed rule whose identity fails, or the rules after it', function (): void {
@@ -245,4 +257,164 @@ it('records into fake()\'s in-memory store, like the counters', function (): voi
     $this->get('api/x')->assertOk();
 
     expect(Telemetry::counts(Telemetry::minute(FakeClock::T0 + 10), ['1']))->toBe(['1' => [1, 0, 0]]);
+});
+
+/**
+ * A sampler that picks every request, at the given rate, so each stands for 1/rate.
+ */
+function samplingEveryRequest(float $rate): void
+{
+    $first = new class implements Engine
+    {
+        public function generate(): string
+        {
+            return str_repeat("\0", 8);
+        }
+    };
+    app()->bind(Sampler::class, fn (): Sampler => new Sampler($rate, new Randomizer($first)));
+}
+
+it('SPEC-016 AC-14: records a user rule\'s guests, a skip rule\'s skipped requests, and the rules ignored over the cap', function (): void {
+    config()->set('dynamic-throttle.matching.max_rules_per_request', 1);
+    Throttling::rule(['name' => 'Users', 'priority' => 10, 'scope' => Scope::User]);
+    Throttling::rule(['name' => 'Members', 'priority' => 20, 'scope' => Scope::User, 'on_missing_identity' => MissingIdentity::Skip, 'mode' => RuleMode::DryRun]);
+    Throttling::rule(['name' => 'Addresses', 'priority' => 30]);
+    Throttling::route('api/x');
+
+    $this->get('api/x')->assertOk();
+    $this->actingAs(new TestUser(['id' => 42]))->get('api/x')->assertOk();
+
+    // As [hits, blocks, would_blocks, guests, skipped, ignored].
+    expect(Telemetry::all(Telemetry::minute(FakeClock::T0 + 10), ['1', '2', '3']))->toBe([
+        '1' => [2, 0, 0, 1, 0, 0],
+        '2' => [1, 0, 0, 0, 1, 0],
+        '3' => [0, 0, 0, 0, 0, 2],
+    ]);
+});
+
+it('SPEC-016 AC-14: weighs the new numbers by the sample, as hits are', function (): void {
+    samplingEveryRequest(0.25);
+    config()->set('dynamic-throttle.matching.max_rules_per_request', 1);
+    Throttling::rule(['name' => 'Users', 'priority' => 10, 'scope' => Scope::User]);
+    // In dry run, as above: an enforcing rule would be ignored over the cap before its identity is resolved (ADR-0025).
+    Throttling::rule(['name' => 'Members', 'priority' => 20, 'scope' => Scope::User, 'on_missing_identity' => MissingIdentity::Skip, 'mode' => RuleMode::DryRun]);
+    Throttling::rule(['name' => 'Addresses', 'priority' => 30]);
+    Throttling::route('api/x');
+
+    $this->get('api/x')->assertOk();
+
+    expect(Telemetry::all(Telemetry::minute(FakeClock::T0 + 10), ['1', '2', '3']))->toBe([
+        '1' => [4, 0, 0, 4, 0, 0],
+        '2' => [0, 0, 0, 0, 4, 0],
+        '3' => [0, 0, 0, 0, 0, 4],
+    ]);
+});
+
+it('SPEC-016 AC-14: counts a user rule\'s guest when it blocks or would block one too, and never a user as a guest', function (): void {
+    Throttling::rule(['name' => 'Trial', 'priority' => 10, 'scope' => Scope::User, 'mode' => RuleMode::DryRun, 'max_attempts' => 1]);
+    Throttling::rule(['name' => 'Users', 'priority' => 20, 'scope' => Scope::User, 'max_attempts' => 1]);
+    Throttling::route('api/x');
+
+    $this->get('api/x')->assertOk();
+    $this->get('api/x')->assertStatus(429);
+    $this->actingAs(new TestUser(['id' => 42]))->get('api/x')->assertOk();
+
+    expect(Telemetry::all(Telemetry::minute(FakeClock::T0 + 10), ['1', '2']))->toBe([
+        '1' => [3, 0, 1, 2, 0, 0],
+        '2' => [3, 1, 0, 2, 0, 0],
+    ]);
+});
+
+it('SPEC-016 AC-14: records a header rule that skips a request without the header as skipped, and no guest', function (): void {
+    Throttling::rule(['name' => 'Partners', 'scope' => Scope::Header, 'scope_parameter' => 'X-Partner', 'on_missing_identity' => MissingIdentity::Skip]);
+    Throttling::rule(['name' => 'Tokens', 'priority' => 20, 'scope' => Scope::ApiToken]);
+    Throttling::route('api/x');
+
+    $this->get('api/x')->assertOk();
+
+    // The token rule counts the request without a token under its IP: a hit, and not a guest, which only user rules have.
+    expect(Telemetry::all(Telemetry::minute(FakeClock::T0 + 10), ['1', '2']))->toBe([
+        '1' => [0, 0, 0, 0, 1, 0],
+        '2' => [1, 0, 0, 0, 0, 0],
+    ]);
+});
+
+it('SPEC-016 AC-14: counts no guest for a user rule whose scope fails, which records nothing', function (): void {
+    Exceptions::fake();
+    config()->set('dynamic-throttle.scopes.user.guards', ['broken']);
+    config()->set('auth.guards.broken', ['driver' => 'missing-driver']);
+    Throttling::rule(['name' => 'Users', 'scope' => Scope::User]);
+    Throttling::rule(['name' => 'Addresses', 'priority' => 20]);
+    Throttling::route('api/x');
+
+    $this->get('api/x')->assertOk();
+
+    expect(Telemetry::all(Telemetry::minute(FakeClock::T0 + 10), ['1', '2']))->toBe(['2' => [1, 0, 0, 0, 0, 0]]);
+});
+
+it('SPEC-016 AC-15: gives the buffer the request\'s client, by the identity the ip scope gives it, after the response', function (string $ip, string $identity): void {
+    $buffer = recordingTelemetry();
+    Throttling::rule(['scope' => Scope::Global]);
+    Throttling::route('api/x');
+
+    $this->withServerVariables(['REMOTE_ADDR' => $ip])->get('api/x')->assertOk();
+
+    expect($buffer->clients)->toBe([Identities::hashed($identity)]);
+})->with([
+    'an IPv4 client' => ['203.0.113.7', 'ip:203.0.113.7'],
+    // Grouped by scopes.ip.ipv6_prefix, 64 by default, as the ip scope counts it.
+    'an IPv6 client' => ['2001:db8::1', 'ip:2001:db8::/64'],
+    'another client of the same /64' => ['2001:db8::2', 'ip:2001:db8::/64'],
+]);
+
+it('SPEC-016 AC-15: groups an IPv6 client by the configured prefix', function (): void {
+    $buffer = recordingTelemetry();
+    config()->set('dynamic-throttle.scopes.ip.ipv6_prefix', 48);
+    Throttling::rule(['scope' => Scope::Global]);
+    Throttling::route('api/x');
+
+    $this->withServerVariables(['REMOTE_ADDR' => '2001:db8:1:2::1'])->get('api/x')->assertOk();
+
+    expect($buffer->clients)->toBe([Identities::hashed('ip:2001:db8:1::/48')]);
+});
+
+it('SPEC-016 AC-15: gives no client when the client IP cannot be read, and still records the numbers', function (): void {
+    Exceptions::fake();
+    $buffer = recordingTelemetry();
+    Throttling::rule(['scope' => Scope::Global]);
+    Throttling::route('api/x');
+    // The app trusts the proxy for both headers, and the two disagree.
+    TrustProxies::at('*');
+    TrustProxies::withHeaders(Request::HEADER_FORWARDED | Request::HEADER_X_FORWARDED_FOR);
+
+    try {
+        $this->get('api/x', ['Forwarded' => 'for=198.51.100.1', 'X-Forwarded-For' => '198.51.100.2'])->assertOk();
+    } finally {
+        // Trusted proxies are static on Symfony's Request: back to its defaults.
+        TrustProxies::flushState();
+        Request::setTrustedProxies([], -1);
+    }
+
+    expect($buffer->clients)->toBe([null])
+        ->and(array_map(fn (array $call): array => $call[2], $buffer->recorded))->toBe([[['1', Identities::hashed('global'), 'counted']]]);
+});
+
+it('SPEC-016 AC-15: gives the client the rules counted, though the app trusts its proxy only after dynamic.throttle', function (): void {
+    $buffer = recordingTelemetry();
+    // An ip rule, which counts the client as handle() reads it.
+    Throttling::rule();
+    Throttling::route('api/x', ['dynamic.throttle', TrustProxyLater::class]);
+
+    try {
+        $this->withServerVariables(['REMOTE_ADDR' => TrustProxyLater::PROXY])->get('api/x', ['X-Forwarded-For' => '203.0.113.7'])->assertOk();
+    } finally {
+        // Trusted proxies are static on Symfony's Request: back to its defaults.
+        Request::setTrustedProxies([], -1);
+    }
+
+    // The rule counted the proxy, so the traffic names the proxy: that is what the dominant-ip check must see.
+    $proxy = Identities::hashed('ip:'.TrustProxyLater::PROXY);
+
+    expect(array_map(fn (array $call): array => $call[2], $buffer->recorded))->toBe([[['1', $proxy, 'counted']]])
+        ->and($buffer->clients)->toBe([$proxy]);
 });

@@ -11,12 +11,15 @@ use Throwable;
 
 /**
  * A telemetry buffer that remembers every call, passes it on to another buffer
- * when it has one, and fails on demand (SPEC-015).
+ * when it has one, and fails on demand (SPEC-015, SPEC-016).
  */
 final class RecordingTelemetryBuffer implements TelemetryBuffer
 {
     /** @var list<array{int, int, list<array{string, string, string}>}> each record(): the minute, the weight, and each record's rule, hash and outcome */
     public array $recorded = [];
+
+    /** @var list<?string> each record()'s client, the `ip` scope's identity hash, in order (SPEC-016) */
+    public array $clients = [];
 
     /** @var list<int> the minutes counts() was asked for, in order */
     public array $countsAsked = [];
@@ -35,18 +38,19 @@ final class RecordingTelemetryBuffer implements TelemetryBuffer
 
     public function __construct(private readonly ?TelemetryBuffer $inner = null) {}
 
-    public function record(int $minute, int $weight, array $records): void
+    public function record(int $minute, int $weight, array $records, ?string $client = null): void
     {
         $this->recorded[] = [$minute, $weight, array_map(
             fn (TelemetryRecord $record): array => [$record->ruleId, $record->identityHash, $record->outcome->value],
             $records,
         )];
+        $this->clients[] = $client;
 
         if ($this->recordFailure instanceof Throwable) {
             throw $this->recordFailure;
         }
 
-        $this->inner?->record($minute, $weight, $records);
+        $this->inner?->record($minute, $weight, $records, $client);
     }
 
     public function counts(int $minute, array $ruleIds): array
@@ -74,6 +78,16 @@ final class RecordingTelemetryBuffer implements TelemetryBuffer
     public function clients(string $ruleId, int $hour): ?int
     {
         return $this->inner?->clients($ruleId, $hour);
+    }
+
+    public function topClients(int $hour, int $limit = 1): ?array
+    {
+        return $this->inner?->topClients($hour, $limit);
+    }
+
+    public function requests(int $hour): ?int
+    {
+        return $this->inner?->requests($hour);
     }
 
     public function flushedThrough(): ?int

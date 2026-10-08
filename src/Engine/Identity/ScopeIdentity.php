@@ -25,13 +25,24 @@ final class ScopeIdentity
     public static function for(CompiledRule $rule, ?string $value, Closure $ip): ?string
     {
         return match ($rule->scope) {
-            Scope::Ip => 'ip:'.$ip(),
+            Scope::Ip => self::ip($ip()),
             Scope::Global => 'global',
             Scope::User => self::identity($rule, $value, 'user:', 'guest:', $ip),
             Scope::ApiToken => self::identity($rule, $value, 'token:', 'anon:', $ip),
             Scope::Header => self::identity($rule, $value, 'header:', 'missing:', $ip),
             Scope::Custom => self::identity($rule, $value, 'custom:', 'missing:', $ip),
         };
+    }
+
+    /**
+     * The identity an `ip` rule counts a client under, which the hour's traffic records
+     * the client by too (SPEC-016 decision 6).
+     *
+     * @param  string  $groupedIp  the client IP, grouped (ClientIp)
+     */
+    public static function ip(string $groupedIp): string
+    {
+        return 'ip:'.$groupedIp;
     }
 
     /**

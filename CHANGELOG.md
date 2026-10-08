@@ -85,3 +85,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - A write that fails is reported at most once per cooldown, never affects the request, and is skipped while the counter store's cooldown runs.
 - The `RateLimitExceeded` event, dispatched after the response for each request an enforcing rule answers 429, with the same values as `RateLimitWouldBlock`. A request's events go out in order: the would-blocks, then the 429, then `StorageUnavailable`.
 - The `RuleChanged` event, dispatched after the commit when a rule is created, updated or deleted through the model, with the change and the changed columns before and after.
+- Telemetry also records, per rule and minute, the guests a user rule counted, the requests a rule skipped for want of an identity, and those it was ignored for over the cap. On Redis and Valkey, it also counts each hour's requests per client. The health checks read them, and the hourly table does not change.

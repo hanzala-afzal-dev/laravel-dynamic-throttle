@@ -85,8 +85,9 @@ final readonly class MetricsFlusher
             foreach ($this->buffer->counts($minute, $ruleIds) as $ruleId => $counts) {
                 $ruleId = (string) $ruleId;
 
-                // Not a rule's id, so not a row's.
-                if (! ctype_digit($ruleId)) {
+                // Not a rule's id, so not a row's. A minute without hits holds only numbers
+                // the table does not keep, of a rule that was skipped or ignored (SPEC-016 AC-20).
+                if (! ctype_digit($ruleId) || $counts->hits === 0) {
                     continue;
                 }
 

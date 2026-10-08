@@ -104,6 +104,42 @@ final class RequestIdentityResolver implements ExemptionSubjects, IdentityResolv
     }
 
     /**
+     * Whether the user scope found no user for this request, as a user rule counts it,
+     * for telemetry's guests (SPEC-016 decision 7). Null when no rule or exemption
+     * asked the scope, or when it failed: never a lookup of its own.
+     *
+     * @internal
+     */
+    public function guest(): ?bool
+    {
+        $name = $this->scopeName(Scope::User, null);
+
+        if (! array_key_exists($name, $this->values) || $this->values[$name] instanceof IdentityUnavailableException) {
+            return null;
+        }
+
+        return $this->values[$name] === null;
+    }
+
+    /**
+     * The client IP as the rules counted it, grouped, for the hour's traffic (SPEC-016
+     * decision 6): what a rule or an exemption read, so the traffic names the IP the
+     * rules saw, even when the app trusts its proxy only after dynamic.throttle. Null
+     * when nothing read it, and false when it could not be read: never a read of its
+     * own.
+     *
+     * @internal
+     */
+    public function countedIp(): string|false|null
+    {
+        if (! $this->ipRead) {
+            return null;
+        }
+
+        return $this->ipFailure instanceof Throwable ? false : $this->groupedIp ??= ClientIp::group($this->ipAddress, $this->settings->ipv6Prefix);
+    }
+
+    /**
      * For exemptions: the whole address, before IPv6 grouping (SPEC-009).
      *
      * @throws IdentityUnavailableException

@@ -19,8 +19,8 @@ use Throwable;
  * Telemetry on any Laravel cache store (SPEC-015 decision 5): one key per minute,
  * rule and metric, created with its time to live before it is incremented, as the
  * counters are (ADR-0006). A generic cache store cannot list its keys, so the
- * flush names the rules it reads, and it keeps no offenders and no distinct
- * clients (AC-4, AC-5).
+ * flush names the rules it reads, and it keeps no offenders, no distinct clients
+ * (AC-4, AC-5) and no traffic per client (SPEC-016 AC-15).
  *
  * @internal
  */
@@ -32,7 +32,11 @@ final readonly class CacheTelemetryBuffer implements TelemetryBuffer
         private KeyBuilder $keys,
     ) {}
 
-    public function record(int $minute, int $weight, array $records): void
+    /**
+     * The client is left out: a generic cache store has no sorted set to keep the
+     * hour's traffic in.
+     */
+    public function record(int $minute, int $weight, array $records, ?string $client = null): void
     {
         if ($weight < 1) {
             throw new InvalidArgumentException("A request stands for at least 1 request, got {$weight}.");
@@ -41,7 +45,7 @@ final readonly class CacheTelemetryBuffer implements TelemetryBuffer
         $increments = [];
 
         foreach ($records as $record) {
-            foreach ($this->metrics($record->outcome) as $metric) {
+            foreach ($this->metrics($record) as $metric) {
                 $key = $this->keys->telemetryCount($minute, $record->ruleId, $metric->value);
                 $increments[$key] = ($increments[$key] ?? 0) + $weight;
             }
@@ -93,12 +97,21 @@ final readonly class CacheTelemetryBuffer implements TelemetryBuffer
         $counts = [];
 
         foreach ($ruleIds as $ruleId) {
-            $hits = $this->number($values, $this->keys->telemetryCount($minute, $ruleId, TelemetryMetric::Hits->value));
-            $blocks = $this->number($values, $this->keys->telemetryCount($minute, $ruleId, TelemetryMetric::Blocks->value));
-            $wouldBlocks = $this->number($values, $this->keys->telemetryCount($minute, $ruleId, TelemetryMetric::WouldBlocks->value));
+            $numbers = [];
 
-            if ($hits + $blocks + $wouldBlocks > 0) {
-                $counts[$ruleId] = new MinuteCounts($hits, $blocks, $wouldBlocks);
+            foreach (TelemetryMetric::cases() as $metric) {
+                $numbers[$metric->value] = $this->number($values, $this->keys->telemetryCount($minute, $ruleId, $metric->value));
+            }
+
+            if (array_sum($numbers) > 0) {
+                $counts[$ruleId] = new MinuteCounts(
+                    $numbers[TelemetryMetric::Hits->value],
+                    $numbers[TelemetryMetric::Blocks->value],
+                    $numbers[TelemetryMetric::WouldBlocks->value],
+                    $numbers[TelemetryMetric::Guests->value],
+                    $numbers[TelemetryMetric::Skipped->value],
+                    $numbers[TelemetryMetric::Ignored->value],
+                );
             }
         }
 
@@ -117,6 +130,22 @@ final readonly class CacheTelemetryBuffer implements TelemetryBuffer
      * A generic cache store has no HyperLogLog to count them in.
      */
     public function clients(string $ruleId, int $hour): ?int
+    {
+        return null;
+    }
+
+    /**
+     * A generic cache store has no sorted set to keep them in.
+     */
+    public function topClients(int $hour, int $limit = 1): ?array
+    {
+        return null;
+    }
+
+    /**
+     * Nor does it keep the hour's traffic without its clients.
+     */
+    public function requests(int $hour): ?int
     {
         return null;
     }
@@ -154,15 +183,22 @@ final readonly class CacheTelemetryBuffer implements TelemetryBuffer
     }
 
     /**
+     * The metrics a record adds its weight to: its outcome's, and its rule's guests
+     * when a user rule counted a guest (SPEC-016).
+     *
      * @return list<TelemetryMetric>
      */
-    private function metrics(TelemetryOutcome $outcome): array
+    private function metrics(TelemetryRecord $record): array
     {
-        return match ($outcome) {
+        $metrics = match ($record->outcome) {
             TelemetryOutcome::Counted => [TelemetryMetric::Hits],
             TelemetryOutcome::Blocked => [TelemetryMetric::Hits, TelemetryMetric::Blocks],
             TelemetryOutcome::WouldBlock => [TelemetryMetric::Hits, TelemetryMetric::WouldBlocks],
+            TelemetryOutcome::Skipped => [TelemetryMetric::Skipped],
+            TelemetryOutcome::Ignored => [TelemetryMetric::Ignored],
         };
+
+        return $record->guest ? [...$metrics, TelemetryMetric::Guests] : $metrics;
     }
 
     /**

@@ -55,6 +55,21 @@ final class Telemetry
         );
     }
 
+    /**
+     * A minute's numbers with SPEC-016's, as [hits, blocks, would_blocks, guests,
+     * skipped, ignored], by rule id.
+     *
+     * @param  list<string>  $ruleIds
+     * @return array<string, array{int, int, int, int, int, int}>
+     */
+    public static function all(int $minute, array $ruleIds, ?TelemetryBuffer $buffer = null): array
+    {
+        return array_map(
+            fn (MinuteCounts $counts): array => [$counts->hits, $counts->blocks, $counts->wouldBlocks, $counts->guests, $counts->skipped, $counts->ignored],
+            ($buffer ?? self::buffer())->counts($minute, $ruleIds),
+        );
+    }
+
     public static function counted(string $ruleId, string $client = 'A'): TelemetryRecord
     {
         return new TelemetryRecord($ruleId, hash('sha256', $client), TelemetryOutcome::Counted);
@@ -68,6 +83,38 @@ final class Telemetry
     public static function wouldBlock(string $ruleId, string $client = 'A'): TelemetryRecord
     {
         return new TelemetryRecord($ruleId, hash('sha256', $client), TelemetryOutcome::WouldBlock);
+    }
+
+    /**
+     * A user rule's record of a guest, counted under its IP (SPEC-016).
+     */
+    public static function guest(string $ruleId, string $client = 'A', TelemetryOutcome $outcome = TelemetryOutcome::Counted): TelemetryRecord
+    {
+        return new TelemetryRecord($ruleId, hash('sha256', $client), $outcome, guest: true);
+    }
+
+    /**
+     * A rule that let the request pass without an identity (SPEC-016): it has none to record.
+     */
+    public static function skipped(string $ruleId): TelemetryRecord
+    {
+        return new TelemetryRecord($ruleId, '', TelemetryOutcome::Skipped);
+    }
+
+    /**
+     * A rule ignored over the cap (SPEC-016): its identity was never resolved.
+     */
+    public static function ignored(string $ruleId): TelemetryRecord
+    {
+        return new TelemetryRecord($ruleId, '', TelemetryOutcome::Ignored);
+    }
+
+    /**
+     * The `ip` scope's identity hash of a client, as the traffic records it (SPEC-016).
+     */
+    public static function ipClient(string $ip): string
+    {
+        return Identities::hashed('ip:'.$ip);
     }
 
     /**

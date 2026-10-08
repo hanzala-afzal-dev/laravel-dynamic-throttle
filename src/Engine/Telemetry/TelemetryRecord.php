@@ -16,5 +16,7 @@ final readonly class TelemetryRecord
         /** The key the rule counts the client under (ADR-0024), for the offenders and the distinct clients. */
         public string $identityHash,
         public TelemetryOutcome $outcome,
+        /** A user rule counted the request without a user (SPEC-016). */
+        public bool $guest = false,
     ) {}
 }
