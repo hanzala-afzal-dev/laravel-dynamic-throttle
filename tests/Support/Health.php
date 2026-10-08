@@ -19,6 +19,7 @@ final class Health
     /** The check ids, in the order the report lists them (SPEC-016). */
     public const array CHECKS = [
         'config', 'store', 'cache-clear', 'app-key',
+        'attached', 'except', 'two-limiters', 'middleware-order',
     ];
 
     /**

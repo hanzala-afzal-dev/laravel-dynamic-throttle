@@ -6,9 +6,13 @@ namespace Afzal\DynamicThrottle\Support\Health;
 
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
 use Afzal\DynamicThrottle\Support\Health\Checks\AppKeyCheck;
+use Afzal\DynamicThrottle\Support\Health\Checks\AttachedCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\CacheClearCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\ConfigCheck;
+use Afzal\DynamicThrottle\Support\Health\Checks\ExceptCheck;
+use Afzal\DynamicThrottle\Support\Health\Checks\MiddlewareOrderCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\StoreCheck;
+use Afzal\DynamicThrottle\Support\Health\Checks\TwoLimitersCheck;
 use Illuminate\Contracts\Container\Container;
 use Throwable;
 
@@ -54,6 +58,10 @@ final readonly class HealthChecks
             new StoreCheck,
             new CacheClearCheck,
             new AppKeyCheck,
+            new AttachedCheck,
+            new ExceptCheck,
+            new TwoLimitersCheck,
+            new MiddlewareOrderCheck,
         ];
     }
 }
