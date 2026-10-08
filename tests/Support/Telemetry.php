@@ -31,16 +31,24 @@ final class Telemetry
     }
 
     /**
+     * The buffer the app records into.
+     */
+    public static function buffer(): TelemetryBuffer
+    {
+        return app(TelemetryBuffer::class);
+    }
+
+    /**
      * A minute's numbers as [hits, blocks, would_blocks], by rule id.
      *
      * @param  list<string>  $ruleIds
      * @return array<string, array{int, int, int}>
      */
-    public static function counts(int $minute, array $ruleIds, TelemetryBuffer $buffer): array
+    public static function counts(int $minute, array $ruleIds, ?TelemetryBuffer $buffer = null): array
     {
         return array_map(
             fn (MinuteCounts $counts): array => [$counts->hits, $counts->blocks, $counts->wouldBlocks],
-            $buffer->counts($minute, $ruleIds),
+            ($buffer ?? self::buffer())->counts($minute, $ruleIds),
         );
     }
 

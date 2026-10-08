@@ -6,6 +6,7 @@ namespace Afzal\DynamicThrottle\Http\Middleware;
 
 use Afzal\DynamicThrottle\DynamicThrottle;
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
+use Afzal\DynamicThrottle\Engine\Contracts\TelemetryBuffer;
 use Afzal\DynamicThrottle\Engine\Exceptions\IdentityUnavailableException;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Engine\Failure\Cooldown;
@@ -15,6 +16,10 @@ use Afzal\DynamicThrottle\Engine\Stacking\Evaluation;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleAttempt;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleFailure;
+use Afzal\DynamicThrottle\Engine\Telemetry\Sampler;
+use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryOutcome;
+use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryRecord;
+use Afzal\DynamicThrottle\Events\RateLimitExceeded;
 use Afzal\DynamicThrottle\Events\RateLimitWouldBlock;
 use Afzal\DynamicThrottle\Events\StorageUnavailable;
 use Afzal\DynamicThrottle\Http\RateLimitHeaders;
@@ -38,12 +43,14 @@ use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
 use Throwable;
 
 /**
- * Applies the rules to a request (ADR-0004, ADR-0008, SPEC-010), and tells the
- * app after the response which dry-run rules would have blocked it (SPEC-011)
- * and whether the counter store failed (SPEC-012). Only the 429 and the 503 of
- * a fail-closed rule leave it: anything else the package throws is reported,
- * at most once per cause and cooldown, and the request goes through (ADR-0020
- * point 1). Strict mode rethrows programming mistakes instead.
+ * Applies the rules to a request (ADR-0004, ADR-0008, SPEC-010). After the
+ * response, it tells the app which dry-run rules would have blocked the request
+ * (SPEC-011), which rule rejected it, and whether the counter store failed
+ * (SPEC-012, SPEC-015), and records what each rule did with it (ADR-0013).
+ * Only the 429 and the 503 of a fail-closed rule leave it: anything else the
+ * package throws is reported, at most once per cause and cooldown, and the
+ * request goes through (ADR-0020 point 1). Strict mode rethrows programming
+ * mistakes instead.
  */
 final readonly class DynamicThrottleMiddleware
 {
@@ -53,11 +60,12 @@ final readonly class DynamicThrottleMiddleware
     public const string OWN_ROUTES = 'dynamic-throttle.';
 
     /**
-     * The request attribute that carries the events from handle() to terminate():
-     * Laravel builds a new middleware for terminate(), and the request is per
-     * request, under Octane too (SPEC-011 decision 2).
+     * The request attribute that carries from handle() to terminate() the events to
+     * dispatch and the telemetry to record: Laravel builds a new middleware for
+     * terminate(), and the request is per request, under Octane too (SPEC-011
+     * decision 2, SPEC-015). One attribute, so a request costs one write.
      */
-    private const string EVENTS = 'dynamic-throttle.events';
+    private const string AFTER_RESPONSE = 'dynamic-throttle.after-response';
 
     public function __construct(
         // The rest is resolved in handle(), where its errors are caught: a config
@@ -94,25 +102,57 @@ final readonly class DynamicThrottleMiddleware
     }
 
     /**
-     * Dispatches the events handle() kept, once the response is sent (SPEC-011
-     * decision 2, SPEC-012). A listener that throws is reported, and the next event
-     * still goes out. Laravel also passes the response, which this does not need.
+     * Once the response is sent: dispatches the events handle() kept (SPEC-011
+     * decision 2, SPEC-012, SPEC-015), then records its telemetry (ADR-0013 point 1).
+     * Laravel also passes the response, which this does not need.
      */
     public function terminate(Request $request): void
     {
         try {
-            $events = $request->attributes->get(self::EVENTS);
+            $events = $this->kept($request, 'events');
+            $records = $this->kept($request, 'telemetry');
             // Taken, not read: a middleware the app also lists globally terminates twice.
-            $request->attributes->remove(self::EVENTS);
+            $request->attributes->remove(self::AFTER_RESPONSE);
+        } catch (Throwable $exception) {
+            $this->report($exception);
 
-            if (! is_array($events)) {
-                return;
-            }
+            return;
+        }
 
+        $this->dispatchEvents($events);
+        $this->recordTelemetry($records);
+    }
+
+    /**
+     * What handle() kept for terminate(): the events or the telemetry records.
+     *
+     * @param  'events'|'telemetry'  $what
+     * @return array<array-key, mixed>
+     */
+    private function kept(Request $request, string $what): array
+    {
+        $kept = $request->attributes->get(self::AFTER_RESPONSE);
+        $list = is_array($kept) ? $kept[$what] ?? null : null;
+
+        return is_array($list) ? $list : [];
+    }
+
+    /**
+     * A listener that throws is reported, and the next event still goes out.
+     *
+     * @param  array<array-key, mixed>  $events
+     */
+    private function dispatchEvents(array $events): void
+    {
+        if ($events === []) {
+            return;
+        }
+
+        try {
             $dispatcher = $this->container->make(Dispatcher::class);
 
             foreach ($events as $event) {
-                if (! $event instanceof RateLimitWouldBlock && ! $event instanceof StorageUnavailable) {
+                if (! $event instanceof RateLimitWouldBlock && ! $event instanceof RateLimitExceeded && ! $event instanceof StorageUnavailable) {
                     continue;
                 }
 
@@ -121,6 +161,38 @@ final readonly class DynamicThrottleMiddleware
                 } catch (Throwable $exception) {
                     $this->report($exception);
                 }
+            }
+        } catch (Throwable $exception) {
+            $this->report($exception);
+        }
+    }
+
+    /**
+     * Writes the records handle() kept to the buffer, in this minute, when the
+     * sampler picks the request (SPEC-015 decision 6). Never while the counter
+     * store's cooldown runs. A failed write is reported, at most once per cause and
+     * cooldown, and never starts the cooldown, which changes what requests get
+     * (decision 7).
+     *
+     * @param  array<array-key, mixed>  $records
+     */
+    private function recordTelemetry(array $records): void
+    {
+        $records = array_values(array_filter($records, fn (mixed $record): bool => $record instanceof TelemetryRecord));
+
+        if ($records === []) {
+            return;
+        }
+
+        try {
+            if ($this->container->make(Cooldown::class)->secondsLeft() > 0) {
+                return;
+            }
+
+            $weight = $this->container->make(Sampler::class)->weight();
+
+            if ($weight > 0) {
+                $this->container->make(TelemetryBuffer::class)->record(intdiv($this->clock->microseconds(), 60_000_000), $weight, $records);
             }
         } catch (Throwable $exception) {
             $this->report($exception);
@@ -165,8 +237,9 @@ final readonly class DynamicThrottleMiddleware
             $identities = $this->container->make(RequestIdentityResolver::class, ['request' => $request, 'exemptions' => $manifest->exemptions]);
             $evaluation = $this->container->make(RuleEvaluator::class)->evaluate($rules, $identities, $manifest->settings->scalePercent($now));
             $mistake = $this->strictMistake($evaluation);
-            // Also when strict mode rethrows a mistake: an outage in the same request is still told.
-            $this->keepEvents($request, $target, $evaluation);
+            // Also when strict mode rethrows a mistake: an outage in the same request is
+            // still told. Its telemetry is not recorded (SPEC-015).
+            $this->keepForTerminate($request, $target, $rules, $evaluation, telemetry: ! $mistake instanceof Throwable);
             $this->reportFailures($evaluation, except: $mistake);
 
             if ($mistake instanceof Throwable) {
@@ -233,41 +306,116 @@ final readonly class DynamicThrottleMiddleware
     }
 
     /**
-     * The events for terminate(): one RateLimitWouldBlock for each dry-run rule that
-     * would have rejected the request, in evaluation order, whatever the outcome
-     * (SPEC-011), then StorageUnavailable when the counter store failed (SPEC-012).
-     * A failure here is reported, and never changes the decision, the 429 included.
+     * What terminate() does after the response: the events to dispatch and the
+     * telemetry to record. A failure here is reported, and never changes the
+     * decision, the 429 included.
+     *
+     * @param  list<CompiledRule>  $rules  the rules evaluated, in order
      */
-    private function keepEvents(Request $request, RequestTarget $target, Evaluation $evaluation): void
+    private function keepForTerminate(Request $request, RequestTarget $target, array $rules, Evaluation $evaluation, bool $telemetry): void
     {
         try {
-            $events = array_map(
-                fn (RuleAttempt $wouldBlock): RateLimitWouldBlock => new RateLimitWouldBlock(
-                    ruleId: $wouldBlock->rule->id,
-                    ruleName: $wouldBlock->rule->name,
-                    limit: $wouldBlock->attempt->limit,
-                    windowSeconds: $wouldBlock->attempt->windowSeconds,
-                    scope: $wouldBlock->rule->scope,
-                    identityHash: $wouldBlock->attempt->key->identityHash,
-                    retryAfter: $wouldBlock->attempt->retryAfter,
-                    method: $target->method,
-                    path: $target->path,
-                ),
-                $evaluation->wouldBlock,
-            );
+            $events = $this->events($target, $evaluation);
+            $records = $telemetry && $this->config->get('dynamic-throttle.telemetry.enabled') !== false ? $this->records($rules, $evaluation) : [];
 
-            $storageFailure = $this->storageFailure($evaluation);
-
-            if ($storageFailure instanceof StorageUnavailable) {
-                $events[] = $storageFailure;
-            }
-
-            if ($events !== []) {
-                $request->attributes->set(self::EVENTS, $events);
+            // Added to what an earlier run kept: an app that also lists the middleware
+            // globally runs it twice for one request, which counts it twice (the review).
+            if ($events !== [] || $records !== []) {
+                $request->attributes->set(self::AFTER_RESPONSE, [
+                    'events' => [...$this->kept($request, 'events'), ...$events],
+                    'telemetry' => [...$this->kept($request, 'telemetry'), ...$records],
+                ]);
             }
         } catch (Throwable $exception) {
             $this->report($exception);
         }
+    }
+
+    /**
+     * The events, as evaluation met them: one RateLimitWouldBlock for each dry-run
+     * rule that would have rejected the request, in evaluation order, whatever the
+     * outcome (SPEC-011), then RateLimitExceeded for the rule that rejected it
+     * (SPEC-015), then StorageUnavailable when the counter store failed (SPEC-012).
+     *
+     * @return list<RateLimitWouldBlock|RateLimitExceeded|StorageUnavailable>
+     */
+    private function events(RequestTarget $target, Evaluation $evaluation): array
+    {
+        $events = array_map(
+            fn (RuleAttempt $wouldBlock): RateLimitWouldBlock => new RateLimitWouldBlock(
+                ruleId: $wouldBlock->rule->id,
+                ruleName: $wouldBlock->rule->name,
+                limit: $wouldBlock->attempt->limit,
+                windowSeconds: $wouldBlock->attempt->windowSeconds,
+                scope: $wouldBlock->rule->scope,
+                identityHash: $wouldBlock->attempt->key->identityHash,
+                retryAfter: $wouldBlock->attempt->retryAfter,
+                method: $target->method,
+                path: $target->path,
+            ),
+            $evaluation->wouldBlock,
+        );
+
+        $rejection = $evaluation->rejection;
+
+        if ($rejection instanceof RuleAttempt) {
+            $events[] = new RateLimitExceeded(
+                ruleId: $rejection->rule->id,
+                ruleName: $rejection->rule->name,
+                limit: $rejection->attempt->limit,
+                windowSeconds: $rejection->attempt->windowSeconds,
+                scope: $rejection->rule->scope,
+                identityHash: $rejection->attempt->key->identityHash,
+                retryAfter: $rejection->attempt->retryAfter,
+                method: $target->method,
+                path: $target->path,
+            );
+        }
+
+        $storageFailure = $this->storageFailure($evaluation);
+
+        if ($storageFailure instanceof StorageUnavailable) {
+            $events[] = $storageFailure;
+        }
+
+        return $events;
+    }
+
+    /**
+     * The telemetry records: one for each rule the store checked, in evaluation
+     * order (SPEC-015 decisions 1 and 2). An allowed attempt is a hit, even one
+     * released after a later rule rejected the request. The rejection is a hit and
+     * a block, and each would-block a hit and a would-block. A rule the store did
+     * not check records nothing. Sampling waits for terminate().
+     *
+     * @param  list<CompiledRule>  $rules  the rules evaluated, in order
+     * @return list<TelemetryRecord>
+     */
+    private function records(array $rules, Evaluation $evaluation): array
+    {
+        $positions = array_flip(array_map(fn (CompiledRule $rule): string => $rule->id, $rules));
+        $records = [];
+
+        foreach ($evaluation->attempts as $attempt) {
+            $records[$positions[$attempt->rule->id]] = $this->record($attempt, TelemetryOutcome::Counted);
+        }
+
+        foreach ($evaluation->wouldBlock as $wouldBlock) {
+            $records[$positions[$wouldBlock->rule->id]] = $this->record($wouldBlock, TelemetryOutcome::WouldBlock);
+        }
+
+        if ($evaluation->rejection instanceof RuleAttempt) {
+            $records[$positions[$evaluation->rejection->rule->id]] = $this->record($evaluation->rejection, TelemetryOutcome::Blocked);
+        }
+
+        ksort($records);
+
+        return array_values($records);
+    }
+
+    private function record(RuleAttempt $attempt, TelemetryOutcome $outcome): TelemetryRecord
+    {
+        return new TelemetryRecord($attempt->rule->id, $attempt->attempt->key->identityHash, $outcome);
     }
 
     /**

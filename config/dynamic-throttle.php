@@ -233,6 +233,31 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Telemetry
+    |--------------------------------------------------------------------------
+    |
+    | After each response, the middleware counts what each rule did with the
+    | request: hits, blocks and would-be blocks per minute, in the counter
+    | store. On Redis it also keeps each rule's top offenders and how many
+    | different clients it blocked, per hour (docs/adr/0013). Recording
+    | never slows the response, and never breaks it.
+    |
+    | "sample_rate", from 0 to 1, records that share of requests, each
+    | weighed so the counts stay right on average. Lower it if recording
+    | costs too much on a busy app.
+    |
+    */
+
+    'telemetry' => [
+        'enabled' => filter_var(env('DYNAMIC_THROTTLE_TELEMETRY', true), FILTER_VALIDATE_BOOL),
+        // Read as written, like refresh_seconds above.
+        'sample_rate' => filter_var(Env::getRepository()->get('DYNAMIC_THROTTLE_SAMPLE_RATE') ?? 1, FILTER_VALIDATE_FLOAT, [
+            'options' => ['min_range' => 0, 'max_range' => 1, 'default' => 1.0],
+        ]),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Failures
     |--------------------------------------------------------------------------
     |
