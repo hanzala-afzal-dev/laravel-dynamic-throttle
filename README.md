@@ -12,7 +12,7 @@
 </p>
 
 > [!NOTE]
-> **Not released yet.** 0.1.0 is the first release, and it manages rules from code and Artisan. A dashboard and a JSON API follow in 0.2.
+> **Not released yet.** The first release, 0.1.0, ships with a dashboard for managing rules, exemptions and emergency switches in the browser, as Horizon's does for queues. Until then, you manage them from code and Artisan, as shown below.
 
 **Dynamic Throttle for Laravel** is an open-source package for Laravel 12 and 13, built and maintained by [Hanzala Afzal](https://github.com/hanzala-afzal-dev).
 
@@ -28,6 +28,7 @@ Laravel's `throttle` middleware lives in your code, so changing a limit means a 
 - **Fast.** On Redis, one round trip per request, however many rules match.
 - **Safe when storage fails.** Requests go through by default, or get a 503 on the rules you choose.
 - **Tooling.** Artisan commands that explain why a request is limited and check your setup.
+- **A dashboard** *(in progress)*. Rules, exemptions and emergency switches in the browser, with live numbers. It ships with the package, at its own path behind a gate, as Horizon's does.
 
 ## What it is not
 

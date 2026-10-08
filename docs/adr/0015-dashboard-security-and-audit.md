@@ -70,3 +70,5 @@ The dashboard can switch off login protection or block all API traffic. Access t
 ## Decision record
 
 On 2026-10-01, for SPEC-013, the maintainer decided that the audit log's table, and the CLI's entries, ship in Phase 3, so the CLI-only 0.1.0 audits its changes (ADR-0011 point 6). SPEC-019 adds the JSON API's and the dashboard's entries in Phase 4, and reading them.
+
+On 2026-10-08, the first release moved to the end of Phase 5, with the dashboard ([ADR-0018's decision record](0018-minimal-dashboard.md#decision-record)), so 0.1.0 is not CLI-only after all. The CLI's entries still ship in Phase 3, as decided above.

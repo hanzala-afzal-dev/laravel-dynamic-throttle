@@ -3,7 +3,7 @@
 ## Principles
 
 - **Risk first.** The engine (correctness, concurrency, failure handling) is built and proven before any UI. UI bugs are visible; engine bugs are silent.
-- **Always releasable.** Each phase ends in a state that could ship. The first public release (0.1) happens before the dashboard exists.
+- **Always releasable.** Each phase ends in a state that could ship. The first public release, 0.1.0, waits for the dashboard: the package ships with its dashboard, as Laravel Horizon does (decided on 2026-10-08).
 - **Exit criteria are commands, not feelings.** A phase is done when its checks pass in CI.
 - **Every feature goes through the ADR-0003 loop:** spec → plan → failing tests → code → review. Since the Phase 2 exit, ADR-0027 shortens the waits in it.
 
@@ -112,9 +112,9 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 
 ---
 
-## Phase 3 — Operability (M) → release 0.1.0
+## Phase 3 — Operability (M)
 
-**Goal:** the package is safe to run in production without a UI.
+**Goal:** the package can be run and operated safely from code and Artisan alone, before its dashboard exists.
 
 **First, from the Phase 2 exit review**
 - A `perf:` PR: explicit container bindings for the request path's services, measured with `MiddlewareBench`.
@@ -127,7 +127,7 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 - SPEC-015: telemetry buffer, flush, prune, events (ADR-0013)
 - SPEC-016: health checks (store type warnings, middleware order, scheduler, dominant IP)
 
-**Before 0.1.0, from the SPEC-013 review (2026-10-01)**, proposed for the maintainer to decide:
+**Before the first release, 0.1.0, from the SPEC-013 review (2026-10-01)**, proposed for the maintainer to decide:
 - The manifest's cache key names its format, such as `dt:m:3`, so servers of two versions never rebuild each other's manifest during a rolling deploy.
 - The package's tables store times in UTC, the exemptions' and the settings' end times and the audit log's, so a daylight-saving change cannot stretch an end time by the repeated hour.
 - Telemetry's default `sample_rate`, the fallback below (SPEC-015's benchmark, `benchmarks/results/phase-3-telemetry.md`): at 1, telemetry costs about 5 µs on the response path, and after it one round trip on Redis, or about 1 ms of worker time on Memcached, where the cache driver makes two round trips per rule and metric. The README tells busy apps on Memcached to lower it.
@@ -138,11 +138,11 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
   - the Redis driver makes one round trip per request, outside Redis Cluster, which a test counts;
   - the package's own time, measured on the array store, is under 0.5 ms at p95, on Octane and on PHP-FPM with APCu.
 - `docs/runbook.md` covers "Redis down", "manifest evicted", "a bad rule blocks /api" and "forgot to undo an emergency change". Each scenario has a test.
-- 0.1.0 is tagged and on Packagist (CLI-only), and the README states the pitch and non-goals (ADR-0001).
+- The README states the pitch and the non-goals on its first screen (ADR-0001).
 
 **Fallback:** if telemetry overhead is too high, lower the default sampling rate before release.
 
-**Why release here:** real feedback on the engine arrives weeks earlier, while the UI is being built.
+**No release here.** On 2026-10-08 the maintainer decided that the package is released only with its dashboard, so the first release, 0.1.0, moves to the end of Phase 5 (ADR-0018's decision record). Phase 3 still ends with the maintainer's review.
 
 ---
 
@@ -163,9 +163,9 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 
 ---
 
-## Phase 5 — Dashboard UI (M) → release 0.2.0
+## Phase 5 — Dashboard UI (M) → release 0.1.0, the first release
 
-Minimal dashboard: server-rendered Blade plus one hand-written JavaScript file, no build step (ADR-0018, which supersedes ADR-0014).
+A dashboard that ships with the package, as Laravel Horizon's does: served at its own path behind a gate, with live numbers and charts, and every rule, exemption and emergency switch managed in the browser. Server-rendered Blade plus one hand-written JavaScript file, no build step (ADR-0018, kept on 2026-10-08).
 
 **Specs**
 - SPEC-020: Blade layout, asset route, security headers and CSP (ADR-0018)
@@ -182,8 +182,9 @@ Minimal dashboard: server-rendered Blade plus one hand-written JavaScript file, 
 - CI confirms the repository has no `package.json`.
 - Screenshots are in the README.
 - The dashboard works under the strict CSP in the Workbench app.
+- 0.1.0 is tagged and on Packagist, the repository is public, and the three GitHub settings listed under "Repository" below are on.
 
-**Fallback:** if the phase runs more than 50% over its estimate, ship 0.2.0 with the API and the finished pages, and move the rest to a later minor release.
+**Fallback:** if the phase runs more than 50% over its estimate, release 0.1.0 once Overview, Rules, Exemptions and the emergency controls are finished, since those manage throttling, and move Activity, Audit log and Explain to a minor release.
 
 ---
 
@@ -221,11 +222,11 @@ These were the open decisions of the original roadmap.
 - **Docs hosting:** README + `docs/` folder until 1.0.
 - **PHP floor:** PHP 8.2 support was requested and declined. ADR-0002 stands (`^8.3`).
 - **Laravel floor:** `^12.69.0 || ^13.30.0`, the lowest versions CI tests (ADR-0019, amends ADR-0002). Raised from `^12.61.1 || ^13.12.0` on 2026-09-30, when a security advisory kept CI from installing the older versions.
-- **Repository:** private until 0.1.0. Nightly CI is skipped while private, to save Actions minutes. GitHub offers these three settings only on public repositories, or with GitHub Pro. Turn them on when the repository goes public:
+- **Repository:** private until 0.1.0, the first release, which ships with the dashboard (Phase 5). Nightly CI is skipped while private, to save Actions minutes. GitHub offers these three settings only on public repositories, or with GitHub Pro. Turn them on when the repository goes public:
   - private vulnerability reporting (`SECURITY.md` links to it)
   - branch protection on `main` requiring the `CI passed` check
   - reported content to repository admins (`CODE_OF_CONDUCT.md` relies on it)
-- **Dashboard:** minimal Blade + vanilla JavaScript (ADR-0018).
+- **Dashboard:** ships with the package, as Laravel Horizon's does, and with the first release. Server-rendered Blade + vanilla JavaScript (ADR-0018, kept on 2026-10-08).
 - **What is public (2026-09-24):**
   - The GitHub repository is the development repository. Tests, docs, CI, Docker, scripts, `CLAUDE.md` and `.claude/` stay visible, as contributors need them and Claude Code on the web reads them.
   - What users install with Composer is only the package: `src/`, `config/` (later `database/`, `resources/` and `routes/`), `composer.json`, README, LICENSE, CHANGELOG and SECURITY. The `export-ignore` rules in `.gitattributes` enforce it, and a CI allowlist check keeps it that way.
