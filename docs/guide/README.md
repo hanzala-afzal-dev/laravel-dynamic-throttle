@@ -4,7 +4,7 @@ The [README](../../README.md) gets you started. These pages go into the details.
 
 ## How it works
 
-1. Rules live in your database. You change them through the `Rule` model or Artisan, and later the dashboard and the JSON API.
+1. Rules live in your database. You change them through the `Rule` model or Artisan, and, from the first release, in the dashboard and through its JSON API.
 2. A compiler turns them into a versioned manifest stored in your cache, after each change commits. Octane keeps it in memory, and on PHP-FPM, a server's workers share it in APCu, so a process or a server reads the cache about once per `manifest.refresh_seconds` ([ADR-0007](../adr/0007-rule-storage-and-distribution.md)). No request ever reads the rules from the database.
 3. The `dynamic.throttle` middleware runs after authentication. It matches every applicable rule and counts each request with a sliding-window counter ([ADR-0006](../adr/0006-rate-limit-algorithm.md)). Blocked requests get a normal Laravel 429.
 

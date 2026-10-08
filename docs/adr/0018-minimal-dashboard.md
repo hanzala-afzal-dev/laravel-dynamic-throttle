@@ -6,6 +6,7 @@
 - Supersedes: ADR-0014
 - Amends: ADR-0003, ADR-0015, ADR-0016, ADR-0017 (see "Effect on other ADRs")
 - Related: ADR-0004, ADR-0015, ADR-0017
+- Amended: 2026-10-08, the dashboard ships with the package and with the first release, as Laravel Horizon's does, and its technology is kept (see the decision record)
 
 ## Context
 
@@ -60,14 +61,14 @@
 - **Blade + Alpine.js** (ADR-0014's fallback). Alpine's standard build evaluates expressions with `new Function`, which needs `unsafe-eval` under CSP. Its CSP build limits what expressions can do. Either way it is a vendored dependency for little gain. Rejected.
 - **htmx.** Small, but another vendored dependency to track for advisories. Its inline features (`hx-on`, `eval`) must be disabled to satisfy CSP. Plain `fetch()` covers the few interactive actions. Rejected.
 - **Livewire, Inertia, Filament.** They put requirements on the host app (same reasons as ADR-0014). Rejected. A Filament plugin remains a post-1.0 option on top of the JSON API.
-- **CLI and API only.** Too little for operators who want to see blocks at a glance. It stays the fallback.
+- **CLI and API only.** Too little for operators who want to see blocks at a glance. Rejected, and since 2026-10-08 not a fallback for the release either: the package is released only with its dashboard.
 
 ## Fallback
 
 - If the UI proves too limited (users ask for charts, complex filtering or live views), build a richer frontend as a **separate package** on the same JSON API (React SPA or Filament plugin), instead of adding a build step to this package.
 - If serving assets through PHP proves slow on some hosts, add an optional `vendor:publish --tag=dynamic-throttle-assets` path.
-- If the dashboard phase slips, ship the release with CLI and API only (ADR-0014's fallback still holds).
-- **Revisit when:** three months after 0.2.0, review dashboard-related issues and feature requests.
+- If the dashboard phase slips, the release waits for it: the package is released only with its dashboard (decided on 2026-10-08, see the decision record).
+- **Revisit when:** three months after 0.1.0, the first release, which ships the dashboard. Review dashboard-related issues and feature requests.
 
 ## Consequences
 
@@ -99,3 +100,18 @@ Accepted ADRs are not rewritten, so these lines still mention the SPA. Read them
 | ADR-0015, decision 2 | "the SPA uses Laravel's XSRF cookie" | The dashboard script sends Laravel's XSRF token the same way |
 | ADR-0016, tools and test layers | Vitest and a Playwright/Nightwatch end-to-end test | Pest feature tests and the Pest end-to-end smoke test above |
 | ADR-0017, release process and verification | The release builds `dist/` and fails when it is stale | There is no `dist/`; the release fails when a `package.json` exists instead |
+
+## Decision record
+
+Amended on 2026-10-08. The maintainer decided that the package is not released until it has a proper dashboard for managing throttling at runtime, shipped with the package as Laravel Horizon's is, and asked which technology to build it with. The first release, 0.1.0, now comes at the end of Phase 5, with the dashboard ([the roadmap](../roadmap.md)).
+
+The technology stays as decided above: server-rendered Blade and one hand-written JavaScript file, with no build step. What "like Horizon" asks for is how the dashboard is delivered and how it feels, which this choice can give, not the framework behind it:
+- **Delivered like Horizon's:** installed with the package, served at its own path (`/dynamic-throttle` by default), behind a gate (ADR-0015), with no separate app to deploy. The stylesheet and the script are served by a package route (point 3), so there is no asset publishing step either.
+- **Feels like Horizon's:** a sidebar to move between the pages, an overview whose numbers and charts refresh every few seconds, and every rule, exemption and emergency switch managed in the browser, with a confirmation for the dangerous ones (ADR-0015). Charts are server-rendered SVG, refreshed by polling (point 6).
+
+The alternatives, for a dashboard that ships inside a package:
+- **Vue, as Horizon and Telescope use.** A richer component model, but it brings npm, a build step and compiled assets into the repository and every release, and a JavaScript stack beside the PHP one for a single maintainer to keep current. The pages are tables, forms and a few charts, which server rendering covers. Rejected, for the reasons React was rejected above.
+- **React.** The same costs as Vue, and none of Laravel's own dashboards use it. Rejected.
+- **Livewire, as Pulse uses.** Server-driven like Blade, but it makes the host app install Livewire, at a version the package must match, and it is built on Alpine, which needs `unsafe-eval` under CSP in its standard build (see Alpine above). Pulse can require it because it is part of Laravel itself. Rejected.
+
+If users need more than server rendering gives after 0.1.0, the fallback above still holds: a richer frontend as a separate package on the same JSON API.
