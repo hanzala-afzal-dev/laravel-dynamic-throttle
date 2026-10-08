@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="art/banner.svg" width="100%" alt="Dynamic Throttle for Laravel: requests from IPs, users, tokens, headers and tenants pass through a throttle into your Laravel app, and the excess gets a 429.">
+  <img src="art/banner.svg" width="100%" alt="Dynamic Throttle for Laravel: inside your Laravel app, Dynamic Throttle is the first stop for requests from IPs, users, tokens, headers and tenants. An even flow goes on to the routes, controllers and database, and the excess gets a 429.">
 </p>
 
 <p align="center">
