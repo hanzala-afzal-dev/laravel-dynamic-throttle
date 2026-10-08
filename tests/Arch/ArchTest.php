@@ -20,6 +20,7 @@ use Afzal\DynamicThrottle\Support\ApcuManifestCache;
 use Afzal\DynamicThrottle\Support\EmergencyControls;
 use Afzal\DynamicThrottle\Support\Explainer;
 use Afzal\DynamicThrottle\Support\LazyManifestRebuilder;
+use Afzal\DynamicThrottle\Support\MetricsFlusher;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -93,6 +94,10 @@ arch('engine code never touches the database (ADR-0007)')
 arch('the telemetry buffers never touch the database: only the flush does (SPEC-015 AC-22)')
     ->expect('Afzal\DynamicThrottle\Engine\Telemetry')
     ->not->toUse($databaseAccess);
+
+arch('the middleware never reaches the flush, which writes the database (SPEC-015 AC-22)')
+    ->expect('Afzal\DynamicThrottle\Http')
+    ->not->toUse(MetricsFlusher::class);
 
 arch('the middleware never touches the database (ADR-0007)')
     ->expect('Afzal\DynamicThrottle\Http\Middleware')

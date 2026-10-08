@@ -6,6 +6,7 @@ namespace Afzal\DynamicThrottle\Tests\Support;
 
 use Afzal\DynamicThrottle\Engine\Contracts\TelemetryBuffer;
 use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryRecord;
+use Closure;
 use Throwable;
 
 /**
@@ -17,8 +18,20 @@ final class RecordingTelemetryBuffer implements TelemetryBuffer
     /** @var list<array{int, int, list<array{string, string, string}>}> each record(): the minute, the weight, and each record's rule, hash and outcome */
     public array $recorded = [];
 
+    /** @var list<int> the minutes counts() was asked for, in order */
+    public array $countsAsked = [];
+
     /** Thrown by record(), when set. */
     public ?Throwable $recordFailure = null;
+
+    /** Thrown by counts() for these minutes, when set. */
+    public ?Throwable $countsFailure = null;
+
+    /** @var list<int> the minutes counts() fails for; empty fails every minute */
+    public array $failingMinutes = [];
+
+    /** Runs once, before the first counts(), as another flush would meanwhile. */
+    public ?Closure $beforeFirstCounts = null;
 
     public function __construct(private readonly ?TelemetryBuffer $inner = null) {}
 
@@ -38,6 +51,18 @@ final class RecordingTelemetryBuffer implements TelemetryBuffer
 
     public function counts(int $minute, array $ruleIds): array
     {
+        $this->countsAsked[] = $minute;
+
+        if ($this->beforeFirstCounts instanceof Closure) {
+            $hook = $this->beforeFirstCounts;
+            $this->beforeFirstCounts = null;
+            $hook();
+        }
+
+        if ($this->countsFailure instanceof Throwable && ($this->failingMinutes === [] || in_array($minute, $this->failingMinutes, true))) {
+            throw $this->countsFailure;
+        }
+
         return $this->inner?->counts($minute, $ruleIds) ?? [];
     }
 

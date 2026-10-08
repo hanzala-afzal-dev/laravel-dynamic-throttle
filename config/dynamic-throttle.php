@@ -246,6 +246,12 @@ return [
     | weighed so the counts stay right on average. Lower it if recording
     | costs too much on a busy app.
     |
+    | "schedule" registers "php artisan dynamic-throttle:flush-metrics" in
+    | your scheduler every minute, which moves the numbers to the database,
+    | and "php artisan dynamic-throttle:prune" daily, which deletes those
+    | older than "retention_hours". Your scheduler must be running: the
+    | counter store keeps the numbers for 2 hours only.
+    |
     */
 
     'telemetry' => [
@@ -254,6 +260,8 @@ return [
         'sample_rate' => filter_var(Env::getRepository()->get('DYNAMIC_THROTTLE_SAMPLE_RATE') ?? 1, FILTER_VALIDATE_FLOAT, [
             'options' => ['min_range' => 0, 'max_range' => 1, 'default' => 1.0],
         ]),
+        'schedule' => true,
+        'retention_hours' => 720,
     ],
 
     /*

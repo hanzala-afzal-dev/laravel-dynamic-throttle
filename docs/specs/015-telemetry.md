@@ -1,6 +1,6 @@
 # SPEC-015: Telemetry: the buffer, the flush, the prune and the events
 
-- Status: In progress
+- Status: Done
 - ADRs: ADR-0013, ADR-0004, ADR-0005, ADR-0010, ADR-0012, ADR-0017, ADR-0020, ADR-0024, ADR-0026
 - Roadmap phase: 3
 
@@ -192,6 +192,14 @@ It ships in three stacked PRs (ADR-0027), each green on its own:
 1. **The buffers:** the `TelemetryBuffer` contract, its Redis and cache drivers, and the telemetry keys. AC-3 to AC-6, the buffer's part of AC-1, AC-8, AC-14 and AC-15, and AC-22's rule for `Engine\Telemetry`.
 2. **Recording and the events:** the middleware's records and their write in `terminate()`, the sampler, `RateLimitExceeded` and `RuleChanged`. AC-1, AC-2 and AC-7 to AC-9 through the middleware, and AC-19 to AC-21.
 3. **The table, the flush and the prune:** the migration, `dynamic-throttle:flush-metrics`, `dynamic-throttle:prune` and their schedule, then the docs and the benchmark. AC-10 to AC-18, and AC-22's rule for the flush.
+
+Done on `ccb20cb`, the third PR's code:
+- `composer test`: 1,524 passed. `composer test:drivers`: 733 passed, with the buffer contract on every store, the Redis buffer and the flush on Redis and Valkey with phpredis and predis, and the cache buffer on Memcached and on a Redis store with a phpredis serializer. `composer analyse`, `format:check` and `refactor:check` are clean.
+- The arch rules hold: `Engine\Telemetry` never touches the database, and `Http` never reaches the flush.
+- `composer test:mutate`: 97.51%, where the gate is 85%, on the branch SPEC-015 was built on, whose `src/Engine` the three PRs carry unchanged. `src/Engine/Telemetry` alone scores 98.34% on the first PR. The first run, at 90.70%, left the new code's error paths and edges untested: the Redis buffer's replies test pins them, with stubbed Redis clients as `RedisLimiterStore`'s does, and the code it showed to be redundant is gone. What survives of this spec is a constant expression or a cast that changes nothing, as in `RedisLimiterStore`.
+- `composer bench` (`benchmarks/results/phase-3-telemetry.md`): on the array store, telemetry adds about 5 µs at p50 to the response path, within decision 12's 10%, and PHP-FPM with APCu stays under the 0.5 ms target at 410 to 445 µs at p95. After the response, the write costs 66 to 74 µs on the array store, 183 to 202 µs on Redis in Docker, and 751 to 968 µs on Memcached, where the cache driver makes two round trips per rule and metric. The default sample rate goes to the maintainer, in the roadmap.
+- The review subagent found no high-severity defect. It checked the request path, the records against decisions 1 and 2, the Lua and the cluster split, phpredis with every serializer and compression, and the flush and the prune on MySQL 8.4 and PostgreSQL 16 with a +05:00 connection time zone. Its findings were fixed test-first, and are listed in the edge cases above: `RuleChanged` on a partly loaded rule, `clients` after the distinct count expires, the flush on SQL Server, the prune's cap, the hour with immutable dates, and a middleware listed twice. Its other findings are documented there: telemetry under-counts during an outage, `clients` is a lower bound when sampling, and the order of events from nested transactions.
+- Tests were added after the first red step, on the branch SPEC-015 was built on: the metrics migration in SPEC-013's list of the package's migrations; Redis Cluster's one call per key, which the spec promised and no test held, red before its fix; the review's findings, red before their fixes; the tests mutation testing asked for; and an interface taken out of `covers()`, which coverage refuses. None changes what an earlier test asserts. In the three PRs, each red step (`13eb325`, `a33539b` and `19589ca`) holds its PR's final tests.
 
 ## Open questions
 None. Every decision below is recorded as recommended (ADR-0027), for the maintainer to veto in the PR.

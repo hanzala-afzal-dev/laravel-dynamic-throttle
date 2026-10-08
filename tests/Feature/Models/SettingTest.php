@@ -63,6 +63,8 @@ it('AC-1: ships its migrations in the folder published with the rules migration'
         '2026_09_25_000001_create_dynamic_throttle_exemptions_table.php',
         '2026_10_01_000001_create_dynamic_throttle_settings_table.php',
         '2026_10_01_000002_create_dynamic_throttle_audit_log_table.php',
+        // SPEC-015's hourly metrics.
+        '2026_10_04_000001_create_dynamic_throttle_metrics_hourly_table.php',
     ]);
 });
 
