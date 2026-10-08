@@ -22,6 +22,7 @@ use Afzal\DynamicThrottle\Support\EmergencyControls;
 use Afzal\DynamicThrottle\Support\Explainer;
 use Afzal\DynamicThrottle\Support\LazyManifestRebuilder;
 use Afzal\DynamicThrottle\Support\MetricsFlusher;
+use Afzal\DynamicThrottle\Support\RouteMiddleware;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -265,6 +266,10 @@ arch('the health command never compiles, rebuilds, flushes or changes anything (
 arch('the health command never touches the database (SPEC-016 AC-21)')
     ->expect(HealthCommand::class)
     ->not->toUse($databaseAccess);
+
+arch('the routes\' middleware, which explain and the health checks share, never changes anything or touches the database (SPEC-016 AC-21)')
+    ->expect(RouteMiddleware::class)
+    ->not->toUse([...$healthChanges, ...$databaseAccess]);
 
 arch('request handling never runs the health checks (SPEC-016 AC-21)')
     ->expect('Afzal\DynamicThrottle\Http')

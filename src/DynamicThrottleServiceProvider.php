@@ -42,6 +42,7 @@ use Afzal\DynamicThrottle\Models\Setting;
 use Afzal\DynamicThrottle\Support\ApcuFailureMemory;
 use Afzal\DynamicThrottle\Support\ApcuManifestCache;
 use Afzal\DynamicThrottle\Support\ConfigMerger;
+use Afzal\DynamicThrottle\Support\ConfigValues;
 use Afzal\DynamicThrottle\Support\Explainer;
 use Afzal\DynamicThrottle\Support\LaravelClock;
 use Afzal\DynamicThrottle\Support\LazyManifestRebuilder;
@@ -280,16 +281,12 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
 
     private function refreshSeconds(Application $app): int
     {
-        $seconds = $app->make('config')->get('dynamic-throttle.manifest.refresh_seconds');
-
-        return is_int($seconds) && $seconds >= 0 ? $seconds : 2;
+        return ConfigValues::refreshSeconds($app->make('config')->get('dynamic-throttle.manifest.refresh_seconds'));
     }
 
     private function maxRulesPerRequest(Application $app): int
     {
-        $cap = $app->make('config')->get('dynamic-throttle.matching.max_rules_per_request');
-
-        return is_int($cap) && $cap >= 1 ? $cap : 5;
+        return ConfigValues::maxRulesPerRequest($app->make('config')->get('dynamic-throttle.matching.max_rules_per_request'));
     }
 
     /**
@@ -312,31 +309,17 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
 
     private function cooldownSeconds(Application $app): int
     {
-        $seconds = $app->make('config')->get('dynamic-throttle.failure.cooldown_seconds');
-
-        return is_int($seconds) && $seconds >= 0 ? $seconds : 10;
+        return ConfigValues::cooldownSeconds($app->make('config')->get('dynamic-throttle.failure.cooldown_seconds'));
     }
 
-    /**
-     * telemetry.sample_rate, from 0 to 1. Anything else records every request, as
-     * the default does.
-     */
     private function sampleRate(Application $app): float
     {
-        $rate = $app->make('config')->get('dynamic-throttle.telemetry.sample_rate');
-
-        return (is_int($rate) || is_float($rate)) && $rate >= 0 && $rate <= 1 ? (float) $rate : 1.0;
+        return ConfigValues::sampleRate($app->make('config')->get('dynamic-throttle.telemetry.sample_rate'));
     }
 
-    /**
-     * telemetry.retention_hours, the hours the scheduled prune keeps: 720, 30 days,
-     * unless it is a whole number of at least 1, and at most the prune's maximum.
-     */
     private function retentionHours(Application $app): int
     {
-        $hours = $app->make('config')->get('dynamic-throttle.telemetry.retention_hours');
-
-        return is_int($hours) && $hours >= 1 ? min($hours, PruneCommand::MAX_HOURS) : 720;
+        return ConfigValues::retentionHours($app->make('config')->get('dynamic-throttle.telemetry.retention_hours'));
     }
 
     /**
@@ -363,28 +346,15 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
 
     private function ipv6Prefix(Application $app): int
     {
-        $prefix = $app->make('config')->get('dynamic-throttle.scopes.ip.ipv6_prefix');
-
-        return is_int($prefix) && $prefix >= 1 && $prefix <= 128 ? $prefix : 64;
+        return ConfigValues::ipv6Prefix($app->make('config')->get('dynamic-throttle.scopes.ip.ipv6_prefix'));
     }
 
     /**
-     * scopes.user.guards: a non-empty list of guard names, or null for the guard the
-     * request authenticated with. Anything else counts as null.
-     *
      * @return list<string>|null
      */
     private function guards(Application $app): ?array
     {
-        $guards = $app->make('config')->get('dynamic-throttle.scopes.user.guards');
-
-        if (! is_array($guards) || $guards === [] || ! array_is_list($guards)) {
-            return null;
-        }
-
-        $names = array_filter($guards, fn (mixed $guard): bool => is_string($guard) && $guard !== '');
-
-        return count($names) === count($guards) ? array_values($names) : null;
+        return ConfigValues::guards($app->make('config')->get('dynamic-throttle.scopes.user.guards'));
     }
 
     public function boot(): void
