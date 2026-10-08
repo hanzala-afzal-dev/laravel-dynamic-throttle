@@ -85,8 +85,20 @@ The maintainer vetoes any of these in the PR (ADR-0027).
 1. **One section per scenario, in four parts:** symptoms, check, act, after. Each links the test that follows its steps. Rejected: one long page of prose, which is hard to follow during an incident.
 2. **A new health check, `emergency`, for settings left on.** The only signal today is `status`, which someone has to run. The check warns when a setting applies with no end time, or ends more than 24 hours ahead, so `health --strict` in a deploy script catches a forgotten `--forever`. A setting that ends within a day is ok, with its end time named, so a deploy during an incident does not fail. Rejected: warning about every active setting, which would fail a strict deploy in the middle of an incident; and a time limit on `--forever`, which would change SPEC-013's commands.
 3. **The tests live in `tests/Feature/Runbook/`,** one per scenario, named after its section. They repeat assertions that the specs' own tests make, on purpose: they prove the runbook's steps, not the features.
-4. **Three PRs:** this spec; "Redis is down" and "the manifest was evicted"; then "a bad rule blocks /api", "an emergency change was left on" with the `emergency` check, and the spec's close.
+4. **Five stacked PRs, one per scenario after the spec** (below), so each stays small and is reviewed on its own (ADR-0027).
+
+## PRs
+
+Stacked on each other, each green on its own (ADR-0027). The scenarios' tests document behavior that exists, so they pass at once, except where a test finds a gap. The `emergency` check is new, so its tests are committed red before it.
+
+| PR | Branch | Adds | Covers |
+|---|---|---|---|
+| 1 | `phase-3/spec-029-1` | This spec, and its line in the roadmap | Decisions |
+| 2 | `phase-3/spec-029-2` | `docs/runbook.md` with its introduction and "Redis is down", and `RedisDownTest` | AC-1 |
+| 3 | `phase-3/spec-029-3` | "The manifest was evicted", and `ManifestEvictedTest` | AC-2 |
+| 4 | `phase-3/spec-029-4` | "A bad rule blocks /api", and `BadRuleTest` | AC-3 |
+| 5 | `phase-3/spec-029-5` | The `emergency` check (red tests first), "An emergency change was left on", `EmergencyLeftOnTest`, the links from the README and the guide, the changelog, and the spec's close | AC-4 to AC-6 |
 
 ## Open questions
 
-None. Decisions 2 and 4 are the ones to veto if you disagree.
+None. Decision 2, the `emergency` check and its 24 hours, is the one to veto if you disagree.
