@@ -14,6 +14,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Testing\TestResponse;
+use Symfony\Component\HttpFoundation\Response;
 
 /*
 | SPEC-029 AC-1: the runbook's "Redis is down" (docs/runbook.md#redis-is-down).
@@ -43,7 +44,7 @@ afterEach(function (): void {
 /**
  * The status and the rate-limit headers of each response.
  *
- * @param  list<TestResponse<Symfony\Component\HttpFoundation\Response>>  $responses
+ * @param  list<TestResponse<Response>>  $responses
  * @return list<array{int, array<string, string>}>
  */
 function runbookResponses(array $responses): array
