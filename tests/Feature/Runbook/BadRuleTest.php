@@ -3,12 +3,14 @@
 declare(strict_types=1);
 
 use Afzal\DynamicThrottle\Enums\Scope;
+use Afzal\DynamicThrottle\Events\RateLimitExceeded;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Tests\Support\FakeClock;
 use Afzal\DynamicThrottle\Tests\Support\Settings;
 use Afzal\DynamicThrottle\Tests\Support\Throttling;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -45,10 +47,14 @@ function fromClient(string $uri, string $ip): TestResponse
     return test()->withServerVariables(['REMOTE_ADDR' => $ip])->get($uri);
 }
 
-it('AC-3: answers 429 to every client of /api, which is what the section starts from', function (): void {
-    $statuses = [fromClient('api/orders', '198.51.100.1')->status(), fromClient('api/users', '198.51.100.2')->status()];
+it('AC-3: answers 429 to every client of /api, and dispatches RateLimitExceeded for each, naming the rule', function (): void {
+    Event::fake([RateLimitExceeded::class]);
 
-    expect($statuses)->toBe([429, 429]);
+    $statuses = [fromClient('api/orders', '198.51.100.1')->status(), fromClient('api/users', '198.51.100.2')->status()];
+    $events = Event::dispatched(RateLimitExceeded::class)->map(fn (array $arguments): array => [$arguments[0]->ruleId, $arguments[0]->ruleName, $arguments[0]->path]);
+
+    expect($statuses)->toBe([429, 429])
+        ->and($events->values()->all())->toBe([[(string) $this->rule->id, 'API', 'api/orders'], [(string) $this->rule->id, 'API', 'api/users']]);
 });
 
 it('AC-3: names the rule and its 429 in dynamic-throttle:explain', function (): void {
