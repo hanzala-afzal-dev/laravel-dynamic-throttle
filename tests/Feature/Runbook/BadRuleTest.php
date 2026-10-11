@@ -89,10 +89,16 @@ it('AC-3: applies the rule fixed with the model once enable-rule brings it back'
     $first = fromClient('api/orders', '198.51.100.1');
     $other = fromClient('api/orders', '198.51.100.2');
 
+    Artisan::call('dynamic-throttle:explain', ['method' => 'GET', 'path' => '/api/orders']);
+    $explained = Artisan::output();
+
     expect([Throttling::headers($first), Throttling::headers($other)])->toBe([
         ['X-RateLimit-Limit' => '60', 'X-RateLimit-Remaining' => '59'],
         ['X-RateLimit-Limit' => '60', 'X-RateLimit-Remaining' => '59'],
-    ]);
+    ])
+        ->and($explained)->toContain('Scope: ip')->toContain('Decision: allowed')
+        ->and(array_map(fn (array $entry): array => [$entry['actor'], $entry['action']], Settings::audit()))
+        ->toBe([[Settings::cliActor(), 'rule.disable'], [Settings::cliActor(), 'rule.enable']]);
 });
 
 it('AC-3: lets every request through with bypass --force when the rule cannot be found quickly, and status shows its end time', function (): void {
@@ -102,5 +108,6 @@ it('AC-3: lets every request through with bypass --force when the rule cannot be
     $this->artisan('dynamic-throttle:status')
         ->expectsOutputToContain('on until 2027-01-15 08:30:00 UTC, 30 minutes left')
         ->assertExitCode(0);
-    expect(array_map(fn (TestResponse $response): array => [$response->status(), Throttling::headers($response)], $during))->toBe([[200, []], [200, []]]);
+    expect(array_map(fn (TestResponse $response): array => [$response->status(), Throttling::headers($response)], $during))->toBe([[200, []], [200, []]])
+        ->and(array_map(fn (array $entry): array => [$entry['actor'], $entry['action']], Settings::audit()))->toBe([[Settings::cliActor(), 'settings.bypass']]);
 });
