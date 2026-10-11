@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle\Manifest;
 
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
+use Afzal\DynamicThrottle\Engine\Contracts\FailureMemory;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Manifest\Contracts\LocalManifestCache;
 use Afzal\DynamicThrottle\Manifest\Contracts\ManifestRebuilder;
@@ -23,8 +24,11 @@ use Throwable;
  */
 final readonly class ManifestRepository
 {
-    /** An unreadable manifest is reported at most this often per process, so an outage cannot flood the error tracker. */
+    /** An unreadable manifest is reported at most this often per process, or per server with APCu, so an outage cannot flood the error tracker. */
     private const int REPORT_EVERY_SECONDS = 30;
+
+    /** The cause the server's processes share the last report under. Other causes are hashes, so it is never one of them. */
+    private const string REPORT_CAUSE = 'manifest';
 
     /** How long the lock lasts that lets one request, across servers, schedule the rebuild. */
     private const int REBUILD_LOCK_SECONDS = 30;
@@ -38,6 +42,8 @@ final readonly class ManifestRepository
         private int $refreshSeconds,
         /** L1, shared by the server's processes, or null to read the store after L0 (SPEC-028). */
         private ?LocalManifestCache $local = null,
+        /** Where the server's processes share when the manifest was last reported, or null for this process alone. */
+        private ?FailureMemory $reports = null,
     ) {}
 
     public function current(): Manifest
@@ -177,13 +183,20 @@ final readonly class ManifestRepository
         }
     }
 
+    /**
+     * At most once per REPORT_EVERY_SECONDS. On PHP-FPM, every request starts with an
+     * empty process, so only what the server's processes share can hold that (SPEC-029).
+     */
     private function report(Throwable $problem, int $now): void
     {
-        if (ManifestMemory::$reportedAt !== null && $now - ManifestMemory::$reportedAt < self::REPORT_EVERY_SECONDS * 1_000_000) {
-            return;
+        foreach ([ManifestMemory::$reportedAt, $this->reports?->reportedAt(self::REPORT_CAUSE)] as $reportedAt) {
+            if ($reportedAt !== null && $now - $reportedAt < self::REPORT_EVERY_SECONDS * 1_000_000) {
+                return;
+            }
         }
 
         ManifestMemory::$reportedAt = $now;
+        $this->reports?->markReported(self::REPORT_CAUSE, $now, self::REPORT_EVERY_SECONDS);
 
         try {
             report($problem);
