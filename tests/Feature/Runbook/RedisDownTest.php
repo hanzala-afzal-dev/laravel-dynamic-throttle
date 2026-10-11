@@ -2,11 +2,13 @@
 
 declare(strict_types=1);
 
+use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Enums\FailurePolicy;
 use Afzal\DynamicThrottle\Events\StorageUnavailable;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Manifest\ManifestUnavailable;
+use Afzal\DynamicThrottle\Tests\Support\FailingStore;
 use Afzal\DynamicThrottle\Tests\Support\FakeClock;
 use Afzal\DynamicThrottle\Tests\Support\OutageCache;
 use Afzal\DynamicThrottle\Tests\Support\Throttling;
@@ -139,4 +141,28 @@ it('AC-1: counts requests again, with their headers, once the store is back and 
         // The store kept its data: the request before the outage still counts.
         [200, ['X-RateLimit-Limit' => '5', 'X-RateLimit-Remaining' => '3']],
     ]);
+});
+
+it('AC-1: lets every request through with bypass when only the counter store is down, since the manifest still reaches servers', function (): void {
+    // The counters on a Redis connection of their own, and the manifest in a cache store that works.
+    app()->instance(LimiterStore::class, FailingStore::down());
+    $blocked = $this->get('api/login');
+
+    $this->artisan('dynamic-throttle:bypass', ['state' => 'on', '--for' => '30m', '--force' => true])->assertExitCode(0);
+    $bypassed = $this->get('api/login');
+
+    expect([$blocked->status(), $bypassed->status(), Throttling::headers($bypassed)])->toBe([503, 200, []]);
+});
+
+it('AC-1: lets every request through with the kill switch when the cache that holds the manifest is down too, where bypass cannot reach servers', function (): void {
+    $this->get('api/login');
+    $this->redis->down = true;
+
+    // Saved, but the manifest cannot be written, so servers never see it.
+    $this->artisan('dynamic-throttle:bypass', ['state' => 'on', '--for' => '30m', '--force' => true])->assertExitCode(1);
+    $blocked = $this->get('api/login');
+    config()->set('dynamic-throttle.enabled', false);
+    $open = $this->get('api/login');
+
+    expect([$blocked->status(), $open->status(), Throttling::headers($open)])->toBe([503, 200, []]);
 });
