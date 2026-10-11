@@ -63,11 +63,13 @@ it('AC-4: shows bypass --forever in status, warns on emergency in health, which 
     $warned = Health::check('emergency');
     $this->artisan('dynamic-throttle:bypass', ['state' => 'off'])->assertExitCode(0);
     [$strictExitAfter] = Health::report(['--strict' => true]);
+    $counted = $this->get('api/x');
 
     $this->artisan('dynamic-throttle:status')
         ->doesntExpectOutputToContain('with no end time')
         ->assertExitCode(0);
     expect([$strictExit, $warned[0]])->toBe([1, 'warning'])
         ->and($warned[1])->toContain('php artisan dynamic-throttle:bypass off')
-        ->and([$strictExitAfter, Health::status('emergency')])->toBe([0, 'ok']);
+        ->and([$strictExitAfter, Health::status('emergency')])->toBe([0, 'ok'])
+        ->and(Throttling::headers($counted))->toBe(['X-RateLimit-Limit' => '60', 'X-RateLimit-Remaining' => '59']);
 });
