@@ -16,5 +16,5 @@ php artisan dynamic-throttle:scale off
 - **Confirmation.** In production, turning bypass on, a factor below 1 and disabling an enforcing rule ask first. Scripts pass `--force`.
 - **Propagation.** Each change compiles the manifest, and servers apply it within `manifest.refresh_seconds`. If the manifest cannot be written, the change stays saved, the command exits 1, and servers keep the previous manifest until a compile succeeds.
 - **The audit log.** Each change writes one append-only entry to `dynamic_throttle_audit_log`: the actor (`cli:` and the system user), the action, the target, and the state before and after.
-- **In deploy scripts.** `dynamic-throttle:status` exits 1 when the config is invalid, such as an unknown `driver`, an undefined `store` or an invalid `prefix`.
+- **In deploy scripts.** `dynamic-throttle:status` exits 1 when the config is invalid, such as an unknown `driver`, an undefined `store` or an invalid `prefix`. `dynamic-throttle:health --strict` also exits 1 for a setting left on with no end time, or with one more than a day away (the `emergency` check).
 - **The last resort.** When the database and the cache are both down, set `DYNAMIC_THROTTLE_ENABLED=false` and reload the config: the middleware then does nothing.

@@ -21,4 +21,6 @@ The [README](../../README.md) gets you started. These pages go into the details.
 - [During an incident](incidents.md): bypass, scale, and switching one rule off
 - [Testing your app](testing.md): `DynamicThrottle::fake()`
 
+When something goes wrong in production, the [runbook](../runbook.md) has the steps: Redis is down, the manifest was evicted, a bad rule blocks `/api`, or an emergency change was left on.
+
 The design is recorded as [Architecture Decision Records](../adr/README.md), and each feature has a [spec](../specs).
