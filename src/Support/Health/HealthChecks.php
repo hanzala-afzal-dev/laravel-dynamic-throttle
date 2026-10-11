@@ -10,6 +10,7 @@ use Afzal\DynamicThrottle\Support\Health\Checks\AttachedCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\CacheClearCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\ConfigCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\DominantIpCheck;
+use Afzal\DynamicThrottle\Support\Health\Checks\EmergencyCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\ExceptCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\GuestsCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\IgnoredCheck;
@@ -52,7 +53,8 @@ final readonly class HealthChecks
 
     /**
      * The checks, in the order the report lists them: the config and the storage, the
-     * routes, the counter store's state, and what the rules saw.
+     * routes, the manifest and what it applies, the counter store's state, and what the
+     * rules saw.
      *
      * @return list<Check>
      */
@@ -68,6 +70,7 @@ final readonly class HealthChecks
             new TwoLimitersCheck,
             new MiddlewareOrderCheck,
             new ManifestCheck,
+            new EmergencyCheck,
             new MetricsCheck,
             new GuestsCheck,
             new DominantIpCheck,
