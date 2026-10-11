@@ -59,12 +59,12 @@ it('AC-1: prints one line per check, in order, with its status, id and message, 
 
     [$output, $exitCode] = Health::text();
     $lines = Health::lines($output);
+    // The cache driver keeps no traffic per client, which only the Redis driver checks.
+    $skipped = array_search('dominant-ip', Health::CHECKS, true);
 
     expect($exitCode)->toBe(0, $output)
         ->and(array_column($lines, 1))->toBe(Health::CHECKS)
-        ->and(array_unique(array_column($lines, 0)))->toBe([0 => 'OK', 11 => 'SKIPPED'])
-        // The cache driver keeps no traffic per client, which only the Redis driver checks.
-        ->and($lines[11][1])->toBe('dominant-ip')
+        ->and(array_unique(array_column($lines, 0)))->toBe([0 => 'OK', $skipped => 'SKIPPED'])
         ->and(array_filter(array_column($lines, 2), fn (string $message): bool => $message === ''))->toBe([])
         ->and($output)->toContain('0 warnings, 0 errors');
 });
@@ -73,13 +73,14 @@ it('AC-1: prints the same report as one JSON object, with the same checks in the
     Health::passing();
 
     [$exitCode, $report] = Health::report();
+    $skipped = array_search('dominant-ip', Health::CHECKS, true);
 
     expect($exitCode)->toBe(0)
         ->and(array_keys($report))->toBe(['status', 'checks'])
         ->and($report['status'])->toBe('ok')
         ->and(array_column($report['checks'], 'check'))->toBe(Health::CHECKS)
         ->and(array_map(array_keys(...), $report['checks']))->each->toBe(['check', 'status', 'message'])
-        ->and(array_unique(array_column($report['checks'], 'status')))->toBe([0 => 'ok', 11 => 'skipped']);
+        ->and(array_unique(array_column($report['checks'], 'status')))->toBe([0 => 'ok', $skipped => 'skipped']);
 });
 
 it('AC-1: prints the app\'s text as explain does: control characters escaped in text, and JSON in ASCII only', function (): void {
