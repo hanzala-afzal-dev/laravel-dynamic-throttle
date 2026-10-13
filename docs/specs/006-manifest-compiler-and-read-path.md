@@ -101,6 +101,9 @@ Times use Laravel's clock (`travelTo`) for the compiler, and the package `Clock`
 - **AC-19 (arch)** `Afzal\DynamicThrottle\Manifest` (the read path and the value objects) uses nothing from `Illuminate\Database`, the models, or the wall clock. The compiler lives in `Afzal\DynamicThrottle\Compiler`.
 - **AC-20** L0 is process-wide, so it lives in a static property. `ManifestRepository::flushState()` clears it, and every test starts with it empty.
 
+### The key (added at the Phase 3 review, 2026-10-13)
+- **AC-22** The manifest's key names its format: `<prefix>m:<format>`, such as `dt:m:3`, and the compile and rebuild locks follow it (`dt:m:3:lock`, `dt:m:3:rebuild`). A server reads and writes only its own format's key, so during a rolling deploy, servers of two versions whose formats differ keep one manifest each, instead of reading the other's as corrupt and rebuilding it. An upgrade that bumps the format leaves the old key behind, a few kilobytes without an expiry.
+
 ### Config
 - **AC-21** New keys, merged by `ConfigMerger` (SPEC-005):
   - `manifest.refresh_seconds`, from `DYNAMIC_THROTTLE_MANIFEST_REFRESH`, default 2
@@ -126,7 +129,8 @@ Times use Laravel's clock (`travelTo`) for the compiler, and the package `Clock`
   - `tests/Feature/Console/CompileCommandTest.php`: AC-10, AC-11
   - `tests/Feature/Manifest/ManifestRepositoryTest.php`: AC-12 to AC-18, AC-20
   - `tests/Unit/Manifest/ManifestCodecTest.php`: the shape checks behind AC-16
-  - `tests/Unit/Engine/KeyBuilderTest.php`: the new keys
+  - `tests/Unit/Engine/KeyBuilderTest.php`: the new keys, and AC-22
+  - `tests/Feature/Compiler/ManifestCompilerTest.php` and `tests/Feature/Manifest/ManifestRepositoryTest.php`: AC-22 too
   - `tests/Arch/ArchTest.php`: AC-19
   - `tests/Unit/ConfigTest.php`: AC-21
 
