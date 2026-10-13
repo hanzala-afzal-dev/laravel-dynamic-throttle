@@ -40,11 +40,12 @@ Phase 3's exit needs `docs/runbook.md`: what to do when "Redis is down", "the ma
   - before the rebuild, `dynamic-throttle:status` prints "missing: run php artisan dynamic-throttle:compile", and `dynamic-throttle:health` errs on `manifest` and exits 1;
   - `dynamic-throttle:compile` restores it at once, and then `health`'s `manifest` check is ok;
   - with the database down, the rebuild fails and is reported, the requests meanwhile apply no rule, and the rebuild is tried again at most once per 30 seconds. `compile` prints "Could not compile the manifest" and exits 1, and once the database is back, it restores the manifest.
-- **AC-3 (a bad rule blocks /api)** Given an enforcing rule that answers 429 to every request under `/api`:
+- **AC-3 (a bad rule blocks /api)** Given an enforcing rule that answers 429 to every request under `/api`, in production:
+  - each 429 dispatches `RateLimitExceeded`, naming the rule;
   - `dynamic-throttle:explain GET /api/orders` names the rule and its 429;
   - `dynamic-throttle:list` shows its id, and `dynamic-throttle:disable-rule <id> --force` stops the 429s for the requests after it, and writes one audit entry;
-  - after the rule is fixed with the model, `dynamic-throttle:enable-rule <id>` applies the fixed rule;
-  - `dynamic-throttle:bypass on --for=30m --force`, the step for when the rule cannot be found quickly, lets every request through, and `status` shows its end time.
+  - after the rule is fixed with the model, `dynamic-throttle:enable-rule <id>` applies the fixed rule, `explain` shows it and "Decision: allowed", and the audit log holds `rule.disable` and `rule.enable`;
+  - `dynamic-throttle:bypass on --for=30m --force`, the step for when the rule cannot be found quickly, lets every request through, writes `settings.bypass`, and `status` shows its end time.
 - **AC-4 (an emergency change was left on)**
   - Given `bypass on` without `--for`, an hour later requests are limited again, with no command run, and `status` shows the setting's end time as passed.
   - Given `bypass on --forever`, `status` shows "with no end time", `health` warns on `emergency` and exits 1 with `--strict`, and `bypass off` ends both.

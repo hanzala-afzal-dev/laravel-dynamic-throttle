@@ -13,6 +13,7 @@ Each scenario links the test that follows its steps, so the steps stay true as t
 |---|---|
 | [Redis is down](#redis-is-down) | Limits are off, fail-closed routes answer 503, and both recover by themselves. |
 | [The manifest was evicted](#the-manifest-was-evicted) | Usually heals itself after one request. Run `dynamic-throttle:compile` if it does not. |
+| [A bad rule blocks /api](#a-bad-rule-blocks-api) | Find it with `explain`, switch it off with `disable-rule`, or bypass every rule. |
 
 ## Before you need it
 
@@ -107,3 +108,64 @@ Until the manifest is rebuilt, `status` prints `missing: run php artisan dynamic
 - **Check:** `php artisan dynamic-throttle:health` shows `manifest` ok, with the new version.
 - **Nothing to undo:** a compile changes no rule.
 - **The scheduler heals it too.** With `manifest.schedule` on, the default, the scheduler runs `dynamic-throttle:compile` every five minutes, so a manifest lost while nobody watches comes back by itself, as long as `php artisan schedule:run` runs every minute.
+
+## A bad rule blocks /api
+
+A rule answers 429 to far more requests than it should: a limit set too low, a `global` scope where each client needed a counter of its own, or an `ip` rule that counts your load balancer's IP for every client because the trusted proxies are not set.
+
+Tested by [BadRuleTest](../tests/Feature/Runbook/BadRuleTest.php).
+
+### Symptoms
+
+- **Clients get 429** on routes under `/api`, many of them at once, with `Retry-After` and `X-RateLimit-Remaining: 0`.
+- **Your `RateLimitExceeded` listeners** run once for each 429, with the rule's `ruleId` and `ruleName`, and the request's `path` ([events](guide/events.md)).
+
+### Check
+
+```bash
+php artisan dynamic-throttle:explain GET /api/orders
+```
+
+It shows each rule that matches the request, and ends with the decision, such as `Decision: rejected by rule 12: 429, Retry-After 120 s`. The rule's lines show its limit and its `Scope`. Add `--ip=`, `--user=` or `--header=` to explain the request of a given client ([why a request is limited](guide/explain.md)).
+
+When the rule is an `ip` rule and every client seems to share one counter, check the trusted proxies: on Redis, `php artisan dynamic-throttle:health` warns on `dominant-ip` when one IP sends half or more of the recent traffic ([health checks](guide/health.md)).
+
+### Act
+
+1. **Find the rule's id**, if `explain` did not show it:
+
+   ```bash
+   php artisan dynamic-throttle:list
+   ```
+
+2. **Switch it off.** The requests after it are no longer counted by it. In production, the command asks first, because the rule's protection goes with it; `--force` skips the question.
+
+   ```bash
+   php artisan dynamic-throttle:disable-rule 12 --force
+   ```
+
+3. **If you cannot find the rule quickly,** bypass every rule instead. Every request goes through, unlimited, until bypass ends by itself. In production it asks first too, since it removes every limit.
+
+   ```bash
+   php artisan dynamic-throttle:bypass on --for=30m --force
+   ```
+
+4. **Fix the rule** with the `Rule` model, such as in `php artisan tinker`:
+
+   ```php
+   use Afzal\DynamicThrottle\Enums\Scope;
+   use Afzal\DynamicThrottle\Models\Rule;
+
+   Rule::find(12)->update(['scope' => Scope::Ip, 'max_attempts' => 60]);
+   ```
+
+5. **Bring it back:**
+
+   ```bash
+   php artisan dynamic-throttle:enable-rule 12
+   ```
+
+### After
+
+- **Check:** `dynamic-throttle:explain GET /api/orders` shows the fixed rule and `Decision: allowed`. If you bypassed, `php artisan dynamic-throttle:status` shows its end time; end it early with `php artisan dynamic-throttle:bypass off`.
+- **The audit log** has one entry for each command that changed something, `rule.disable`, `rule.enable` or `settings.bypass`, with the system user who ran it ([during an incident](guide/incidents.md)).
