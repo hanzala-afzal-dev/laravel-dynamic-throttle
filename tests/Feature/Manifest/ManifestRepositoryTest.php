@@ -84,7 +84,7 @@ function manifestRepository(Repository $cache, FakeClock $clock, ManifestRebuild
 
 it('AC-12: reads the stored manifest when memory is empty', function (): void {
     $cache = new Repository(manifestStore());
-    $cache->forever('dt:m', ManifestFixtures::json(7));
+    $cache->forever('dt:m:3', ManifestFixtures::json(7));
 
     $manifest = manifestRepository($cache, new FakeClock, fakeRebuilder())->current();
 
@@ -94,12 +94,12 @@ it('AC-12: reads the stored manifest when memory is empty', function (): void {
 it('AC-13: answers from memory within refresh_seconds, then reads the store again', function (): void {
     $store = manifestStore();
     $cache = new Repository($store);
-    $cache->forever('dt:m', ManifestFixtures::json(7));
+    $cache->forever('dt:m:3', ManifestFixtures::json(7));
     $clock = new FakeClock;
     $repository = manifestRepository($cache, $clock, fakeRebuilder());
 
     $first = $repository->current();
-    $cache->forever('dt:m', ManifestFixtures::json(8));
+    $cache->forever('dt:m:3', ManifestFixtures::json(8));
     $clock->setMicroseconds(FakeClock::T0 * 1_000_000 + 1_999_999);
     $withinRefresh = $repository->current();
     $readsWithinRefresh = $store->reads;
@@ -113,11 +113,11 @@ it('AC-13: answers from memory within refresh_seconds, then reads the store agai
 it('SPEC-028 AC-3: reads the store again when the clock goes back past the read time', function (): void {
     $store = manifestStore();
     $cache = new Repository($store);
-    $cache->forever('dt:m', ManifestFixtures::json(7));
+    $cache->forever('dt:m:3', ManifestFixtures::json(7));
     $clock = new FakeClock;
     $repository = manifestRepository($cache, $clock, fakeRebuilder());
     $repository->current();
-    $cache->forever('dt:m', ManifestFixtures::json(8));
+    $cache->forever('dt:m:3', ManifestFixtures::json(8));
 
     // An NTP step back, by a microsecond.
     $clock->setMicroseconds(FakeClock::T0 * 1_000_000 - 1);
@@ -129,7 +129,7 @@ it('SPEC-028 AC-3: reads the store again when the clock goes back past the read 
 it('AC-13: reads the store on every call when refresh_seconds is 0', function (): void {
     $store = manifestStore();
     $cache = new Repository($store);
-    $cache->forever('dt:m', ManifestFixtures::json(7));
+    $cache->forever('dt:m:3', ManifestFixtures::json(7));
     $repository = manifestRepository($cache, new FakeClock, fakeRebuilder(), refreshSeconds: 0);
 
     $repository->current();
@@ -141,13 +141,13 @@ it('AC-13: reads the store on every call when refresh_seconds is 0', function ()
 
 it('AC-14: keeps serving the last known manifest, marked stale, and schedules a rebuild', function (): void {
     $cache = new Repository(manifestStore());
-    $cache->forever('dt:m', ManifestFixtures::json(7));
+    $cache->forever('dt:m:3', ManifestFixtures::json(7));
     $clock = new FakeClock;
     $rebuilder = fakeRebuilder();
     $repository = manifestRepository($cache, $clock, $rebuilder);
     $repository->current();
 
-    $cache->forget('dt:m');
+    $cache->forget('dt:m:3');
     $clock->setSeconds(FakeClock::T0 + 3);
     $manifest = $repository->current();
     $beforeTerminate = $rebuilder->calls;
@@ -159,7 +159,7 @@ it('AC-14: keeps serving the last known manifest, marked stale, and schedules a 
 
 it('AC-15: serves no rules, and rebuilds once, after the response', function (): void {
     $cache = new Repository(manifestStore());
-    $rebuilder = fakeRebuilder(fn (): bool => $cache->forever('dt:m', ManifestFixtures::json(9)));
+    $rebuilder = fakeRebuilder(fn (): bool => $cache->forever('dt:m:3', ManifestFixtures::json(9)));
     $repository = manifestRepository($cache, new FakeClock, $rebuilder);
 
     $manifests = [$repository->current(), $repository->current(), $repository->current()];
@@ -176,7 +176,7 @@ it('AC-15: serves no rules, and rebuilds once, after the response', function ():
 it('AC-16: treats a corrupt manifest as missing, and reports it', function (string $corrupt): void {
     Exceptions::fake();
     $cache = new Repository(manifestStore());
-    $cache->forever('dt:m', $corrupt);
+    $cache->forever('dt:m:3', $corrupt);
     $rebuilder = fakeRebuilder();
 
     $manifest = manifestRepository($cache, new FakeClock, $rebuilder)->current();
@@ -221,7 +221,7 @@ it('AC-18: runs no database query before the response', function (): void {
     $warm = app(ManifestRepository::class)->current();
     $queriesWarm = $queries;
     ManifestRepository::flushState();
-    Cache::forget('dt:m');
+    Cache::forget('dt:m:3');
     $missing = app(ManifestRepository::class)->current();
     $queriesBeforeResponse = $queries;
     app()->terminate();
@@ -229,15 +229,15 @@ it('AC-18: runs no database query before the response', function (): void {
     expect([$warm->state, $queriesWarm])->toBe([ManifestState::Fresh, 0])
         ->and([$missing->state, $queriesBeforeResponse])->toBe([ManifestState::Missing, 0])
         ->and($queries)->toBeGreaterThan(0)
-        ->and(Cache::get('dt:m'))->toBeString();
+        ->and(Cache::get('dt:m:3'))->toBeString();
 });
 
 it('AC-20: keeps the manifest in memory for the whole process, until flushState()', function (): void {
     $cache = new Repository(manifestStore());
-    $cache->forever('dt:m', ManifestFixtures::json(7));
+    $cache->forever('dt:m:3', ManifestFixtures::json(7));
     $first = manifestRepository($cache, new FakeClock, fakeRebuilder());
     $first->current();
-    $cache->forget('dt:m');
+    $cache->forget('dt:m:3');
 
     $fromAnotherInstance = manifestRepository($cache, new FakeClock, fakeRebuilder())->current();
     ManifestRepository::flushState();
@@ -268,14 +268,26 @@ it('SPEC-028 AC-4: throws nothing when reporting an unreadable manifest fails', 
         public function renderForConsole($output, Throwable $e): void {}
     });
     $cache = new Repository(manifestStore());
-    $cache->forever('dt:m', ManifestFixtures::json(7));
+    $cache->forever('dt:m:3', ManifestFixtures::json(7));
     $clock = new FakeClock;
     $repository = manifestRepository($cache, $clock, fakeRebuilder());
     $repository->current();
-    $cache->forget('dt:m');
+    $cache->forget('dt:m:3');
     $clock->setSeconds(FakeClock::T0 + 3);
 
     $manifest = $repository->current();
 
     expect([$manifest->version, $manifest->state])->toBe([7, ManifestState::Stale]);
+});
+
+it('AC-22: reads only its own format\'s key, so the manifest of another format counts as missing, not corrupt', function (): void {
+    Exceptions::fake();
+    $cache = new Repository(manifestStore());
+    $cache->forever('dt:m:4', ManifestFixtures::json(7));
+    $rebuilder = fakeRebuilder();
+
+    $manifest = manifestRepository($cache, new FakeClock, $rebuilder)->current();
+
+    expect($manifest->state)->toBe(ManifestState::Missing)
+        ->and(array_filter(Exceptions::reported(), fn (Throwable $exception): bool => $exception instanceof InvalidManifest))->toBe([]);
 });
