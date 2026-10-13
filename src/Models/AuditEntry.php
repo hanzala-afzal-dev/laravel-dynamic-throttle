@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle\Models;
 
 use Afzal\DynamicThrottle\Enums\AuditAction;
+use Afzal\DynamicThrottle\Models\Concerns\StoresTimesInUtc;
 use Afzal\DynamicThrottle\Models\Concerns\UsesPackageConnection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -28,6 +29,7 @@ use LogicException;
  */
 final class AuditEntry extends Model
 {
+    use StoresTimesInUtc;
     use UsesPackageConnection;
 
     /** Entries are never updated. */

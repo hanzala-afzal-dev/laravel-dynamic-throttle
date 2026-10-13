@@ -9,6 +9,7 @@ use Afzal\DynamicThrottle\Enums\MissingIdentity;
 use Afzal\DynamicThrottle\Enums\RequestMethod;
 use Afzal\DynamicThrottle\Enums\RuleMode;
 use Afzal\DynamicThrottle\Enums\Scope;
+use Afzal\DynamicThrottle\Models\Concerns\StoresTimesInUtc;
 use Afzal\DynamicThrottle\Models\Concerns\UsesPackageConnection;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -40,6 +41,7 @@ use Illuminate\Support\Carbon;
  */
 final class Rule extends Model
 {
+    use StoresTimesInUtc;
     use UsesPackageConnection;
 
     protected $table = 'dynamic_throttle_rules';
