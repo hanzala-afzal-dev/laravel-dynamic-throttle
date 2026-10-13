@@ -113,6 +113,7 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
                 $app,
                 $refreshSeconds,
                 $this->localManifestCache($app, $keys, $refreshSeconds),
+                $this->sharedFailureMemory($app),
             );
         });
 
@@ -330,18 +331,29 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
      */
     private function failureMemories(Application $app): array
     {
-        $memories = [$app->make(ProcessFailureMemory::class)];
+        $shared = $this->sharedFailureMemory($app);
 
+        return $shared instanceof FailureMemory
+            ? [$app->make(ProcessFailureMemory::class), $shared]
+            : [$app->make(ProcessFailureMemory::class)];
+    }
+
+    /**
+     * APCu, where a server's PHP-FPM workers share what failed, or null without it.
+     */
+    private function sharedFailureMemory(Application $app): ?FailureMemory
+    {
         // fake()'s failures stay in the process: APCu would carry them from one test to the next.
-        if (ApcuFailureMemory::available() && ! $app->make(DynamicThrottle::class)->isFaked()) {
-            try {
-                $memories[] = new ApcuFailureMemory($app->make(KeyBuilder::class), $this->appId($app));
-            } catch (Throwable) {
-                // An invalid prefix, reported where the counter store is built. The process still remembers.
-            }
+        if (! ApcuFailureMemory::available() || $app->make(DynamicThrottle::class)->isFaked()) {
+            return null;
         }
 
-        return $memories;
+        try {
+            return new ApcuFailureMemory($app->make(KeyBuilder::class), $this->appId($app));
+        } catch (Throwable) {
+            // An invalid prefix, reported where the counter store is built. The process still remembers.
+            return null;
+        }
     }
 
     private function ipv6Prefix(Application $app): int

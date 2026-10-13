@@ -25,11 +25,14 @@ Phase 3's exit needs `docs/runbook.md`: what to do when "Redis is down", "the ma
 
 ## Acceptance criteria
 
-- **AC-1 (Redis is down)** Given an enforcing fail-open rule, a fail-closed rule on another route, and a counter store that fails:
-  - a request to the fail-open rule's route is let through without rate-limit headers, and the failure is reported once per `failure.cooldown_seconds`, however many requests come;
-  - a request to the fail-closed rule's route gets a 503 with `Retry-After`;
-  - `dynamic-throttle:status` still exits 0 and prints the driver;
-  - after the store recovers and the cooldown ends, the next request is counted again and gets its headers.
+- **AC-1 (Redis is down)** Given an enforcing fail-open rule, a fail-closed rule on another route, and one cache store that holds the manifest and the counters, as Redis usually does, and goes down:
+  - a request to the fail-open rule's route is let through without rate-limit headers. The counters' failure is reported once per `failure.cooldown_seconds`, and the manifest's once per 30 seconds, however many requests come;
+  - a request to the fail-closed rule's route gets a 503 with `Retry-After`, from the rules the process read before the outage;
+  - a process that starts during the outage applies no rule, not even the fail-closed one;
+  - `dynamic-throttle:status` still exits 0, prints the driver, and says the manifest cannot be read;
+  - when only the counter store is down, `bypass on --for=30m --force` lets every request through. When the manifest's store is down too, `bypass` exits 1, and `DYNAMIC_THROTTLE_ENABLED=false` lets every request through;
+  - after the store recovers and the cooldown ends, the next request is counted again and gets its headers;
+  - on PHP-FPM with APCu, the manifest's failure is reported at most once per 30 seconds per server (a gap, below).
 - **AC-2 (the manifest was evicted)** Given a compiled manifest that the cache loses:
   - a process that had read it keeps applying its rules, and rebuilds it after a response;
   - a process that had not applies no rule to the first request, rebuilds the manifest after that request's response, and limits the next request;
@@ -55,6 +58,7 @@ Phase 3's exit needs `docs/runbook.md`: what to do when "Redis is down", "the ma
 
 - `docs/runbook.md`.
 - `tests/Feature/Runbook/RedisDownTest.php`, `ManifestEvictedTest.php`, `BadRuleTest.php` and `EmergencyLeftOnTest.php`.
+- `tests/Support/OutageCache.php`: a cache store that goes down and comes back with its data.
 - `src/Support/Health/Checks/EmergencyCheck.php`, registered in the health checks after `manifest`. The check id `emergency` joins the command's public ids (SPEC-016 decision 2).
 - `README.md` and `docs/guide/README.md`: a link to the runbook, and the new check in the README's command table only if it lists checks.
 
@@ -71,6 +75,10 @@ Phase 3's exit needs `docs/runbook.md`: what to do when "Redis is down", "the ma
 - **The cooldown** is per process, or per server with APCu, so different servers retry the store at different times.
 - **`--force`** is in the runbook's commands, because an incident's terminal may not answer the production confirmation. The runbook says what each confirmation protects against.
 - **`emergency` near the boundary:** a setting that ends exactly 24 hours ahead is ok.
+
+## Gaps found
+
+- **The manifest's failure report on PHP-FPM** (part 2). SPEC-006 AC-17 reports an unreadable manifest at most once per 30 seconds, but kept the time of the last report in the process, which PHP-FPM empties on every request. A Redis outage reported it about once per `manifest.refresh_seconds` per server with APCu, and on every request with no manifest to fall back on. The time is now kept in APCu too, as the counter store's reports are (SPEC-012). Tested by `tests/Apcu/ApcuManifestReportTest.php`.
 
 ## End-to-end verification
 
