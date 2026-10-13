@@ -72,7 +72,7 @@
 Accepted on 2026-09-28, at the Phase 2 exit review: the maintainer accepted the proposal as it stands, including pushes to stacked `phase-N/spec-NNN` branches.
 
 Amended on 2026-10-07, after SPEC-014's PR reached about 6,000 added lines, and the branches of SPEC-015 and SPEC-016, built but not yet opened, about 11,300 and 4,400. PHPBench's raw XML was 2,600 of SPEC-014's lines and 6,400 of SPEC-015's. The maintainer asked for smaller PRs to speed up the reviews, and Copilot's code review, which is metered by what it reads, had stopped at the maintainer's quota. The maintainer accepted the recommendation:
-- Point 2: a spec ships as small PRs of about 300 to 600 lines of `src` each, with their tests. SPEC-015 is re-cut into three PRs and SPEC-016 into four. SPEC-014's PR stays as it is.
+- Point 2: a spec ships as small PRs of about 300 to 600 lines of `src` each, with their tests. SPEC-015 is re-cut into three PRs and SPEC-016 into five. SPEC-014's PR stays as it is.
 - Point 3: the PRs open as soon as they are green, stacked, and the next one's base switches to `main` when one merges.
 - Point 4: the checks run per PR, and a benchmark's raw XML stays out of the repository. The dumps already committed stay.
 - `.github/copilot-instructions.md` asks Copilot to read the PR's spec and the ADRs it cites, rather than all of `docs/` and the changelog.
