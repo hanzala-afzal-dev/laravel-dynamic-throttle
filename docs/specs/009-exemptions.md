@@ -162,6 +162,7 @@ Unless stated otherwise, matching criteria use `RequestIdentityResolver` on a `R
   - what they add to decoding;
   - what checking a request against them costs, which should not grow with their number.
 
+- **AC-24 Times in UTC** (decided at the Phase 3 review, 2026-10-13). The exemptions table stores `expires_at`, and its timestamps, in UTC, whatever the app's time zone, and the compiler reads them as UTC. An expiry in the repeated hour of a daylight-saving change compiles to the instant it was given, not an hour later. The model reads them back in the app's zone. Tested by `tests/Feature/Models/TimesInUtcTest.php`.
 ## Interfaces and files
 - `src/Enums/ExemptionSubject.php`
 - `database/migrations/2026_09_25_000001_create_dynamic_throttle_exemptions_table.php`

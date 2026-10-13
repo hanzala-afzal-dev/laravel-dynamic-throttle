@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - config keys `driver` (`auto`, `redis`, `cache`), `store`, `redis_connection` and `prefix`
   - `StorageUnavailableException` for every storage failure
 - Config key `database.connection` (`DYNAMIC_THROTTLE_DB_CONNECTION`): the connection for the package's tables.
+- The package's tables store their times in UTC, whatever your app's time zone, so a daylight-saving change cannot move an exemption's or a setting's end time by the repeated hour. The models give them back in your app's zone.
 - A published config keeps working across upgrades: new nested defaults are added, and lists stay as you wrote them.
 - The rules table, `dynamic_throttle_rules`: publish it with `php artisan vendor:publish --tag=dynamic-throttle-migrations`, then run `php artisan migrate`.
 - The `Rule` model, and the backed enums `RequestMethod`, `Scope`, `RuleMode`, `FailurePolicy` and `MissingIdentity`.
