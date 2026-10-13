@@ -36,8 +36,10 @@ Phase 3's exit needs `docs/runbook.md`: what to do when "Redis is down", "the ma
 - **AC-2 (the manifest was evicted)** Given a compiled manifest that the cache loses:
   - a process that had read it keeps applying its rules, and rebuilds it after a response;
   - a process that had not applies no rule to the first request, rebuilds the manifest after that request's response, and limits the next request;
+  - the missing manifest is reported, once;
   - before the rebuild, `dynamic-throttle:status` prints "missing: run php artisan dynamic-throttle:compile", and `dynamic-throttle:health` errs on `manifest` and exits 1;
-  - `dynamic-throttle:compile` restores it at once, and then `health`'s `manifest` check is ok.
+  - `dynamic-throttle:compile` restores it at once, and then `health`'s `manifest` check is ok;
+  - with the database down, the rebuild fails and is reported, the requests meanwhile apply no rule, and the rebuild is tried again at most once per 30 seconds. `compile` prints "Could not compile the manifest" and exits 1, and once the database is back, it restores the manifest.
 - **AC-3 (a bad rule blocks /api)** Given an enforcing rule that answers 429 to every request under `/api`:
   - `dynamic-throttle:explain GET /api/orders` names the rule and its 429;
   - `dynamic-throttle:list` shows its id, and `dynamic-throttle:disable-rule <id> --force` stops the 429s for the requests after it, and writes one audit entry;

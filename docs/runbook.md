@@ -12,6 +12,7 @@ Each scenario links the test that follows its steps, so the steps stay true as t
 | Scenario | In short |
 |---|---|
 | [Redis is down](#redis-is-down) | Limits are off, fail-closed routes answer 503, and both recover by themselves. |
+| [The manifest was evicted](#the-manifest-was-evicted) | Usually heals itself after one request. Run `dynamic-throttle:compile` if it does not. |
 
 ## Before you need it
 
@@ -62,6 +63,47 @@ It still exits 0, and prints the driver, such as `redis, connection default`. Wh
 
 - **Counting resumes by itself.** Each process, or each server with APCu, tries Redis again when its cooldown ends, and counts from then on. Nothing needs to run.
 - **If Redis kept its data,** the counts from before the outage still count, and servers read the manifest again within `manifest.refresh_seconds`.
-- **If Redis came back empty,** every client starts a fresh window, and the manifest is gone. The first request after it rebuilds it once its response is sent, or run `php artisan dynamic-throttle:compile`.
+- **If Redis came back empty,** every client starts a fresh window, and the manifest is gone: see [the manifest was evicted](#the-manifest-was-evicted).
 - **Undo what you changed:** `php artisan dynamic-throttle:bypass off`, or set `DYNAMIC_THROTTLE_ENABLED` back and reload the config. A bypass that was saved while the manifest could not be written applies at the next compile, such as the scheduled one, until its end time, so turn it off if you no longer want it.
 - **Check:** `php artisan dynamic-throttle:status` shows the manifest's version, and `Bypass` off.
+
+## The manifest was evicted
+
+The manifest is the compiled copy of your rules that requests read from the cache. The cache can lose it: Redis evicts it when its memory is full, restarts without persistence, or `php artisan cache:clear` empties it.
+
+Tested by [ManifestEvictedTest](../tests/Feature/Runbook/ManifestEvictedTest.php).
+
+### Symptoms
+
+- **Usually, one request without limits, then nothing.** A process that had read the manifest keeps applying its rules. One that had not applies no rule to its first request, and that request rebuilds the manifest from the database once its response is sent. The next request is limited again.
+- **Your error tracker** shows `ManifestUnavailable`: "The manifest is missing from the cache. One request will rebuild it after its response." It is reported at most once per 30 seconds, per process, or per server on PHP-FPM with APCu.
+- **When the rebuild fails,** such as when the database is down, it also shows `ManifestCompileFailed`: "The manifest could not be compiled: …". Processes that had not read the manifest then apply no rule until a compile succeeds. One request, across your servers, tries the rebuild again every 30 seconds.
+
+### Check
+
+```bash
+php artisan dynamic-throttle:status
+php artisan dynamic-throttle:health
+```
+
+Until the manifest is rebuilt, `status` prints `missing: run php artisan dynamic-throttle:compile` on the `Manifest` line, and exits 0. `health` errs on `manifest`, "The manifest is missing, so no rule applies", and exits 1.
+
+### Act
+
+1. **Rebuild it now:**
+
+   ```bash
+   php artisan dynamic-throttle:compile
+   ```
+
+   It prints `Compiled manifest version …`. Servers read it on their next request, or within `manifest.refresh_seconds` for those that kept the previous one.
+2. **If it prints `Could not compile the manifest: …`,** fix what it names, usually the database connection, and run it again.
+3. **If the cache keeps losing it,** remove the cause:
+   - **Redis is full and evicts keys.** Give it more memory, or give the counters a Redis of their own (`DYNAMIC_THROTTLE_REDIS_CONNECTION`), so they cannot crowd the manifest out. The manifest has no expiry and the counters do, so a `volatile-*` eviction policy never evicts the manifest.
+   - **`php artisan cache:clear`** empties the cache store, the manifest with it. Run `php artisan dynamic-throttle:compile` right after it, such as in your deploy script.
+
+### After
+
+- **Check:** `php artisan dynamic-throttle:health` shows `manifest` ok, with the new version.
+- **Nothing to undo:** a compile changes no rule.
+- **The scheduler heals it too.** With `manifest.schedule` on, the default, the scheduler runs `dynamic-throttle:compile` every five minutes, so a manifest lost while nobody watches comes back by itself, as long as `php artisan schedule:run` runs every minute.
