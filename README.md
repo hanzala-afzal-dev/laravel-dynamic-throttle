@@ -237,7 +237,7 @@ php artisan dynamic-throttle:status                # check what the servers appl
 php artisan dynamic-throttle:bypass off
 ```
 
-Bypass and scaling end by themselves: after one hour, unless you pass `--for` or `--forever`. Each change is written to an append-only audit log. When the database and the cache are both down, set `DYNAMIC_THROTTLE_ENABLED=false`. More in [during an incident](docs/guide/incidents.md).
+Bypass and scaling end by themselves: after one hour, unless you pass `--for` or `--forever`. Each change is written to an append-only audit log. When the database and the cache are both down, set `DYNAMIC_THROTTLE_ENABLED=false`. More in [during an incident](docs/guide/incidents.md), and step by step in the [runbook](docs/runbook.md).
 
 ## Events
 
@@ -306,6 +306,7 @@ The [guide](docs/guide/README.md) covers the details:
 - [When something fails](docs/guide/failures.md): fail open or closed, the cooldown, strict mode
 - [Why a request is limited](docs/guide/explain.md) and [health checks](docs/guide/health.md)
 - [Traffic and blocks](docs/guide/telemetry.md): what each rule did, per hour
+- [Runbook](docs/runbook.md): what to do when Redis is down, the manifest was evicted, a bad rule blocks `/api`, or an emergency change was left on
 
 ## Contributing
 

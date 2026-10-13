@@ -14,6 +14,7 @@ Each scenario links the test that follows its steps, so the steps stay true as t
 | [Redis is down](#redis-is-down) | Limits are off, fail-closed routes answer 503, and both recover by themselves. |
 | [The manifest was evicted](#the-manifest-was-evicted) | Usually heals itself after one request. Run `dynamic-throttle:compile` if it does not. |
 | [A bad rule blocks /api](#a-bad-rule-blocks-api) | Find it with `explain`, switch it off with `disable-rule`, or bypass every rule. |
+| [An emergency change was left on](#an-emergency-change-was-left-on) | `health --strict` warns about it. End it with `bypass off` or `scale off`. |
 
 ## Before you need it
 
@@ -169,3 +170,46 @@ When the rule is an `ip` rule and every client seems to share one counter, check
 
 - **Check:** `dynamic-throttle:explain GET /api/orders` shows the fixed rule and `Decision: allowed`. If you bypassed, `php artisan dynamic-throttle:status` shows its end time; end it early with `php artisan dynamic-throttle:bypass off`.
 - **The audit log** has one entry for each command that changed something, `rule.disable`, `rule.enable` or `settings.bypass`, with the system user who ran it ([during an incident](guide/incidents.md)).
+
+## An emergency change was left on
+
+Someone turned bypass or a scale factor on during an incident, and nobody turned it off. Bypass lifts every limit. A factor below 1 tightens every limit, and one above 1 loosens them.
+
+Tested by [EmergencyLeftOnTest](../tests/Feature/Runbook/EmergencyLeftOnTest.php), and the `emergency` check by [HealthEmergencyTest](../tests/Feature/Console/HealthEmergencyTest.php).
+
+### Symptoms
+
+- **Nothing is limited** while bypass is on. Responses carry no `X-RateLimit-*` headers.
+- **`dynamic-throttle:health --strict` fails** in your deploy script, on `emergency`, such as "Bypass applies with no end time: end it with php artisan dynamic-throttle:bypass off once the emergency is over."
+
+### Check
+
+```bash
+php artisan dynamic-throttle:status
+php artisan dynamic-throttle:health
+```
+
+`status` shows each setting with its end time: `on until 2027-01-15 08:30:00 UTC, 30 minutes left`, `ended at …` once it has ended, or `on, with no end time` for `--forever`. The `emergency` check warns about a setting with no end time, or one more than 24 hours away. One that ends within 24 hours is ok, with its end time, so a deploy in the middle of an incident still passes `--strict`.
+
+### Act
+
+1. **A setting with an end time needs nothing.** Without `--for`, bypass and scaling end after one hour, by each server's clock, with no command and no compile.
+2. **End it now:**
+
+   ```bash
+   php artisan dynamic-throttle:bypass off
+   php artisan dynamic-throttle:scale off
+   ```
+
+   Servers apply it within `manifest.refresh_seconds`, and count requests again.
+3. **If you still need it,** give it an end time instead of `--forever`, so that it cannot be forgotten. A day or less keeps `health --strict` passing:
+
+   ```bash
+   php artisan dynamic-throttle:bypass on --for=1d --force
+   ```
+
+### After
+
+- **Check:** `status` shows `Bypass` and `Scale` off, and `php artisan dynamic-throttle:health --strict` passes `emergency`.
+- **The audit log** says who turned it on, and when: a `settings.bypass` or `settings.scale` entry with the system user who ran the command ([during an incident](guide/incidents.md)).
+- **To catch it sooner next time,** run `php artisan dynamic-throttle:health --strict` in your deploy script, or on a schedule.

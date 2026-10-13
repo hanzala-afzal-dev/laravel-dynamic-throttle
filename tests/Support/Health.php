@@ -20,7 +20,7 @@ final class Health
     public const array CHECKS = [
         'config', 'store', 'cache-clear', 'app-key',
         'attached', 'except', 'two-limiters', 'middleware-order',
-        'manifest', 'metrics',
+        'manifest', 'emergency', 'metrics',
         'guests', 'dominant-ip', 'ignored',
     ];
 

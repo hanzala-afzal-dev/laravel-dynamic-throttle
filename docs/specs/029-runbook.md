@@ -1,6 +1,6 @@
 # SPEC-029: The runbook
 
-- Status: In progress
+- Status: Done
 - ADRs: ADR-0007, ADR-0010, ADR-0011, ADR-0015
 - Roadmap phase: 3
 
