@@ -75,3 +75,5 @@ On 2026-10-01, for SPEC-013, the maintainer decided that the audit log's table, 
 On 2026-10-08, the first release moved to the end of Phase 5, with the dashboard ([ADR-0018's decision record](0018-minimal-dashboard.md#decision-record)), so 0.1.0 is not CLI-only after all. The CLI's entries still ship in Phase 3, as decided above.
 
 On 2026-10-14, for SPEC-018, the maintainer chose `['web']` as the default middleware instead of `['web', 'auth']`, as Horizon does. Security is the same: a gate the app has not defined allows the `local` environment only, and a defined gate denies guests unless its callback accepts a null user. `auth` would fail with "Route [login] not defined" in apps without a login page, such as API-only apps, and would ask for a login even in local development.
+
+On 2026-10-14, for SPEC-017, the JSON API's entries moved from SPEC-019 to SPEC-017: each change writes its entry in the same transaction (point 3), from the API's first change endpoint. SPEC-019 reads them.
