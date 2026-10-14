@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle\Dashboard;
 
+use Afzal\DynamicThrottle\Dashboard\Api\ExemptionController;
 use Afzal\DynamicThrottle\Dashboard\Api\RuleController;
 use Afzal\DynamicThrottle\Dashboard\Api\SettingController;
 use Afzal\DynamicThrottle\Http\DashboardPath;
@@ -52,6 +53,10 @@ final class DashboardRoutes
             $router->name('api.rules.show')->middleware(self::middleware('read'))->get('api/rules/{rule}', [RuleController::class, 'show'])->whereNumber('rule');
             $router->name('api.rules.update')->middleware(self::middleware('write'))->patch('api/rules/{rule}', [RuleController::class, 'update'])->whereNumber('rule');
             $router->name('api.rules.destroy')->middleware(self::middleware('write'))->delete('api/rules/{rule}', [RuleController::class, 'destroy'])->whereNumber('rule');
+
+            $router->name('api.exemptions.index')->middleware(self::middleware('read'))->get('api/exemptions', [ExemptionController::class, 'index']);
+            $router->name('api.exemptions.store')->middleware(self::middleware('write'))->post('api/exemptions', [ExemptionController::class, 'store']);
+            $router->name('api.exemptions.destroy')->middleware(self::middleware('write'))->delete('api/exemptions/{exemption}', [ExemptionController::class, 'destroy'])->whereNumber('exemption');
 
             $router->name('api.settings')->middleware(self::middleware('read'))->get('api/settings', [SettingController::class, 'show']);
             $router->name('api.settings.bypass')->middleware(self::middleware('write'))->put('api/settings/bypass', [SettingController::class, 'bypass']);

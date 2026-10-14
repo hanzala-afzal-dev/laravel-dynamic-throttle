@@ -17,4 +17,6 @@ enum AuditAction: string
     case RuleCreate = 'rule.create';
     case RuleUpdate = 'rule.update';
     case RuleDelete = 'rule.delete';
+    case ExemptionCreate = 'exemption.create';
+    case ExemptionDelete = 'exemption.delete';
 }
