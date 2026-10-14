@@ -25,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The `Rule` model, and the backed enums `RequestMethod`, `Scope`, `RuleMode`, `FailurePolicy` and `MissingIdentity`.
 - The rules manifest: requests read the rules from the cache, never from the database.
   - Saving a rule recompiles it after the transaction commits.
+  - Its cache key names its format, such as `dt:m:3`, so during a rolling deploy, servers of two versions of the package keep one manifest each.
   - `php artisan dynamic-throttle:compile` compiles it from deploy scripts, and the scheduler runs it every five minutes, so a cleared cache heals itself (`manifest.schedule`).
   - Octane and queue workers keep it in memory, and check the cache every `manifest.refresh_seconds` (`DYNAMIC_THROTTLE_MANIFEST_REFRESH`, default 2).
   - On PHP-FPM with the APCu extension, a server's workers share it in APCu, so a server reads the cache about once per `refresh_seconds` instead of on every request, and a request builds only the rules it matches. With 100 rules, a request takes about 0.27 ms less at p50 and 0.6 ms less at p95, and on Redis it saves a round trip. Each app of the server, and each installed version of the package, has an entry of its own. `refresh_seconds` 0 turns it off.

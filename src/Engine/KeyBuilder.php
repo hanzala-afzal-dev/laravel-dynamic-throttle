@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle\Engine;
 
 use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryMetric;
+use Afzal\DynamicThrottle\Manifest\ManifestCodec;
 use InvalidArgumentException;
 
 /**
@@ -39,11 +40,13 @@ final readonly class KeyBuilder
 
     /**
      * The compiled rules every request reads (ADR-0007, SPEC-006). Counter keys start with
-     * "c:", so the two never collide.
+     * "c:", so the two never collide. The key names the manifest's format, so servers of two
+     * versions of the package keep one each during a rolling deploy, instead of reading the
+     * other's as corrupt and rebuilding it (AC-22).
      */
     public function manifest(): string
     {
-        return "{$this->prefix}m";
+        return "{$this->prefix}m:".ManifestCodec::FORMAT;
     }
 
     /**
