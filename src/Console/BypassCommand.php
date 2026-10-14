@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle\Console;
 
 use Afzal\DynamicThrottle\Support\ChangeOutcome;
+use Afzal\DynamicThrottle\Support\Changes\Actor;
 use Afzal\DynamicThrottle\Support\EmergencyControls;
 use Carbon\CarbonInterface;
 use InvalidArgumentException;
@@ -37,7 +38,7 @@ final class BypassCommand extends ChangeCommand
         }
 
         if ($state === 'off') {
-            return $this->change(fn (string $actor): ChangeOutcome => $controls->endBypass($actor), 'Bypass is off: the rules apply again.', 'Bypass is already off.');
+            return $this->change(fn (Actor $actor): ChangeOutcome => $controls->endBypass($actor), 'Bypass is off: the rules apply again.', 'Bypass is already off.');
         }
 
         if (! $this->confirmed('Bypass lets every request through, unlimited')) {
@@ -45,7 +46,7 @@ final class BypassCommand extends ChangeCommand
         }
 
         return $this->change(
-            fn (string $actor): ChangeOutcome => $controls->bypass($until, $actor),
+            fn (Actor $actor): ChangeOutcome => $controls->bypass($until, $actor),
             $until instanceof CarbonInterface
                 ? "Bypass is on until {$this->time($until)}: every request goes through, unlimited."
                 : 'Bypass is on, with no end time: every request goes through, unlimited. Turn it off with php artisan dynamic-throttle:bypass off.',

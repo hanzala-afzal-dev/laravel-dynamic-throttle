@@ -12,6 +12,7 @@ use Afzal\DynamicThrottle\Enums\SettingName;
 use Afzal\DynamicThrottle\Models\AuditEntry;
 use Afzal\DynamicThrottle\Models\Rule;
 use Afzal\DynamicThrottle\Models\Setting;
+use Afzal\DynamicThrottle\Support\Changes\Actor;
 use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Database\ConnectionInterface;
@@ -29,7 +30,7 @@ use Throwable;
  * manifest once, after the commit, as for any change (ADR-0007), and the change
  * reads that compile back, so the caller can tell whether servers will see it.
  * In a surrounding transaction, the compile waits for it to commit. The commands
- * use it, and the JSON API (SPEC-017) and the dashboard (SPEC-021) will.
+ * and the JSON API (SPEC-017) use it.
  *
  * @internal
  */
@@ -47,7 +48,7 @@ final readonly class EmergencyControls
      *
      * @throws TableMissing|Throwable from the database, with nothing written
      */
-    public function bypass(?CarbonInterface $until, string $actor): ChangeOutcome
+    public function bypass(?CarbonInterface $until, Actor $actor): ChangeOutcome
     {
         return $this->setting(SettingName::BypassAll, AuditAction::SettingsBypass, '1', $until, $actor);
     }
@@ -55,7 +56,7 @@ final readonly class EmergencyControls
     /**
      * @throws TableMissing|Throwable from the database, with nothing written
      */
-    public function endBypass(string $actor): ChangeOutcome
+    public function endBypass(Actor $actor): ChangeOutcome
     {
         return $this->setting(SettingName::BypassAll, AuditAction::SettingsBypass, null, null, $actor);
     }
@@ -66,7 +67,7 @@ final readonly class EmergencyControls
      *
      * @throws TableMissing|Throwable from the database, with nothing written
      */
-    public function scale(int $percent, ?CarbonInterface $until, string $actor): ChangeOutcome
+    public function scale(int $percent, ?CarbonInterface $until, Actor $actor): ChangeOutcome
     {
         return $this->setting(SettingName::ScaleFactor, AuditAction::SettingsScale, ScaleFactor::format($percent), $until, $actor);
     }
@@ -74,7 +75,7 @@ final readonly class EmergencyControls
     /**
      * @throws TableMissing|Throwable from the database, with nothing written
      */
-    public function endScale(string $actor): ChangeOutcome
+    public function endScale(Actor $actor): ChangeOutcome
     {
         return $this->setting(SettingName::ScaleFactor, AuditAction::SettingsScale, null, null, $actor);
     }
@@ -82,7 +83,7 @@ final readonly class EmergencyControls
     /**
      * @throws TableMissing|Throwable from the database, with nothing written
      */
-    public function setRuleEnabled(Rule $rule, bool $enabled, string $actor): ChangeOutcome
+    public function setRuleEnabled(Rule $rule, bool $enabled, Actor $actor): ChangeOutcome
     {
         $this->requireTable(new AuditEntry);
 
@@ -107,7 +108,7 @@ final readonly class EmergencyControls
      *
      * @throws TableMissing|Throwable from the database, with nothing written
      */
-    private function setting(SettingName $name, AuditAction $action, ?string $value, ?CarbonInterface $until, string $actor): ChangeOutcome
+    private function setting(SettingName $name, AuditAction $action, ?string $value, ?CarbonInterface $until, Actor $actor): ChangeOutcome
     {
         $this->requireTable(new Setting);
         $this->requireTable(new AuditEntry);
@@ -191,14 +192,16 @@ final readonly class EmergencyControls
      * @param  ?array<string, mixed>  $before
      * @param  ?array<string, mixed>  $after
      */
-    private function audit(string $actor, AuditAction $action, string $target, ?array $before, ?array $after): void
+    private function audit(Actor $actor, AuditAction $action, string $target, ?array $before, ?array $after): void
     {
         AuditEntry::query()->create([
-            'actor' => $actor,
+            'actor' => $actor->name,
             'action' => $action,
             'target' => $target,
             'before' => $before,
             'after' => $after,
+            'ip' => $actor->ip,
+            'user_agent' => $actor->userAgent,
         ]);
     }
 

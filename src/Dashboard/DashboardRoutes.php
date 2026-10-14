@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle\Dashboard;
 
+use Afzal\DynamicThrottle\Dashboard\Api\SettingController;
 use Afzal\DynamicThrottle\Http\DashboardPath;
 use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -44,6 +45,10 @@ final class DashboardRoutes
         ]), function (Router $router): void {
             // Named before it is added, so the router's name lookups know it at once.
             $router->name('api.me')->middleware(self::middleware('read'))->get('api/me', MeController::class);
+
+            $router->name('api.settings')->middleware(self::middleware('read'))->get('api/settings', [SettingController::class, 'show']);
+            $router->name('api.settings.bypass')->middleware(self::middleware('write'))->put('api/settings/bypass', [SettingController::class, 'bypass']);
+            $router->name('api.settings.scale')->middleware(self::middleware('write'))->put('api/settings/scale', [SettingController::class, 'scale']);
         });
     }
 

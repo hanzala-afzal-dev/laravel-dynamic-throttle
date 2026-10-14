@@ -6,6 +6,7 @@ namespace Afzal\DynamicThrottle\Console;
 
 use Afzal\DynamicThrottle\Models\Rule;
 use Afzal\DynamicThrottle\Support\ChangeOutcome;
+use Afzal\DynamicThrottle\Support\Changes\Actor;
 use Afzal\DynamicThrottle\Support\EmergencyControls;
 
 /**
@@ -29,6 +30,6 @@ final class EnableRuleCommand extends ChangeCommand
 
         $label = $this->label($rule);
 
-        return $this->change(fn (string $actor): ChangeOutcome => $controls->setRuleEnabled($rule, true, $actor), "{$label} is enabled.", "{$label} is already enabled.");
+        return $this->change(fn (Actor $actor): ChangeOutcome => $controls->setRuleEnabled($rule, true, $actor), "{$label} is enabled.", "{$label} is already enabled.");
     }
 }
