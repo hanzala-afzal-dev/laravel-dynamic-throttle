@@ -17,13 +17,17 @@ use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Date;
 use Throwable;
 
 /**
- * The changes an admin makes during an incident (ADR-0011, SPEC-013): bypass, the
- * scale factor, and switching one rule off or on (ADR-0015 point 4).
+ * The changes an admin makes (ADR-0011, ADR-0015): bypass, the scale factor and
+ * switching one rule off or on, from the CLI and the JSON API (SPEC-013), and
+ * creating, changing and deleting rules from the JSON API (SPEC-017). It is the
+ * only writer of the audit log (SPEC-013 AC-23).
  *
  * Each change and its audit entry are written in one transaction, so neither is
  * kept without the other (ADR-0015 point 3). The models' observer compiles the
@@ -101,6 +105,99 @@ final readonly class EmergencyControls
 
             return true;
         });
+    }
+
+    /**
+     * Saves a new rule, with its rule.create entry (SPEC-017). The outcome is about the
+     * rule, as the database stored it.
+     *
+     * @param  array<string, mixed>  $attributes  validated (SPEC-018)
+     *
+     * @throws TableMissing|Throwable from the database, with nothing written
+     */
+    public function createRule(array $attributes, Actor $actor): ChangeOutcome
+    {
+        $this->requireTable(new AuditEntry);
+        $created = null;
+
+        // Created inside the transaction, so a retry after a deadlock inserts afresh.
+        $outcome = $this->change((new Rule)->getConnection(), function () use ($attributes, $actor, &$created): bool {
+            $created = Rule::query()->create($attributes)->refresh();
+            $this->audit($actor, AuditAction::RuleCreate, "rule:{$created->id}", null, $this->ruleState($created));
+
+            return true;
+        });
+
+        return $created instanceof Rule ? $outcome->about($created) : $outcome;
+    }
+
+    /**
+     * Changes a rule, with an entry for the fields that changed: rule.enable or
+     * rule.disable when only enabled did, as the CLI records it, and rule.update
+     * otherwise (SPEC-017 decision 7). The changes are worked out from the rule as
+     * read again, locked, so another admin's change in between is never lost.
+     *
+     * @param  Closure(Rule): array<string, mixed>  $changes  the attributes to fill, validated against the locked rule; it throws to change nothing
+     *
+     * @throws ModelNotFoundException when the rule was deleted meanwhile
+     * @throws TableMissing|Throwable from the database or from $changes, with nothing written
+     */
+    public function updateRule(Rule $rule, Closure $changes, Actor $actor): ChangeOutcome
+    {
+        $this->requireTable(new AuditEntry);
+        $current = $rule;
+
+        $outcome = $this->change($rule->getConnection(), function () use ($rule, $changes, $actor, &$current): bool {
+            $current = Rule::query()->whereKey($rule->getKey())->lockForUpdate()->firstOrFail();
+            $before = $current->attributesToArray();
+            $current->fill($changes($current));
+            $dirty = array_keys($current->getDirty());
+
+            if ($dirty === []) {
+                return false;
+            }
+
+            $current->save();
+            $action = match (true) {
+                $dirty !== ['enabled'] => AuditAction::RuleUpdate,
+                $current->enabled => AuditAction::RuleEnable,
+                default => AuditAction::RuleDisable,
+            };
+            $this->audit($actor, $action, "rule:{$current->id}", Arr::only($before, $dirty), Arr::only($current->attributesToArray(), $dirty));
+
+            return true;
+        });
+
+        return $outcome->about($current);
+    }
+
+    /**
+     * Deletes a rule and the exemptions that name it, with one rule.delete entry that
+     * counts them (SPEC-017 decision 8): listing them could outgrow the column.
+     *
+     * @param  Closure(Rule): void  $check  given the locked rule; it throws to delete nothing, such as for a missing confirm
+     *
+     * @throws ModelNotFoundException when the rule was deleted meanwhile
+     * @throws TableMissing|Throwable from the database or from $check, with nothing written
+     */
+    public function deleteRule(Rule $rule, Closure $check, Actor $actor): ChangeOutcome
+    {
+        $this->requireTable(new AuditEntry);
+        $current = $rule;
+
+        $outcome = $this->change($rule->getConnection(), function () use ($rule, $check, $actor, &$current): bool {
+            $current = Rule::query()->whereKey($rule->getKey())->lockForUpdate()->firstOrFail();
+            $check($current);
+            $before = $this->ruleState($current);
+            // Without the foreign key's help, which SQLite may not enforce, and without a compile for each.
+            $exemptions = $current->exemptions()->delete();
+            $current->delete();
+            $this->audit($actor, AuditAction::RuleDelete, "rule:{$current->id}", [...$before, 'exemptions_deleted' => $exemptions], null);
+
+            return true;
+        });
+
+        return $outcome->about($current);
     }
 
     /**
@@ -186,6 +283,16 @@ final readonly class EmergencyControls
     private function state(Setting $setting): array
     {
         return ['value' => $setting->value, 'expires_at' => $setting->expires_at?->toIso8601String()];
+    }
+
+    /**
+     * A rule's fields as an entry records them: what the API takes, enums as values.
+     *
+     * @return array<string, mixed>
+     */
+    private function ruleState(Rule $rule): array
+    {
+        return Arr::except($rule->attributesToArray(), ['id', 'created_at', 'updated_at']);
     }
 
     /**
