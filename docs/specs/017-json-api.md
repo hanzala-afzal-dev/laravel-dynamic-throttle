@@ -81,8 +81,9 @@ Every endpoint lives in SPEC-018's route group, under `{path}/api` (`/dynamic-th
 
 - `src/Dashboard/DashboardRoutes.php`: the routes above, each with SPEC-018's middleware.
 - `src/Dashboard/Authorize.php`: a third ability, `inspect`, for a POST that writes nothing: either gate, and only for POST (decision 2).
-- `src/Dashboard/Api/`: `RuleController.php`, `ExemptionController.php`, `SettingController.php`, `MetricsController.php`, `OffendersController.php`, `HealthController.php`, `ExplainController.php`, and `ApiErrors.php`, the controllers' JSON errors.
-- `src/Support/Changes/`: `Actor.php` (the actor, the IP and the user agent; `Actor::cli()` and `Actor::of(Request)`), `RuleChanges.php` and `ExemptionChanges.php`, which save a change and its entry in one transaction, and read the compile back, as `EmergencyControls` does. `EmergencyControls` takes an `Actor`, so the CLI's entries are unchanged and the API's carry the IP and the user agent.
+- `src/Dashboard/Api/`: `RuleController.php`, `ExemptionController.php`, `SettingController.php`, `MetricsController.php`, `OffendersController.php`, `HealthController.php`, `ExplainController.php`; `ApiErrors.php`, the controllers' JSON errors; `Changed.php`, a change's answer; and `Payloads.php`, how rules and exemptions are shown.
+- `src/Support/Changes/Actor.php`: the actor, the IP and the user agent; `Actor::cli()` and `Actor::of(Request)`. `EmergencyControls` takes an `Actor`, so the CLI's entries are unchanged and the API's carry the IP and the user agent.
+- `src/Support/EmergencyControls.php`: also creates, changes and deletes rules and exemptions, each with its entry in one transaction, and reads the compile back. It stays the only class that writes the audit log, as SPEC-013 AC-23's arch test holds, and `ChangeOutcome` carries the model a change saved.
 - `src/Enums/AuditAction.php`: `rule.create`, `rule.update`, `rule.delete`, `exemption.create`, `exemption.delete`.
 - `src/Support/Explanation/`: masking, applied by the API only; the CLI still prints identities as given (SPEC-014 decision 4).
 - `docs/guide/dashboard.md`: the API's endpoints, with an example of each.

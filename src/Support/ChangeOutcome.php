@@ -6,6 +6,7 @@ namespace Afzal\DynamicThrottle\Support;
 
 use Afzal\DynamicThrottle\Compiler\CompileResult;
 use Afzal\DynamicThrottle\Compiler\ManifestCompileFailed;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * What a change through EmergencyControls did (SPEC-013): nothing, or a change
@@ -20,6 +21,7 @@ final readonly class ChangeOutcome
         public bool $changed,
         public ?CompileResult $compiled = null,
         public ?ManifestCompileFailed $compileFailed = null,
+        public ?Model $subject = null,
     ) {}
 
     public static function unchanged(): self
@@ -43,5 +45,14 @@ final readonly class ChangeOutcome
     public static function pending(): self
     {
         return new self(true);
+    }
+
+    /**
+     * The same outcome, with the model the change saved, changed or deleted, as the
+     * change last read it (SPEC-017).
+     */
+    public function about(Model $subject): self
+    {
+        return new self($this->changed, $this->compiled, $this->compileFailed, $subject);
     }
 }
