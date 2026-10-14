@@ -219,7 +219,8 @@ final readonly class Explainer
      * dashboard request, the admin who sends it is logged in. Until the closure it
      * returns runs, the app's auth manager builds its guards afresh, with the app's own
      * drivers, on the explained request and an empty session, so none remembers or reads
-     * the admin. The closure puts back the guards, as they were, and the session.
+     * the admin, and its default guard is the app's own again. The closure puts back the
+     * guards, as they were, the default guard and the session.
      *
      * @return Closure(): void
      */
@@ -228,12 +229,16 @@ final readonly class Explainer
         $guards = new ReflectionProperty(AuthManager::class, 'guards');
         $resolved = $guards->getValue($auth);
         $session = $this->container->resolved('session.store') ? $this->container->make('session.store') : null;
+        $default = $auth->getDefaultDriver();
 
         $auth->forgetGuards();
         $this->container->instance('session.store', new Store('dynamic-throttle-explain', new ArraySessionHandler(1)));
+        // The app's own default, which the admin's auth middleware may have changed (AC-25).
+        $auth->setDefaultDriver($this->container->make(DefaultGuard::class)->name ?? $default);
 
-        return function () use ($auth, $guards, $resolved, $session): void {
+        return function () use ($auth, $guards, $resolved, $session, $default): void {
             $guards->setValue($auth, $resolved);
+            $auth->setDefaultDriver($default);
 
             if ($session instanceof Session) {
                 $this->container->instance('session.store', $session);

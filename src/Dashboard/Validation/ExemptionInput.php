@@ -8,6 +8,7 @@ use Afzal\DynamicThrottle\DynamicThrottle;
 use Afzal\DynamicThrottle\Engine\Exemptions\IpRange;
 use Afzal\DynamicThrottle\Enums\ExemptionSubject;
 use Afzal\DynamicThrottle\Models\Rule;
+use Afzal\DynamicThrottle\Support\DefaultGuard;
 use Closure;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Contracts\Validation\Factory as ValidationFactory;
@@ -34,6 +35,7 @@ final readonly class ExemptionInput
         private ValidationFactory $validation,
         private DynamicThrottle $throttle,
         private Config $config,
+        private DefaultGuard $defaultGuard,
     ) {}
 
     /**
@@ -96,7 +98,8 @@ final readonly class ExemptionInput
             return $value;
         }
 
-        $guard = $this->config->get('auth.defaults.guard');
+        // The app's own default guard: behind auth:<guard>, the request's default is the admin's (SPEC-017 AC-25).
+        $guard = $this->defaultGuard->name;
         $provider = is_string($guard) ? $this->config->get("auth.guards.{$guard}.provider") : null;
         $model = is_string($provider) ? $this->config->get("auth.providers.{$provider}.model") : null;
 

@@ -26,6 +26,9 @@ final readonly class RuleController
     /** Rules a page (decision 9). */
     public const int PER_PAGE = 100;
 
+    /** A rule's newest exemptions it shows; api/exemptions?rule= pages through all (AC-26). */
+    public const int EXEMPTIONS = 100;
+
     public function __construct(
         private RuleInput $input,
         private EmergencyControls $controls,
@@ -42,7 +45,7 @@ final readonly class RuleController
     public function show(string $rule): JsonResponse
     {
         $found = Rule::query()->findOrFail((int) $rule);
-        $exemptions = Exemption::query()->where('rule_id', $found->id)->orderByDesc('id')->get();
+        $exemptions = Exemption::query()->where('rule_id', $found->id)->orderByDesc('id')->limit(self::EXEMPTIONS)->get();
 
         return new JsonResponse([
             'rule' => Payloads::rule($found),
