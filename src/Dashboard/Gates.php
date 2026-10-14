@@ -8,10 +8,11 @@ use Illuminate\Contracts\Auth\Access\Gate;
 use Illuminate\Contracts\Foundation\Application;
 
 /**
- * What the request's user may do on the dashboard (SPEC-018, ADR-0015). A gate the
- * app has not defined allows the local environment only, guests too, as Horizon's
- * does (decision 2). A gate the app defines decides alone. Both are read on each
- * request, so the order of the service providers does not matter.
+ * What the request's user may do on the dashboard (SPEC-018, ADR-0015). Until the app
+ * defines either gate, the local environment gets in, guests too, as with Horizon
+ * (decision 2). Once it defines one, the gates it defines decide alone, and one it
+ * left out denies (the security review). They are read on each request, so the order
+ * of the service providers does not matter.
  *
  * @internal
  */
@@ -33,13 +34,18 @@ final readonly class Gates
      */
     public function abilities(): array
     {
-        $manage = $this->allows(self::MANAGE);
+        $defined = $this->gate->has(self::VIEW) || $this->gate->has(self::MANAGE);
+        $manage = $this->allows(self::MANAGE, $defined);
 
-        return ['view' => $manage || $this->allows(self::VIEW), 'manage' => $manage];
+        return ['view' => $manage || $this->allows(self::VIEW, $defined), 'manage' => $manage];
     }
 
-    private function allows(string $ability): bool
+    private function allows(string $ability, bool $defined): bool
     {
-        return $this->gate->has($ability) ? $this->gate->allows($ability) : $this->app->environment('local');
+        if ($this->gate->has($ability)) {
+            return $this->gate->allows($ability);
+        }
+
+        return ! $defined && $this->app->environment('local');
     }
 }

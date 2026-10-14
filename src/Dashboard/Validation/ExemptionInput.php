@@ -27,8 +27,8 @@ final readonly class ExemptionInput
     /** The fields an exemption takes from input. */
     private const array FIELDS = ['subject', 'subject_parameter', 'value', 'rule_id', 'expires_at', 'reason'];
 
-    /** No control character, such as a terminal escape. */
-    private const string NO_CONTROL = '/\A[^\p{Cc}]*\z/u';
+    /** No control character, such as a terminal escape, and no invisible format character, such as a right-to-left override. */
+    private const string NO_CONTROL = '/\A[^\p{Cc}\p{Cf}]*\z/u';
 
     public function __construct(
         private ValidationFactory $validation,
@@ -44,14 +44,15 @@ final readonly class ExemptionInput
      */
     public function validate(array $input): array
     {
-        $data = array_intersect_key($input, array_flip(self::FIELDS));
+        // An empty string is no value, as Laravel's ConvertEmptyStringsToNull makes it.
+        $data = array_map(fn (mixed $value): mixed => $value === '' ? null : $value, array_intersect_key($input, array_flip(self::FIELDS)));
         $subject = $data['subject'] ?? null;
 
         if ($subject === ExemptionSubject::User->value && (is_string($data['value'] ?? null) || is_int($data['value'] ?? null))) {
             $data['value'] = $this->user((string) $data['value']);
         }
 
-        return $this->validation->make($data, [
+        $validated = $this->validation->make($data, [
             'subject' => ['required', ValidationRule::enum(ExemptionSubject::class)],
             'subject_parameter' => $subject === ExemptionSubject::Custom->value
                 ? ['required', 'string', 'max:64', $this->registeredScope(...)]
@@ -61,10 +62,28 @@ final readonly class ExemptionInput
                 ExemptionSubject::User->value => ['required', 'string', 'max:255', 'regex:'.self::NO_CONTROL, 'regex:/\A[^:]+:.+\z/s'],
                 default => ['required', 'string', 'max:255', 'regex:'.self::NO_CONTROL],
             },
-            'rule_id' => ['nullable', 'integer', $this->ruleExists(...)],
+            'rule_id' => ['nullable', $this->ruleExists(...)],
             'expires_at' => ['nullable', 'date', 'after:now'],
             'reason' => ['nullable', 'string', 'max:255', 'regex:'.self::NO_CONTROL],
         ])->validate();
+
+        if (isset($validated['rule_id'])) {
+            $validated['rule_id'] = $this->ruleId($validated['rule_id']);
+        }
+
+        return $validated;
+    }
+
+    /**
+     * A rule's id as JSON sends it, an integer, or as a form does, its digits; null for anything else.
+     */
+    private function ruleId(mixed $value): ?int
+    {
+        return match (true) {
+            is_int($value) => $value,
+            is_string($value) && preg_match('/\A[1-9]\d{0,17}\z/', $value) === 1 => (int) $value,
+            default => null,
+        };
     }
 
     /**
@@ -101,8 +120,12 @@ final readonly class ExemptionInput
      */
     private function ruleExists(string $attribute, mixed $value, Closure $fail): void
     {
-        if (is_int($value) && ! Rule::query()->whereKey($value)->exists()) {
-            $fail("Rule {$value} does not exist.");
+        $id = $this->ruleId($value);
+
+        if ($id === null) {
+            $fail('The rule must be given by its id.');
+        } elseif (! Rule::query()->whereKey($id)->exists()) {
+            $fail("Rule {$id} does not exist.");
         }
     }
 

@@ -327,7 +327,7 @@ final readonly class Explainer
             return new Untouched(UntouchedReason::NotAttached);
         }
 
-        return Untouched::beforePath($this->config, $request)
+        return Untouched::beforePath($this->config, $request, $this->container)
             ?? Untouched::except($this->config, $target->path);
     }
 
