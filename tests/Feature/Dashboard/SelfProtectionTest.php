@@ -37,16 +37,18 @@ function throttleEverything(): void
 }
 
 /**
- * The statuses of $count requests to a path.
+ * The statuses of $count requests to a path, from a client of their own, since the
+ * rule counts each client across every path.
  *
  * @return list<int>
  */
 function statuses(string $path, int $count): array
 {
     $statuses = [];
+    $ip = '198.51.100.'.(crc32($path) % 250 + 1);
 
     for ($request = 0; $request < $count; $request++) {
-        $statuses[] = test()->getJson($path)->status();
+        $statuses[] = test()->withServerVariables(['REMOTE_ADDR' => $ip])->getJson($path)->status();
     }
 
     return $statuses;
