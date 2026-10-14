@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle\Models;
 
 use Afzal\DynamicThrottle\Enums\ExemptionSubject;
+use Afzal\DynamicThrottle\Models\Concerns\StoresTimesInUtc;
 use Afzal\DynamicThrottle\Models\Concerns\UsesPackageConnection;
 use DateTimeInterface;
 use Illuminate\Contracts\Auth\Authenticatable;
@@ -36,6 +37,7 @@ use Stringable;
  */
 final class Exemption extends Model
 {
+    use StoresTimesInUtc;
     use UsesPackageConnection;
 
     protected $table = 'dynamic_throttle_exemptions';
@@ -110,17 +112,6 @@ final class Exemption extends Model
         $this->setAttribute('expires_at', $expiresAt);
 
         return $this;
-    }
-
-    /**
-     * Eloquent stores a date's wall-clock time in the date's own zone, and reads it
-     * back in the app's: a date from another zone would move by their difference,
-     * and an exemption could outlive its expiry by hours. So every date is moved to
-     * the app's zone first, and keeps its instant (SPEC-009 AC-17).
-     */
-    public function fromDateTime(mixed $value): mixed
-    {
-        return $value === null || $value === '' ? $value : parent::fromDateTime($this->asDateTime($value)->setTimezone(date_default_timezone_get()));
     }
 
     /**
