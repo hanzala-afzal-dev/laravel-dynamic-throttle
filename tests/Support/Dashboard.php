@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle\Tests\Support;
 
+use Afzal\DynamicThrottle\Dashboard\DashboardRoutes;
 use Afzal\DynamicThrottle\DynamicThrottleServiceProvider;
-use Afzal\DynamicThrottle\Http\Dashboard\DashboardRoutes;
 use Closure;
 use Illuminate\Routing\RouteCollection;
 use Illuminate\Support\Facades\Gate;

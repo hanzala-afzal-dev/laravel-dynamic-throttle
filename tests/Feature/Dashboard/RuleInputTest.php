@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
+use Afzal\DynamicThrottle\Dashboard\Validation\RuleInput;
 use Afzal\DynamicThrottle\Facades\DynamicThrottle;
-use Afzal\DynamicThrottle\Http\Dashboard\Validation\RuleInput;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Models\Rule;
 use Afzal\DynamicThrottle\Tests\Support\Exemptions;

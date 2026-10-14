@@ -9,8 +9,8 @@ use Illuminate\Contracts\Config\Repository as Config;
 /**
  * Where the dashboard is served (SPEC-018). The request path reads it to leave the
  * dashboard alone by its path too, since global middleware runs before routing and
- * cannot see the routes' names (ADR-0004 point 5). It lives outside Http\Dashboard,
- * which the request path never uses.
+ * cannot see the routes' names (ADR-0004 point 5). It lives in Http, apart from the
+ * dashboard's own code, which the request path never uses.
  *
  * @internal
  */

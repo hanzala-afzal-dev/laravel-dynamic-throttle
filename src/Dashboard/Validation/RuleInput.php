@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Afzal\DynamicThrottle\Http\Dashboard\Validation;
+namespace Afzal\DynamicThrottle\Dashboard\Validation;
 
 use Afzal\DynamicThrottle\Models\Rule;
 
