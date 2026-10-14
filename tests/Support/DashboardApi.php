@@ -90,8 +90,16 @@ final class DashboardApi
             $test->actingAs($user);
         }
 
-        return $test->withSession(['_token' => self::TOKEN])
-            ->withHeaders(['X-CSRF-TOKEN' => self::TOKEN, 'User-Agent' => self::USER_AGENT, 'Accept' => 'text/html'])
-            ->call($method, self::PREFIX.$uri, $data);
+        // Through Laravel's verb helpers: call() alone leaves out the headers withHeaders() sets.
+        $test->withSession(['_token' => self::TOKEN])
+            ->withHeaders(['X-CSRF-TOKEN' => self::TOKEN, 'User-Agent' => self::USER_AGENT, 'Accept' => 'text/html']);
+
+        return match (strtoupper($method)) {
+            'POST' => $test->post(self::PREFIX.$uri, $data),
+            'PUT' => $test->put(self::PREFIX.$uri, $data),
+            'PATCH' => $test->patch(self::PREFIX.$uri, $data),
+            'DELETE' => $test->delete(self::PREFIX.$uri, $data),
+            default => $test->get(self::PREFIX.$uri),
+        };
     }
 }
