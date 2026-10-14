@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle\Dashboard;
 
 use Afzal\DynamicThrottle\Dashboard\Api\ExemptionController;
+use Afzal\DynamicThrottle\Dashboard\Api\HealthController;
+use Afzal\DynamicThrottle\Dashboard\Api\MetricsController;
+use Afzal\DynamicThrottle\Dashboard\Api\OffendersController;
 use Afzal\DynamicThrottle\Dashboard\Api\RuleController;
 use Afzal\DynamicThrottle\Dashboard\Api\SettingController;
 use Afzal\DynamicThrottle\Http\DashboardPath;
@@ -53,6 +56,10 @@ final class DashboardRoutes
             $router->name('api.rules.show')->middleware(self::middleware('read'))->get('api/rules/{rule}', [RuleController::class, 'show'])->whereNumber('rule');
             $router->name('api.rules.update')->middleware(self::middleware('write'))->patch('api/rules/{rule}', [RuleController::class, 'update'])->whereNumber('rule');
             $router->name('api.rules.destroy')->middleware(self::middleware('write'))->delete('api/rules/{rule}', [RuleController::class, 'destroy'])->whereNumber('rule');
+
+            $router->name('api.rules.offenders')->middleware(self::middleware('read'))->get('api/rules/{rule}/offenders', OffendersController::class)->whereNumber('rule');
+            $router->name('api.metrics')->middleware(self::middleware('read'))->get('api/metrics', MetricsController::class);
+            $router->name('api.health')->middleware(self::middleware('read'))->get('api/health', HealthController::class);
 
             $router->name('api.exemptions.index')->middleware(self::middleware('read'))->get('api/exemptions', [ExemptionController::class, 'index']);
             $router->name('api.exemptions.store')->middleware(self::middleware('write'))->post('api/exemptions', [ExemptionController::class, 'store']);
