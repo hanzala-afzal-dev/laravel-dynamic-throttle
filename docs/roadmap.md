@@ -157,7 +157,7 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 
 **Specs**
 - SPEC-017: JSON API (rules, exemptions, settings, metrics, audit, health, explain). Explain's identities show a bearer token or a header value as given: decide whether the API and the dashboard (SPEC-026) mask them (SPEC-014).
-- SPEC-018: gates, middleware, validation, guardrails (ADR-0015)
+- SPEC-018: gates, middleware, validation, guardrails (ADR-0015), [the spec](specs/018-dashboard-access-and-guardrails.md): the dashboard's route group behind `['web']` and the gates, its own Laravel limit, its path never limited, validation that a saved rule always compiles, and `confirm` for dangerous changes
 - SPEC-019: audit log: the JSON API's and the dashboard's entries, and reading them. The table ships with SPEC-013.
 
 **Exit criteria**
