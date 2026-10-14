@@ -94,6 +94,20 @@ it('AC-2: shows one rule with the exemptions that name it, not those for every r
         ]]);
 });
 
+it('AC-26: shows a rule\'s newest 100 exemptions, from the security review', function (): void {
+    $rule = Throttling::rule();
+    // Without the models' events, so 101 exemptions do not compile 101 manifests.
+    Exemption::withoutEvents(function () use ($rule): void {
+        foreach (range(1, 101) as $number) {
+            Exemption::query()->create(['rule_id' => $rule->id, 'subject' => ExemptionSubject::Ip, 'value' => "10.0.0.{$number}"]);
+        }
+    });
+
+    $exemptions = DashboardApi::send($this, 'GET', "rules/{$rule->id}", user: DashboardApi::viewer())->json('exemptions');
+
+    expect([count($exemptions), $exemptions[0]['value'], $exemptions[99]['value']])->toBe([100, '10.0.0.101', '10.0.0.2']);
+});
+
 it('AC-2: answers 404 for an unknown id, and for one that is not a number', function (string $id): void {
     Throttling::rule();
 
