@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle\Support\Health\Checks;
 
-use Afzal\DynamicThrottle\Http\Dashboard\DashboardRoutes;
+use Afzal\DynamicThrottle\Http\DashboardPath;
 use Afzal\DynamicThrottle\Support\ConfigValues;
 use Afzal\DynamicThrottle\Support\Health\Check;
 use Afzal\DynamicThrottle\Support\Health\CheckResult;
@@ -56,7 +56,7 @@ final readonly class ConfigCheck implements Check
      */
     private function dashboardPath(HealthContext $context): array
     {
-        return $context->config->get('dynamic-throttle.dashboard.enabled') !== false && DashboardRoutes::path($context->config) === null
+        return $context->config->get('dynamic-throttle.dashboard.enabled') !== false && DashboardPath::configured($context->config) === null
             ? ['dynamic-throttle.dashboard.path is empty, so the dashboard is not served: it would take the site\'s root.']
             : [];
     }

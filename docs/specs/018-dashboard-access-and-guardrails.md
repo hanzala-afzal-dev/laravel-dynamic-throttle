@@ -50,7 +50,7 @@ The dashboard and its JSON API (SPEC-017) can switch off a login route's protect
 - **AC-8** Every response of the group, 403 and 429 included, carries `Cache-Control: no-store` (with `private`, as Laravel writes it) and `X-Content-Type-Options: nosniff`.
 
 ### Self-protection
-- **AC-9** A `*` rule of 1 request a minute, for every method: the dashboard answers its 2nd, 3rd and 10th request with no 429 and no rate-limit header, with `dynamic.throttle` on the `web` group, and as global middleware.
+- **AC-9** A `*` rule of 1 request a minute, for every method: the dashboard answers its 2nd, 3rd and 10th request with no 429, and its `X-RateLimit-Limit` is Laravel's 120, not the rule's 1, with `dynamic.throttle` on the `web` group, and as global middleware.
 - **AC-10** With `dashboard.path` changed, the new path is skipped and the old one is not. The path check covers `{path}` and `{path}/…`, never a path that only starts with the same letters, such as `dynamic-throttle-other`.
 - **AC-11** `dynamic-throttle:explain GET /dynamic-throttle/api/me` says the package's own routes go through untouched.
 
@@ -78,6 +78,7 @@ The dashboard and its JSON API (SPEC-017) can switch off a login route's protect
   - `SecurityHeaders.php`: the two headers;
   - `MeController.php`.
 - `src/Http/Dashboard/Validation/`: `RuleInput.php`, `ExemptionInput.php`, `SettingInput.php`, and `Confirmation.php` for the dangerous changes.
+- `src/Http/DashboardPath.php`: the configured path, outside `Http\Dashboard` so the request path can read it (AC-19).
 - `src/Http/Untouched.php`: the dashboard's path too.
 - `src/Console/Duration.php` and `src/Support/ScaleFactor.php`: shared with the API, unchanged.
 - `docs/guide/dashboard.md`: access, the gates, the path, and what the guardrails refuse.
@@ -97,6 +98,7 @@ The dashboard and its JSON API (SPEC-017) can switch off a login route's protect
 - **The app has no `web` group,** such as a stateless API: `dashboard.middleware` can name its own stack. Without a session, the CSRF check and the user come from that stack.
 - **A path with a leading or trailing slash** (`/ops/throttle/`) is trimmed. An empty path serves no dashboard, since it would take the site's root, and the `config` health check warns about it. Refusing it at boot would take the whole app down for a config mistake (ADR-0020 point 1).
 - **Laravel's middleware priority list** would run `throttle` before the headers, so its 429 would miss them: the headers middleware goes first in that list.
+- **The path is checked on every domain,** as `explain` reads only a path: a route of the app at `/dynamic-throttle` on another domain than `dashboard.domain` is not limited either. Move the dashboard's path if that matters.
 - **The cache store is down:** Laravel's `throttle` throws, as on any route the app throttles. The dashboard's limiter uses the app's default cache store, not the package's.
 - **500 enabled rules, two requests at once:** both may pass the count and save 501. The limit is a guardrail against mistakes, not a hard bound; the compiler handles more (ADR-0007).
 

@@ -105,6 +105,18 @@ arch('the middleware never touches the database (ADR-0007)')
     ->expect('Afzal\DynamicThrottle\Http\Middleware')
     ->not->toUse($databaseAccess);
 
+arch('the middleware never uses the dashboard\'s code (SPEC-018 AC-19)')
+    ->expect('Afzal\\DynamicThrottle\\Http\\Middleware')
+    ->not->toUse('Afzal\\DynamicThrottle\\Http\\Dashboard');
+
+arch('the steps that let a request through untouched never use the dashboard\'s code (SPEC-018 AC-19)')
+    ->expect(Untouched::class)
+    ->not->toUse('Afzal\\DynamicThrottle\\Http\\Dashboard');
+
+arch('engine code never uses the dashboard\'s code (SPEC-018 AC-19)')
+    ->expect('Afzal\\DynamicThrottle\\Engine')
+    ->not->toUse('Afzal\\DynamicThrottle\\Http\\Dashboard');
+
 arch('request handling never touches the database (ADR-0007, SPEC-007 AC-18)')
     ->expect('Afzal\DynamicThrottle\Http')
     ->not->toUse($databaseAccess);

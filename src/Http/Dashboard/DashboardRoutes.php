@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle\Http\Dashboard;
 
+use Afzal\DynamicThrottle\Http\DashboardPath;
 use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Config\Repository as Config;
@@ -26,9 +27,9 @@ final class DashboardRoutes
 
     public static function register(Router $router, Config $config): void
     {
-        $path = self::path($config);
+        $path = DashboardPath::of($config);
 
-        if ($config->get('dynamic-throttle.dashboard.enabled') === false || $path === null) {
+        if ($path === null) {
             return;
         }
 
@@ -68,17 +69,5 @@ final class DashboardRoutes
     public static function middleware(string $ability): array
     {
         return [SecurityHeaders::class, 'throttle:'.self::LIMITER, Authorize::class.':'.$ability];
-    }
-
-    /**
-     * dashboard.path without its slashes, or null when nothing is left, since the dashboard
-     * would take the site's root.
-     */
-    public static function path(Config $config): ?string
-    {
-        $path = $config->get('dynamic-throttle.dashboard.path');
-        $path = is_string($path) ? trim($path, '/') : '';
-
-        return $path === '' ? null : $path;
     }
 }

@@ -30,8 +30,9 @@ final readonly class Untouched
     ) {}
 
     /**
-     * The steps before the request's path is read: the kill switch, then the
-     * package's own routes, which are never limited (ADR-0004 point 5).
+     * The steps before the rules are read: the kill switch, then the package's own
+     * routes, which are never limited (ADR-0004 point 5): by their names, and by the
+     * dashboard's path, which global middleware sees before routing (SPEC-018).
      */
     public static function beforePath(Config $config, Request $request): ?self
     {
@@ -42,6 +43,10 @@ final readonly class Untouched
         $route = $request->route();
 
         if ($route instanceof Route && str_starts_with((string) $route->getName(), DynamicThrottleMiddleware::OWN_ROUTES)) {
+            return new self(UntouchedReason::OwnRoute);
+        }
+
+        if (DashboardPath::covers($config, $request->decodedPath())) {
             return new self(UntouchedReason::OwnRoute);
         }
 
