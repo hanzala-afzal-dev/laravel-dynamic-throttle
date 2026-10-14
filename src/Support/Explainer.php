@@ -40,6 +40,7 @@ use Afzal\DynamicThrottle\Support\Explanation\ExplanationRequest;
 use Afzal\DynamicThrottle\Support\Explanation\RuleStatus;
 use Closure;
 use Illuminate\Auth\AuthManager;
+use Illuminate\Container\Container as IlluminateContainer;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Auth\Guard;
 use Illuminate\Contracts\Auth\UserProvider;
@@ -47,9 +48,13 @@ use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Contracts\Session\Session;
 use Illuminate\Events\NullDispatcher;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
+use Illuminate\Session\ArraySessionHandler;
+use Illuminate\Session\Store;
+use ReflectionProperty;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Throwable;
 
@@ -176,14 +181,16 @@ final readonly class Explainer
     private function as(ExplanationRequest $input, Request $request, ?ExplainedRoute $route, Closure $explain): mixed
     {
         $previousRequest = $this->container->bound('request') ? $this->container->make('request') : null;
-        $this->container->instance('request', $request);
+        $auth = $this->container->make('auth');
+        $restore = $this->withoutUsers($auth);
 
         try {
+            $this->container->instance('request', $request);
+
             if ($input->user === null) {
                 return $explain(null);
             }
 
-            $auth = $this->container->make('auth');
             $name = $input->guard ?? $auth->getDefaultDriver();
             $guard = $this->guard($auth, $name);
             $user = $this->provider($auth, $guard, $name)->retrieveById($input->user);
@@ -202,7 +209,39 @@ final readonly class Explainer
             if ($previousRequest !== null) {
                 $this->container->instance('request', $previousRequest);
             }
+
+            $restore();
         }
+    }
+
+    /**
+     * Lets the explanation see no user but the one it explains (SPEC-017 AC-24): in a
+     * dashboard request, the admin who sends it is logged in. Until the closure it
+     * returns runs, the app's auth manager builds its guards afresh, with the app's own
+     * drivers, on the explained request and an empty session, so none remembers or reads
+     * the admin. The closure puts back the guards, as they were, and the session.
+     *
+     * @return Closure(): void
+     */
+    private function withoutUsers(AuthManager $auth): Closure
+    {
+        $guards = new ReflectionProperty(AuthManager::class, 'guards');
+        $resolved = $guards->getValue($auth);
+        $session = $this->container->resolved('session.store') ? $this->container->make('session.store') : null;
+
+        $auth->forgetGuards();
+        $this->container->instance('session.store', new Store('dynamic-throttle-explain', new ArraySessionHandler(1)));
+
+        return function () use ($auth, $guards, $resolved, $session): void {
+            $guards->setValue($auth, $resolved);
+
+            if ($session instanceof Session) {
+                $this->container->instance('session.store', $session);
+            } elseif ($this->container instanceof IlluminateContainer) {
+                // Built on demand again, as before the explanation.
+                $this->container->forgetInstance('session.store');
+            }
+        };
     }
 
     /**
