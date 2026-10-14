@@ -10,6 +10,7 @@ use Afzal\DynamicThrottle\Compiler\ManifestCompileFailed;
 use Afzal\DynamicThrottle\Enums\AuditAction;
 use Afzal\DynamicThrottle\Enums\SettingName;
 use Afzal\DynamicThrottle\Models\AuditEntry;
+use Afzal\DynamicThrottle\Models\Exemption;
 use Afzal\DynamicThrottle\Models\Rule;
 use Afzal\DynamicThrottle\Models\Setting;
 use Afzal\DynamicThrottle\Support\Changes\Actor;
@@ -26,7 +27,8 @@ use Throwable;
 /**
  * The changes an admin makes (ADR-0011, ADR-0015): bypass, the scale factor and
  * switching one rule off or on, from the CLI and the JSON API (SPEC-013), and
- * creating, changing and deleting rules from the JSON API (SPEC-017). It is the
+ * creating, changing and deleting rules, and creating and deleting exemptions,
+ * from the JSON API (SPEC-017). It is the
  * only writer of the audit log (SPEC-013 AC-23).
  *
  * Each change and its audit entry are written in one transaction, so neither is
@@ -201,6 +203,51 @@ final readonly class EmergencyControls
     }
 
     /**
+     * Saves a new exemption, with its exemption.create entry (SPEC-017).
+     *
+     * @param  array<string, mixed>  $attributes  validated (SPEC-018)
+     *
+     * @throws TableMissing|Throwable from the database, with nothing written
+     */
+    public function createExemption(array $attributes, Actor $actor): ChangeOutcome
+    {
+        $this->requireTable(new AuditEntry);
+        $created = null;
+
+        // Created inside the transaction, so a retry after a deadlock inserts afresh.
+        $outcome = $this->change((new Exemption)->getConnection(), function () use ($attributes, $actor, &$created): bool {
+            $created = Exemption::query()->create($attributes)->refresh();
+            $this->audit($actor, AuditAction::ExemptionCreate, "exemption:{$created->id}", null, $this->exemptionState($created));
+
+            return true;
+        });
+
+        return $created instanceof Exemption ? $outcome->about($created) : $outcome;
+    }
+
+    /**
+     * Deletes an exemption, with its exemption.delete entry (SPEC-017).
+     *
+     * @throws ModelNotFoundException when the exemption was deleted meanwhile
+     * @throws TableMissing|Throwable from the database, with nothing written
+     */
+    public function deleteExemption(Exemption $exemption, Actor $actor): ChangeOutcome
+    {
+        $this->requireTable(new AuditEntry);
+        $current = $exemption;
+
+        $outcome = $this->change($exemption->getConnection(), function () use ($exemption, $actor, &$current): bool {
+            $current = Exemption::query()->whereKey($exemption->getKey())->lockForUpdate()->firstOrFail();
+            $current->delete();
+            $this->audit($actor, AuditAction::ExemptionDelete, "exemption:{$current->id}", $this->exemptionState($current), null);
+
+            return true;
+        });
+
+        return $outcome->about($current);
+    }
+
+    /**
      * Turns a setting on with a value, or off with null.
      *
      * @throws TableMissing|Throwable from the database, with nothing written
@@ -283,6 +330,23 @@ final readonly class EmergencyControls
     private function state(Setting $setting): array
     {
         return ['value' => $setting->value, 'expires_at' => $setting->expires_at?->toIso8601String()];
+    }
+
+    /**
+     * An exemption's fields as an entry records them, its expiry as settings record theirs.
+     *
+     * @return array<string, mixed>
+     */
+    private function exemptionState(Exemption $exemption): array
+    {
+        return [
+            'rule_id' => $exemption->rule_id,
+            'subject' => $exemption->subject->value,
+            'subject_parameter' => $exemption->subject_parameter,
+            'value' => $exemption->value,
+            'reason' => $exemption->reason,
+            'expires_at' => $exemption->expires_at?->toIso8601String(),
+        ];
     }
 
     /**
