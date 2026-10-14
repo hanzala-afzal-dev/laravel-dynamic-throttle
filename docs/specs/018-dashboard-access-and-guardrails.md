@@ -22,7 +22,7 @@ The dashboard and its JSON API (SPEC-017) can switch off a login route's protect
 - **`GET {path}/api/me`**, the first endpoint, so the dashboard's script shows only what the user may do: `{"can": {"view": true, "manage": false}}`. It needs either gate.
 - **No rule ever applies to the dashboard,** by its routes' names, and by its path, so that `dynamic.throttle` as global middleware, which runs before routing, skips it too (decision 5, ADR-0004 point 5). `dynamic-throttle:explain` says so for the path.
 - **Validation** checks what the API accepts before anything is saved, with the messages of Laravel's 422 response. The classes are ready for SPEC-017's endpoints to call. A rule that passes always compiles (decision 6):
-  - **Rules:** a name of 1 to 100 characters; a description of at most 1,000; `method`, `scope`, `mode`, `on_failure` and `on_missing_identity` from their enums; a pattern of 1 to 255 characters without spaces or control characters; `max_attempts` from 1 to 4,294,967,295; `window_seconds` from 1 to 86,400; `priority` from 0 to 4,294,967,295; `response_override` null or a JSON object of at most 4 KB once encoded; `enabled` a boolean.
+  - **Rules:** a name of 1 to 100 characters; a description of at most 1,000; `method`, `scope`, `mode`, `on_failure` and `on_missing_identity` from their enums; a pattern of 1 to 255 characters without spaces or control characters, which does not end with a slash, except the root `/` (AC-26); `max_attempts` from 1 to 4,294,967,295; `window_seconds` from 1 to 86,400; `priority` from 0 to 4,294,967,295; `response_override` null or a JSON object of at most 4 KB once encoded; `enabled` a boolean.
   - **A rule's scope parameter:** required for `header` (a header name, 1 to 64 letters, digits and `-`) and for `custom` (a scope the app registered with `DynamicThrottle::scope()`), and absent for the other scopes.
   - **At most 500 enabled rules** (ADR-0015, ADR-0007): creating an enabled rule, or enabling one, when 500 are enabled is refused, with the count.
   - **Exemptions:** an `ip` exemption names an address or a CIDR range; a `user` one names a user as the user scope matches it, `Class:id`, or by its id alone, as a user of the default guard's model; a `custom` one names a registered scope and its value; an optional rule that exists; an optional expiry in the future; a reason of at most 255 characters.
@@ -73,6 +73,7 @@ A review subagent read the whole spec's code before it closed. Its findings, eac
 - **AC-23** Every request but GET, HEAD and OPTIONS needs `manageDynamicThrottle`, whatever its route asks, and a route that names an unknown ability fails with a 500.
 - **AC-24** Validation counts a pattern's bytes, as the compiler does; takes an empty string as no value, so `method`, `mode`, `priority` and `enabled` cannot be empty; refuses invisible format characters, such as a right-to-left override, in names and reasons; and checks a rule id given as text.
 - **AC-25** Turning an enabled enforcing rule into a dry-run one needs `confirm`, as disabling it does, and so does an IP exemption wider than a /8 for IPv4 or a /32 for IPv6: "The exemption frees every client in 0.0.0.0/0 from every rule."
+- **AC-26** A pattern that ends with a slash, such as `api/users/`, is refused, since request paths never do and it could never match (the roadmap, SPEC-007's edge cases). The root pattern `/` is accepted.
 
 ### Hard rules
 - **AC-19** The arch tests hold: the dashboard's code is not in the request path's namespaces (`Http`, `Engine`), and they never use it, so request handling still never touches the database.
@@ -91,7 +92,7 @@ A review subagent read the whole spec's code before it closed. Its findings, eac
 - `src/Http/Untouched.php`: the dashboard's path too.
 - `src/Console/Duration.php` and `src/Support/ScaleFactor.php`: shared with the API, unchanged.
 - `docs/guide/dashboard.md`: access, the gates, the path, and what the guardrails refuse, linked from the README and the guide.
-- Tests: `tests/Feature/Dashboard/AccessTest.php` (AC-1 to AC-8), `SelfProtectionTest.php` (AC-9 to AC-11), `RuleInputTest.php` (AC-12 to AC-14), `ExemptionAndSettingInputTest.php` (AC-15, AC-16), `ConfirmationTest.php` (AC-17, AC-18), and `tests/Arch/ArchTest.php` (AC-19).
+- Tests: `tests/Feature/Dashboard/AccessTest.php` (AC-1 to AC-8), `SelfProtectionTest.php` (AC-9 to AC-11), `RuleInputTest.php` (AC-12 to AC-14, AC-26), `ExemptionAndSettingInputTest.php` (AC-15, AC-16), `ConfirmationTest.php` (AC-17, AC-18), and `tests/Arch/ArchTest.php` (AC-19).
 
 ## Out of scope
 
@@ -144,7 +145,7 @@ Stacked on each other, each green on its own (ADR-0027).
 | 2 | `phase-4/spec-018-2` | The config, the route group, the gates, the limiter, the headers and `api/me` | AC-1 to AC-8 |
 | 3 | `phase-4/spec-018-3` | The dashboard's path in the middleware and in explain | AC-9 to AC-11, AC-19 |
 | 4 | `phase-4/spec-018-4` | The rules' validation and the 500-rule limit | AC-12 to AC-14 |
-| 5 | `phase-4/spec-018-5` | The exemptions' and the settings' validation, the confirmation, the guide page, the changelog, the security review's fixes, and the spec's close | AC-15 to AC-18, AC-20 to AC-25 |
+| 5 | `phase-4/spec-018-5` | The exemptions' and the settings' validation, the confirmation, the guide page, the changelog, the security review's fixes, and the spec's close | AC-15 to AC-18, AC-20 to AC-26 |
 
 ## Open questions
 

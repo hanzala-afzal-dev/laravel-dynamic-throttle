@@ -154,7 +154,7 @@ Stacking criteria use the cache driver on the array store and a fake clock at T0
 - **A request method of `*`.** Symfony keeps any method the server passes on, and `*` is a valid HTTP token. Only `*` rules match it, and each counts it once (AC-2).
 - **Case.** Paths and patterns are case-sensitive, like Laravel's routes. `API/users` does not reach an `api/users` route either.
 - **Trailing slashes** are trimmed by `decodedPath()`, the same as in routing.
-- **A trailing slash in a pattern** (`api/users/`) never matches, because target paths have none. Trimming it, or rejecting it when a rule is saved, is left to the maintainer (raised in PR #4).
+- **A trailing slash in a pattern** (`api/users/`) never matches, because target paths have none. The dashboard and its API refuse it when a rule is saved (SPEC-018 AC-26).
 - **CORS preflights** (`OPTIONS`) are answered by Laravel's global `HandleCors` middleware before routing, so route middleware never sees them. Without it, a `*` rule would count them.
 - **The cap hides rules.** Enforcing rules beyond the fifth that count a request never count it, and neither do dry-run rules beyond the fifth. The health check (SPEC-016) and `explain` (SPEC-014) show which were ignored.
 - **Many wildcard-first patterns** (such as `*/admin`) are tested on every request. The index cannot narrow them, and the benchmark shows the cost.
