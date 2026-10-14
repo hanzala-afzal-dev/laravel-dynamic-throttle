@@ -104,6 +104,12 @@ it('AC-4: warns about a middleware.after entry that is neither a middleware alia
         ->not->toContain('auth.basic');
 });
 
+it('SPEC-018 AC-1: warns that the dashboard is not served when dashboard.path is empty, which would take the site\'s root', function (): void {
+    config()->set('dynamic-throttle.dashboard.path', '/');
+
+    expect(Health::check('config'))->toBe(['warning', 'dynamic-throttle.dashboard.path is empty, so the dashboard is not served: it would take the site\'s root.']);
+});
+
 it('AC-5: says what the counter store guarantees', function (array $config, string $status, string $named): void {
     foreach (['memcached', 'dynamodb', 'octane', 'mongodb'] as $driver) {
         Health::inMemory($driver);

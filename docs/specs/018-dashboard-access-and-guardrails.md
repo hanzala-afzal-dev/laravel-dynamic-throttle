@@ -1,6 +1,6 @@
 # SPEC-018: Dashboard access, validation and guardrails
 
-- Status: Draft
+- Status: In progress
 - ADRs: ADR-0004, ADR-0011, ADR-0015, ADR-0018
 - Roadmap phase: 4
 
@@ -32,7 +32,7 @@ The dashboard and its JSON API (SPEC-017) can switch off a login route's protect
 ## Acceptance criteria
 
 ### Routes and access
-- **AC-1** With the defaults, `GET /dynamic-throttle/api/me` exists, named `dynamic-throttle.api.me`, behind the `web` group. With `dashboard.path` set to `ops/throttle`, it is at `/ops/throttle/api/me`; with `dashboard.domain` set, only on that domain. With `dashboard.enabled` off, no route named `dynamic-throttle.*` exists.
+- **AC-1** With the defaults, `GET /dynamic-throttle/api/me` exists, named `dynamic-throttle.api.me`, behind the `web` group. With `dashboard.path` set to `ops/throttle`, it is at `/ops/throttle/api/me`; with `dashboard.domain` set, only on that domain. With `dashboard.enabled` off, or an empty path, no route named `dynamic-throttle.*` exists, and with an empty path the `config` health check warns.
 - **AC-2** With no gate defined, in `local`: a guest and a user both get 200 and `{"can": {"view": true, "manage": true}}`. In `production`: both get 403.
 - **AC-3** With both gates defined, in `production` and in `local`, the matrix holds for `api/me`:
 
@@ -95,7 +95,8 @@ The dashboard and its JSON API (SPEC-017) can switch off a login route's protect
 - **The app's `web` group throttles too,** with its own limiter. Both apply; the dashboard's does not replace the app's.
 - **The app defines a gate after the request starts,** such as in a middleware: the gates are read on each request, so it applies.
 - **The app has no `web` group,** such as a stateless API: `dashboard.middleware` can name its own stack. Without a session, the CSRF check and the user come from that stack.
-- **A path with a leading or trailing slash** (`/ops/throttle/`) is trimmed. An empty path is refused at boot, since the dashboard would take the site's root.
+- **A path with a leading or trailing slash** (`/ops/throttle/`) is trimmed. An empty path serves no dashboard, since it would take the site's root, and the `config` health check warns about it. Refusing it at boot would take the whole app down for a config mistake (ADR-0020 point 1).
+- **Laravel's middleware priority list** would run `throttle` before the headers, so its 429 would miss them: the headers middleware goes first in that list.
 - **The cache store is down:** Laravel's `throttle` throws, as on any route the app throttles. The dashboard's limiter uses the app's default cache store, not the package's.
 - **500 enabled rules, two requests at once:** both may pass the count and save 501. The limit is a guardrail against mistakes, not a hard bound; the compiler handles more (ADR-0007).
 

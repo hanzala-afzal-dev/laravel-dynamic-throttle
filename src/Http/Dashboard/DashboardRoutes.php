@@ -1,0 +1,84 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Afzal\DynamicThrottle\Http\Dashboard;
+
+use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Contracts\Config\Repository as Config;
+use Illuminate\Http\Request;
+use Illuminate\Routing\Router;
+use Illuminate\Support\Facades\RateLimiter;
+
+/**
+ * The dashboard's route group (SPEC-018): at dashboard.path, on dashboard.domain,
+ * behind dashboard.middleware, then its headers, Laravel's own throttle and the
+ * gates. Its routes are named dynamic-throttle.*, which no rule ever applies to
+ * (ADR-0004 point 5).
+ *
+ * @internal
+ */
+final class DashboardRoutes
+{
+    /** Laravel's named limiter that protects the dashboard, never the package's own (ADR-0015 point 5). */
+    public const string LIMITER = 'dynamic-throttle';
+
+    public static function register(Router $router, Config $config): void
+    {
+        $path = self::path($config);
+
+        if ($config->get('dynamic-throttle.dashboard.enabled') === false || $path === null) {
+            return;
+        }
+
+        $perMinute = $config->get('dynamic-throttle.dashboard.rate_limit');
+        $perMinute = is_int($perMinute) ? $perMinute : 120;
+
+        // A user is counted by id, a guest by IP, each under its own prefix so the two never meet.
+        RateLimiter::for(self::LIMITER, function (Request $request) use ($perMinute): Limit {
+            $id = $request->user()?->getAuthIdentifier();
+
+            return $perMinute > 0
+                ? Limit::perMinute($perMinute)->by(is_scalar($id) ? "user:{$id}" : 'ip:'.$request->ip())
+                : Limit::none();
+        });
+
+        $middleware = $config->get('dynamic-throttle.dashboard.middleware');
+        $domain = $config->get('dynamic-throttle.dashboard.domain');
+
+        $router->group(array_filter([
+            'prefix' => $path,
+            'domain' => is_string($domain) && $domain !== '' ? $domain : null,
+            'middleware' => is_array($middleware) ? array_values(array_filter($middleware, is_string(...))) : ['web'],
+            'as' => DynamicThrottleMiddleware::OWN_ROUTES,
+        ]), function (Router $router): void {
+            // Named before it is added, so the router's name lookups know it at once.
+            $router->name('api.me')->middleware(self::middleware('read'))->get('api/me', MeController::class);
+        });
+    }
+
+    /**
+     * What every route of the group runs after dashboard.middleware: the headers first, so
+     * a 403 or a 429 carries them too, then the limit, then the gates.
+     *
+     * @param  'read'|'write'  $ability
+     * @return list<string>
+     */
+    public static function middleware(string $ability): array
+    {
+        return [SecurityHeaders::class, 'throttle:'.self::LIMITER, Authorize::class.':'.$ability];
+    }
+
+    /**
+     * dashboard.path without its slashes, or null when nothing is left, since the dashboard
+     * would take the site's root.
+     */
+    public static function path(Config $config): ?string
+    {
+        $path = $config->get('dynamic-throttle.dashboard.path');
+        $path = is_string($path) ? trim($path, '/') : '';
+
+        return $path === '' ? null : $path;
+    }
+}
