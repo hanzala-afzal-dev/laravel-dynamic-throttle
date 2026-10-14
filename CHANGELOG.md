@@ -87,6 +87,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The `RuleChanged` event, dispatched after the commit when a rule is created, updated or deleted through the model, with the change and the changed columns before and after.
 - `php artisan dynamic-throttle:health` looks for setup mistakes that limit less than you think, or nothing at all. It checks the config, the counter store, `cache:clear`, the app key, the routes, the manifest, an emergency setting left on, the flush, and what the rules saw in the last hour: `config`, `store`, `cache-clear`, `app-key`, `attached`, `except`, `two-limiters`, `middleware-order`, `manifest`, `emergency`, `metrics`, `guests`, `dominant-ip` and `ignored`.
   - `emergency` warns about bypass or a scale factor that servers apply with no end time, or with one more than 24 hours away, so `--strict` in a deploy script catches a forgotten `--forever`.
+- The dashboard's access, ahead of its pages:
+  - Config section `dashboard`: `enabled` (`DYNAMIC_THROTTLE_DASHBOARD`), `path` (`DYNAMIC_THROTTLE_DASHBOARD_PATH`, default `dynamic-throttle`), `domain` (`DYNAMIC_THROTTLE_DASHBOARD_DOMAIN`), `middleware` (default `['web']`) and `rate_limit` (default 120 a minute).
+  - The gates `viewDynamicThrottle` and `manageDynamicThrottle`. Until your app defines them, only the `local` environment gets in. A denied request gets a 403, never a redirect.
+  - No rule ever applies to the dashboard, by its routes' names and by its path, also with `dynamic.throttle` as global middleware. Laravel's own `throttle` limits it per user, or per IP for a guest.
+  - Its first endpoint, `GET {path}/api/me`, says what the user may do.
+  - Validation for what its API will save, so a saved rule always compiles, at most 500 enabled rules, and `"confirm": true` for dangerous changes.
 - The runbook, `docs/runbook.md`: what to do when Redis is down, the manifest was evicted, a bad rule blocks `/api`, or an emergency change was left on. A test follows each scenario's steps.
 - On PHP-FPM with APCu, a manifest the cache cannot give is reported at most once per 30 seconds per server, as the counter store's errors are once per cooldown.
   - It prints a line per check, `ok`, `warning`, `error` or `skipped`, with what to do, or `--json`.

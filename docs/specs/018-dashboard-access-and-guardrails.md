@@ -25,7 +25,7 @@ The dashboard and its JSON API (SPEC-017) can switch off a login route's protect
   - **Rules:** a name of 1 to 100 characters; a description of at most 1,000; `method`, `scope`, `mode`, `on_failure` and `on_missing_identity` from their enums; a pattern of 1 to 255 characters without spaces or control characters; `max_attempts` from 1 to 4,294,967,295; `window_seconds` from 1 to 86,400; `priority` from 0 to 4,294,967,295; `response_override` null or a JSON object of at most 4 KB once encoded; `enabled` a boolean.
   - **A rule's scope parameter:** required for `header` (a header name, 1 to 64 letters, digits and `-`) and for `custom` (a scope the app registered with `DynamicThrottle::scope()`), and absent for the other scopes.
   - **At most 500 enabled rules** (ADR-0015, ADR-0007): creating an enabled rule, or enabling one, when 500 are enabled is refused, with the count.
-  - **Exemptions:** an `ip` exemption names an address or a CIDR range, a `user` one a user id, and a `custom` one a registered scope and its value; an optional rule that exists; an optional expiry in the future; a reason of at most 255 characters.
+  - **Exemptions:** an `ip` exemption names an address or a CIDR range; a `user` one names a user as the user scope matches it, `Class:id`, or by its id alone, as a user of the default guard's model; a `custom` one names a registered scope and its value; an optional rule that exists; an optional expiry in the future; a reason of at most 255 characters.
   - **Settings:** bypass on or off, and a scale factor from 0.1 to 10 with at most two decimals, or off. Each with `for`, as the CLI takes it (`90s`, `30m`, `2h` or `1d`, up to 365 days, one hour by default), or `forever`. The API and the CLI use the same parsers, so they accept the same values.
 - **Dangerous changes need `"confirm": true`** in the request, in every environment (decision 3, ADR-0015 point 4): disabling or deleting an enforcing rule, turning bypass on, and a factor below 1. Without it, the API answers 409 with a message that says what the change does, which the dashboard's dialog shows.
 
@@ -58,12 +58,12 @@ The dashboard and its JSON API (SPEC-017) can switch off a login route's protect
 - **AC-12** A rule's valid input, at each boundary (1 and 4,294,967,295 attempts, 1 and 86,400 seconds, a 255-character pattern, a 4,096-byte override), passes, and once saved, it compiles: the manifest holds it.
 - **AC-13** Each invalid input is refused with a 422 message naming its field: an empty or 101-character name, an unknown enum value, a pattern with a space, 0 attempts, 0 or 86,401 seconds, a negative priority, an override that is a list or 4,097 bytes, a `header` rule without a header name or with `X Bad`, a `custom` rule with a scope the app did not register, and an `ip` rule with a scope parameter.
 - **AC-14** With 500 enabled rules, creating an enabled rule and enabling a disabled one are refused with "500 rules are enabled, the most the dashboard allows"; creating a disabled one is accepted.
-- **AC-15** Exemptions: `10.0.0.0/8` and `2001:db8::/32` pass, `10.0.0.0/33` and `nope` do not; a missing rule id, an expiry in the past, and a 256-character reason are refused.
+- **AC-15** Exemptions: `10.0.0.0/8`, `2001:db8::/32`, a user id and a registered custom value pass, and the exemptions they save compile; `10.0.0.0/33` and `nope` do not; a missing rule id, an expiry in the past, a 256-character reason, an unregistered custom scope and a user id with control characters are refused.
 - **AC-16** Settings: the same durations and factors as the CLI pass and fail (`90s`, `1d`, `366d`, `0.1`, `10`, `0.05`, `1.234`), and `for` with `forever` together is refused.
 
 ### Guardrails
 - **AC-17** Without `"confirm": true`, these get 409 and change nothing: disabling or deleting an enforcing rule, bypass on, a factor below 1. With it, they pass. Disabling a dry-run rule, bypass off, a factor of 1 or above, and enabling a rule need no confirmation.
-- **AC-18** The 409's `message` says what the change does, such as "Bypass lifts every limit until 15:30 UTC."
+- **AC-18** The 409's `message` says what the change does, such as "Bypass lifts every limit until 2027-01-15 15:30 UTC."
 
 ### Hard rules
 - **AC-19** The arch tests hold: the dashboard's code is not in the request path's namespaces (`Http`, `Engine`), and they never use it, so request handling still never touches the database.
@@ -77,11 +77,11 @@ The dashboard and its JSON API (SPEC-017) can switch off a login route's protect
   - `Gates.php`: what an undefined gate allows;
   - `SecurityHeaders.php`: the two headers;
   - `MeController.php`.
-- `src/Dashboard/Validation/`: `RuleInput.php`, `ExemptionInput.php`, `SettingInput.php`, and `Confirmation.php` for the dangerous changes.
+- `src/Dashboard/Validation/`: `RuleInput.php`, `ExemptionInput.php`, `SettingInput.php`, and `Confirmation.php` with `ConfirmationRequired.php` (a 409) for the dangerous changes.
 - `src/Http/DashboardPath.php`: the configured path, in `Http`, apart from the dashboard's code, so the request path can read it (AC-19).
 - `src/Http/Untouched.php`: the dashboard's path too.
 - `src/Console/Duration.php` and `src/Support/ScaleFactor.php`: shared with the API, unchanged.
-- `docs/guide/dashboard.md`: access, the gates, the path, and what the guardrails refuse.
+- `docs/guide/dashboard.md`: access, the gates, the path, and what the guardrails refuse, linked from the README and the guide.
 - Tests: `tests/Feature/Dashboard/AccessTest.php` (AC-1 to AC-8), `SelfProtectionTest.php` (AC-9 to AC-11), `RuleInputTest.php` (AC-12 to AC-14), `ExemptionAndSettingInputTest.php` (AC-15, AC-16), `ConfirmationTest.php` (AC-17, AC-18), and `tests/Arch/ArchTest.php` (AC-19).
 
 ## Out of scope
