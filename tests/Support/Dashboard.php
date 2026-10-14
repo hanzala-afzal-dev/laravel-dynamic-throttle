@@ -64,7 +64,8 @@ final class Dashboard
     {
         $path = trim((string) config('dynamic-throttle.dashboard.path'), '/');
 
-        Route::middleware(DashboardRoutes::middleware('write'))
+        // In the web group, as the dashboard's own routes are by default.
+        Route::middleware(['web', ...DashboardRoutes::middleware('write')])
             ->post($path.'/'.self::WRITE_PATH, fn (): array => ['written' => true]);
     }
 }

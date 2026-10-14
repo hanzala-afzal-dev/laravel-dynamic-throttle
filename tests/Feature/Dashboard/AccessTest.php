@@ -15,6 +15,8 @@ use Symfony\Component\HttpFoundation\Response;
 */
 
 beforeEach(function (): void {
+    // The web group encrypts its cookies, as in any Laravel app.
+    config()->set('app.key', 'base64:3u4DMqUd5sEWtS4w9UqJ7Qw/qMCRnGFhqRuSN40wNJA=');
     Dashboard::boot();
 });
 
