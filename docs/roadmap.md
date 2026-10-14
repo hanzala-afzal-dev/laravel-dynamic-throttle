@@ -156,9 +156,9 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 - The package's tables store times in UTC (SPEC-009, SPEC-013).
 
 **Specs**
-- SPEC-017: JSON API (rules, exemptions, settings, metrics, audit, health, explain). Explain's identities show a bearer token or a header value as given: decide whether the API and the dashboard (SPEC-026) mask them (SPEC-014).
+- SPEC-017: JSON API (rules, exemptions, settings, metrics, health, explain), [the spec](specs/017-json-api.md): each change writes its audit entry in the same transaction, and explain is a POST that masks bearer tokens and header values (decided on 2026-10-14).
 - SPEC-018: gates, middleware, validation, guardrails (ADR-0015), [the spec](specs/018-dashboard-access-and-guardrails.md): the dashboard's route group behind `['web']` and the gates, its own Laravel limit, its path never limited, validation that a saved rule always compiles, and `confirm` for dangerous changes
-- SPEC-019: audit log: the JSON API's and the dashboard's entries, and reading them. The table ships with SPEC-013.
+- SPEC-019: audit log: reading it (`GET api/audit`), its filters and its pages. The table and the CLI's entries ship with SPEC-013, and the API's entries with SPEC-017.
 
 **Exit criteria**
 - An authorization test for every endpoint × role.
