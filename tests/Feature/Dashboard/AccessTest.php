@@ -87,7 +87,7 @@ it('AC-1: serves it only on dashboard.domain when one is set', function (): void
 it('AC-1: registers no route of its own with dashboard.enabled off, or with an empty path', function (array $config): void {
     Dashboard::boot($config);
 
-    $names = array_filter(array_map(fn (\Illuminate\Routing\Route $route): ?string => $route->getName(), Route::getRoutes()->getRoutes()));
+    $names = array_filter(array_map(fn (Illuminate\Routing\Route $route): ?string => $route->getName(), Route::getRoutes()->getRoutes()));
 
     expect(array_filter($names, fn (string $name): bool => str_starts_with($name, 'dynamic-throttle.')))->toBe([]);
 })->with([
