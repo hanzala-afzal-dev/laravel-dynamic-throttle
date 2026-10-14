@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Afzal\DynamicThrottle\Http\Dashboard;
+namespace Afzal\DynamicThrottle\Dashboard;
 
 use Illuminate\Contracts\Auth\Access\Gate;
 use Illuminate\Contracts\Foundation\Application;

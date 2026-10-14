@@ -66,19 +66,19 @@ The dashboard and its JSON API (SPEC-017) can switch off a login route's protect
 - **AC-18** The 409's `message` says what the change does, such as "Bypass lifts every limit until 15:30 UTC."
 
 ### Hard rules
-- **AC-19** The arch tests hold: the dashboard's code is not on the request path's namespaces, and the request path does not use it.
+- **AC-19** The arch tests hold: the dashboard's code is not in the request path's namespaces (`Http`, `Engine`), and they never use it, so request handling still never touches the database.
 
 ## Interfaces and files
 
 - `config/dynamic-throttle.php`: a `dashboard` section with `enabled`, `path`, `domain`, `middleware` and `rate_limit`.
-- `src/Http/Dashboard/`:
+- `src/Dashboard/`, outside `Http`, which is the request path and never reads the database (ADR-0007):
   - `DashboardRoutes.php`: registers the group, the limiter and `api/me`;
   - `Authorize.php`: the middleware for the gates, `read` or `write`;
   - `Gates.php`: what an undefined gate allows;
   - `SecurityHeaders.php`: the two headers;
   - `MeController.php`.
-- `src/Http/Dashboard/Validation/`: `RuleInput.php`, `ExemptionInput.php`, `SettingInput.php`, and `Confirmation.php` for the dangerous changes.
-- `src/Http/DashboardPath.php`: the configured path, outside `Http\Dashboard` so the request path can read it (AC-19).
+- `src/Dashboard/Validation/`: `RuleInput.php`, `ExemptionInput.php`, `SettingInput.php`, and `Confirmation.php` for the dangerous changes.
+- `src/Http/DashboardPath.php`: the configured path, in `Http`, apart from the dashboard's code, so the request path can read it (AC-19).
 - `src/Http/Untouched.php`: the dashboard's path too.
 - `src/Console/Duration.php` and `src/Support/ScaleFactor.php`: shared with the API, unchanged.
 - `docs/guide/dashboard.md`: access, the gates, the path, and what the guardrails refuse.

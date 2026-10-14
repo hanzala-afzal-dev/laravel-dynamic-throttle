@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Afzal\DynamicThrottle\Http\Dashboard;
+namespace Afzal\DynamicThrottle\Dashboard;
 
 use Afzal\DynamicThrottle\Http\DashboardPath;
 use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
