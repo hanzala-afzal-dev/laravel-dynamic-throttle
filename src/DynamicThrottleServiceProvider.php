@@ -30,6 +30,8 @@ use Afzal\DynamicThrottle\Engine\Identity\IdentityHasher;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
 use Afzal\DynamicThrottle\Engine\Telemetry\Sampler;
+use Afzal\DynamicThrottle\Http\Dashboard\DashboardRoutes;
+use Afzal\DynamicThrottle\Http\Dashboard\SecurityHeaders;
 use Afzal\DynamicThrottle\Http\IdentitySettings;
 use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
 use Afzal\DynamicThrottle\Http\RequestIdentityResolver;
@@ -395,6 +397,11 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
             });
         });
 
+        // The dashboard and its API (SPEC-018), unless the app cached its routes.
+        if (! $this->app->routesAreCached()) {
+            DashboardRoutes::register($this->app->make(Router::class), $this->app->make('config'));
+        }
+
         if (! $this->app->runningInConsole()) {
             return;
         }
@@ -487,6 +494,8 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
      * list lacks goes right before it. An app that placed the middleware in the list
      * itself keeps that place.
      *
+     * The dashboard's headers come first.
+     *
      * Computed here: the kernel's addToMiddlewarePriorityAfter() places it before an
      * entry that sits right after another on Laravel 12.61.1.
      *
@@ -510,7 +519,9 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
 
         array_splice($priority, (int) array_search(DynamicThrottleMiddleware::class, $priority, true), 0, array_values(array_diff($after, $priority)));
 
-        return $priority;
+        // The dashboard's headers before every other middleware of its routes, so the responses
+        // Laravel's own middleware answers with, such as throttle's 429, carry them too (SPEC-018).
+        return in_array(SecurityHeaders::class, $priority, true) ? $priority : [SecurityHeaders::class, ...$priority];
     }
 
     /**

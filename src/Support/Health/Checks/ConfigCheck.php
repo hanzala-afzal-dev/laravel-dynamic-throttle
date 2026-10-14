@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle\Support\Health\Checks;
 
+use Afzal\DynamicThrottle\Http\Dashboard\DashboardRoutes;
 use Afzal\DynamicThrottle\Support\ConfigValues;
 use Afzal\DynamicThrottle\Support\Health\Check;
 use Afzal\DynamicThrottle\Support\Health\CheckResult;
@@ -35,7 +36,7 @@ final readonly class ConfigCheck implements Check
             return CheckResult::error($this->id(), 'The config is invalid: '.$driver->getMessage());
         }
 
-        $problems = [...$this->killSwitch($context), ...$this->replaced($context), ...$this->groups($context), ...$this->after($context)];
+        $problems = [...$this->killSwitch($context), ...$this->replaced($context), ...$this->groups($context), ...$this->after($context), ...$this->dashboardPath($context)];
 
         return $problems === []
             ? CheckResult::ok($this->id(), "The config is valid. The counters: {$driver}.")
@@ -48,6 +49,16 @@ final readonly class ConfigCheck implements Check
     private function killSwitch(HealthContext $context): array
     {
         return $context->config->get('dynamic-throttle.enabled') === true ? [] : ['dynamic-throttle.enabled is off, so the middleware does nothing.'];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function dashboardPath(HealthContext $context): array
+    {
+        return $context->config->get('dynamic-throttle.dashboard.enabled') !== false && DashboardRoutes::path($context->config) === null
+            ? ['dynamic-throttle.dashboard.path is empty, so the dashboard is not served: it would take the site\'s root.']
+            : [];
     }
 
     /**

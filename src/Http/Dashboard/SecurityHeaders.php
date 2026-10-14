@@ -1,0 +1,31 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Afzal\DynamicThrottle\Http\Dashboard;
+
+use Closure;
+use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
+
+/**
+ * Every response of the dashboard, a 403 and a 429 too: never cached, and never
+ * read as another type than it says (SPEC-018). The pages' Content Security Policy
+ * comes with them (SPEC-020).
+ *
+ * @internal
+ */
+final class SecurityHeaders
+{
+    /**
+     * @param  Closure(Request): Response  $next
+     */
+    public function handle(Request $request, Closure $next): Response
+    {
+        $response = $next($request);
+        $response->headers->set('Cache-Control', 'no-store, private');
+        $response->headers->set('X-Content-Type-Options', 'nosniff');
+
+        return $response;
+    }
+}

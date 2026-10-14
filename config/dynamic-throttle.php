@@ -85,6 +85,29 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Dashboard
+    |--------------------------------------------------------------------------
+    |
+    | The dashboard and its JSON API are served at "path", on "domain" when it
+    | is set, behind "middleware" (docs/adr/0015, SPEC-018). Two gates decide
+    | who gets in: viewDynamicThrottle to read and manageDynamicThrottle to
+    | change. Until your app defines them, only the local environment gets in.
+    | No rule ever applies to the dashboard, which protects itself with
+    | Laravel's own throttle: "rate_limit" requests a minute per user, or per
+    | IP for a guest, and 0 turns it off.
+    |
+    */
+
+    'dashboard' => [
+        'enabled' => env('DYNAMIC_THROTTLE_DASHBOARD', true),
+        'path' => env('DYNAMIC_THROTTLE_DASHBOARD_PATH', 'dynamic-throttle'),
+        'domain' => env('DYNAMIC_THROTTLE_DASHBOARD_DOMAIN'),
+        'middleware' => ['web'],
+        'rate_limit' => 120,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Counter driver
     |--------------------------------------------------------------------------
     |
