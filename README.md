@@ -306,6 +306,7 @@ The [guide](docs/guide/README.md) covers the details:
 - [When something fails](docs/guide/failures.md): fail open or closed, the cooldown, strict mode
 - [Why a request is limited](docs/guide/explain.md) and [health checks](docs/guide/health.md)
 - [Traffic and blocks](docs/guide/telemetry.md): what each rule did, per hour
+- [The dashboard](docs/guide/dashboard.md): where it is, who gets in, and what it refuses
 - [Runbook](docs/runbook.md): what to do when Redis is down, the manifest was evicted, a bad rule blocks `/api`, or an emergency change was left on
 
 ## Contributing

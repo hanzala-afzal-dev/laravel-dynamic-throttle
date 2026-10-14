@@ -33,18 +33,6 @@ final class DashboardRoutes
             return;
         }
 
-        $perMinute = $config->get('dynamic-throttle.dashboard.rate_limit');
-        $perMinute = is_int($perMinute) ? $perMinute : 120;
-
-        // A user is counted by id, a guest by IP, each under its own prefix so the two never meet.
-        RateLimiter::for(self::LIMITER, function (Request $request) use ($perMinute): Limit {
-            $id = $request->user()?->getAuthIdentifier();
-
-            return $perMinute > 0
-                ? Limit::perMinute($perMinute)->by(is_scalar($id) ? "user:{$id}" : 'ip:'.$request->ip())
-                : Limit::none();
-        });
-
         $middleware = $config->get('dynamic-throttle.dashboard.middleware');
         $domain = $config->get('dynamic-throttle.dashboard.domain');
 
@@ -56,6 +44,25 @@ final class DashboardRoutes
         ]), function (Router $router): void {
             // Named before it is added, so the router's name lookups know it at once.
             $router->name('api.me')->middleware(self::middleware('read'))->get('api/me', MeController::class);
+        });
+    }
+
+    /**
+     * Laravel's named limiter for the dashboard's routes, defined on every boot: cached
+     * routes still name it, and route:cache keeps no limiter (the security review).
+     */
+    public static function limiter(Config $config): void
+    {
+        $perMinute = $config->get('dynamic-throttle.dashboard.rate_limit');
+        $perMinute = is_int($perMinute) ? $perMinute : 120;
+
+        // A user is counted by id, a guest by IP, each under its own prefix so the two never meet.
+        RateLimiter::for(self::LIMITER, function (Request $request) use ($perMinute): Limit {
+            $id = $request->user()?->getAuthIdentifier();
+
+            return $perMinute > 0
+                ? Limit::perMinute($perMinute)->by(is_scalar($id) ? "user:{$id}" : 'ip:'.$request->ip())
+                : Limit::none();
         });
     }
 

@@ -397,7 +397,9 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
             });
         });
 
-        // The dashboard and its API (SPEC-018), unless the app cached its routes.
+        // The dashboard and its API (SPEC-018): its limiter always, and its routes unless the app cached them.
+        DashboardRoutes::limiter($this->app->make('config'));
+
         if (! $this->app->routesAreCached()) {
             DashboardRoutes::register($this->app->make(Router::class), $this->app->make('config'));
         }

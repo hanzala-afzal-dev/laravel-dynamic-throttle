@@ -8,9 +8,12 @@ use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
 use Afzal\DynamicThrottle\Manifest\CompiledRule;
 use Afzal\DynamicThrottle\Manifest\ManifestSettings;
 use Illuminate\Contracts\Config\Repository as Config;
+use Illuminate\Contracts\Container\Container;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
  * The steps that let a request through untouched, which the middleware and
@@ -31,10 +34,13 @@ final readonly class Untouched
 
     /**
      * The steps before the rules are read: the kill switch, then the package's own
-     * routes, which are never limited (ADR-0004 point 5): by their names, and by the
-     * dashboard's path, which global middleware sees before routing (SPEC-018).
+     * routes, which are never limited (ADR-0004 point 5), by their names. Global
+     * middleware runs before routing, so there, a request under the dashboard's path
+     * is the dashboard's when routing would reach one of its routes, or no route at
+     * all; an app route that also matches there, such as {locale}/login, stays limited
+     * (SPEC-018 and its security review).
      */
-    public static function beforePath(Config $config, Request $request): ?self
+    public static function beforePath(Config $config, Request $request, Container $container): ?self
     {
         if ($config->get('dynamic-throttle.enabled') !== true) {
             return new self(UntouchedReason::Disabled);
@@ -42,15 +48,35 @@ final readonly class Untouched
 
         $route = $request->route();
 
-        if ($route instanceof Route && str_starts_with((string) $route->getName(), DynamicThrottleMiddleware::OWN_ROUTES)) {
-            return new self(UntouchedReason::OwnRoute);
+        if ($route instanceof Route) {
+            return self::own($route) ? new self(UntouchedReason::OwnRoute) : null;
         }
 
-        if (DashboardPath::covers($config, $request->decodedPath())) {
+        if (DashboardPath::covers($config, $request->decodedPath()) && self::routesToDashboard($container, $request)) {
             return new self(UntouchedReason::OwnRoute);
         }
 
         return null;
+    }
+
+    private static function own(Route $route): bool
+    {
+        return str_starts_with((string) $route->getName(), DynamicThrottleMiddleware::OWN_ROUTES);
+    }
+
+    /**
+     * Whether routing would send the request to one of the package's own routes, or to
+     * none. Asked only for a request under the dashboard's path.
+     */
+    private static function routesToDashboard(Container $container, Request $request): bool
+    {
+        try {
+            $route = $container->make('router')->getRoutes()->match($request);
+        } catch (NotFoundHttpException|MethodNotAllowedHttpException) {
+            return true;
+        }
+
+        return self::own($route);
     }
 
     /**

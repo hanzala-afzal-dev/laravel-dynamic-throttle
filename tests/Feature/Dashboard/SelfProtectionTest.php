@@ -106,3 +106,20 @@ it('AC-11: says in explain that the dashboard goes through untouched, also under
 
     expect(Artisan::output())->toContain('Decision: untouched: the route is one of the package\'s own');
 })->with(['/dynamic-throttle/api/me', '/dynamic-throttle/no-such-page']);
+
+it('review: limits an app route that also matches under the dashboard\'s path, such as {locale}/login', function (string $mode): void {
+    if ($mode === 'web') {
+        config()->set('dynamic-throttle.middleware.auto_attach', ['web']);
+    }
+
+    Dashboard::boot();
+
+    if ($mode === 'global') {
+        throttleEverything();
+    }
+
+    Route::middleware('web')->get('{locale}/login', fn (): string => 'ok');
+
+    expect(statuses('/dynamic-throttle/login', 2))->toBe([200, 429])
+        ->and(statuses('/dynamic-throttle/api/me', 3))->toBe([200, 200, 200]);
+})->with(['web', 'global']);

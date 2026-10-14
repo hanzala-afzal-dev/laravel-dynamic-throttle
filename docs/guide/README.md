@@ -19,6 +19,7 @@ The [README](../../README.md) gets you started. These pages go into the details.
 - [Traffic and blocks](telemetry.md): what each rule did, per hour
 - [Events](events.md): `RateLimitExceeded`, `RateLimitWouldBlock`, `StorageUnavailable`, `RuleChanged`
 - [During an incident](incidents.md): bypass, scale, and switching one rule off
+- [The dashboard](dashboard.md): where it is, who gets in, and what it refuses
 - [Testing your app](testing.md): `DynamicThrottle::fake()`
 
 When something goes wrong in production, the [runbook](../runbook.md) has the steps: Redis is down, the manifest was evicted, a bad rule blocks `/api`, or an emergency change was left on.

@@ -260,7 +260,7 @@ final readonly class DynamicThrottleMiddleware
     private function decide(Request $request): array|Throwable
     {
         try {
-            if (Untouched::beforePath($this->config, $request) instanceof Untouched) {
+            if (Untouched::beforePath($this->config, $request, $this->container) instanceof Untouched) {
                 return [];
             }
 

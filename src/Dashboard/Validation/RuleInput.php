@@ -43,11 +43,14 @@ final readonly class RuleInput
         'window_seconds', 'priority', 'mode', 'on_failure', 'on_missing_identity', 'response_override', 'enabled',
     ];
 
-    /** No control character, such as a terminal escape. */
-    private const string NO_CONTROL = '/\A[^\p{Cc}]*\z/u';
+    /** No control character, such as a terminal escape, and no invisible format character, such as a right-to-left override. */
+    private const string NO_CONTROL = '/\A[^\p{Cc}\p{Cf}]*\z/u';
 
-    /** No control character but line breaks and tabs. */
-    private const string TEXT = '/\A[^\x00-\x08\x0B\x0C\x0E-\x1F\x7F]*\z/u';
+    /** As NO_CONTROL, but with line breaks and tabs. */
+    private const string TEXT = '/\A[^\x00-\x08\x0B\x0C\x0E-\x1F\x7F\p{Cf}]*\z/u';
+
+    /** The most bytes of a pattern, which the compiler counts (CompiledRule). */
+    private const int MAX_PATTERN_BYTES = 255;
 
     public function __construct(
         private ValidationFactory $validation,
@@ -65,7 +68,9 @@ final readonly class RuleInput
      */
     public function validate(array $input, ?Rule $rule = null): array
     {
-        $data = [...$this->current($rule), ...array_intersect_key($input, array_flip(self::FIELDS))];
+        // An empty string is no value, as Laravel's ConvertEmptyStringsToNull makes it, which an app may remove.
+        $given = array_map(fn (mixed $value): mixed => $value === '' ? null : $value, array_intersect_key($input, array_flip(self::FIELDS)));
+        $data = [...$this->current($rule), ...$given];
         $validator = $this->validation->make($data, $this->rules($data['scope'] ?? null));
 
         $validator->after(function (Validator $validator) use ($data, $rule): void {
@@ -97,18 +102,18 @@ final readonly class RuleInput
         return [
             'name' => ['required', 'string', 'max:100', 'regex:'.self::NO_CONTROL],
             'description' => ['nullable', 'string', 'max:1000', 'regex:'.self::TEXT],
-            'method' => ['sometimes', ValidationRule::enum(RequestMethod::class)],
-            'pattern' => ['required', 'string', 'max:255', 'regex:/\A[^\s\p{Cc}]+\z/u'],
+            'method' => ['filled', ValidationRule::enum(RequestMethod::class)],
+            'pattern' => ['required', 'string', 'max:255', 'regex:/\A[^\s\p{Cc}\p{Cf}]+\z/u', $this->patternBytes(...), $this->noTrailingSlash(...)],
             'scope' => ['required', ValidationRule::enum(Scope::class)],
             'scope_parameter' => $this->scopeParameter($scope),
             'max_attempts' => ['required', 'integer', 'between:1,'.self::MAX_UNSIGNED],
             'window_seconds' => ['required', 'integer', 'between:1,'.AttemptGuard::MAX_WINDOW_SECONDS],
-            'priority' => ['sometimes', 'integer', 'between:0,'.self::MAX_UNSIGNED],
-            'mode' => ['sometimes', ValidationRule::enum(RuleMode::class)],
-            'on_failure' => ['sometimes', ValidationRule::enum(FailurePolicy::class)],
-            'on_missing_identity' => ['sometimes', ValidationRule::enum(MissingIdentity::class)],
+            'priority' => ['filled', 'integer', 'between:0,'.self::MAX_UNSIGNED],
+            'mode' => ['filled', ValidationRule::enum(RuleMode::class)],
+            'on_failure' => ['filled', ValidationRule::enum(FailurePolicy::class)],
+            'on_missing_identity' => ['filled', ValidationRule::enum(MissingIdentity::class)],
             'response_override' => ['nullable', 'array', $this->responseOverride(...)],
-            'enabled' => ['sometimes', 'boolean'],
+            'enabled' => ['filled', 'boolean'],
         ];
     }
 
@@ -134,6 +139,31 @@ final readonly class RuleInput
     {
         if (is_string($value) && $this->throttle->scopeResolver($value) === null) {
             $fail("No custom scope \"{$value}\" is registered: register it with DynamicThrottle::scope().");
+        }
+    }
+
+    /**
+     * The compiler counts a pattern's bytes, and a character outside ASCII takes more than one.
+     *
+     * @param  Closure(string): mixed  $fail
+     */
+    private function patternBytes(string $attribute, mixed $value, Closure $fail): void
+    {
+        if (is_string($value) && strlen($value) > self::MAX_PATTERN_BYTES) {
+            $fail('The pattern must be at most '.self::MAX_PATTERN_BYTES.' bytes, got '.strlen($value).'.');
+        }
+    }
+
+    /**
+     * Request paths never end with a slash, so a pattern that does never matches
+     * (SPEC-007). The root is "/".
+     *
+     * @param  Closure(string): mixed  $fail
+     */
+    private function noTrailingSlash(string $attribute, mixed $value, Closure $fail): void
+    {
+        if (is_string($value) && $value !== '/' && str_ends_with($value, '/')) {
+            $fail('The pattern must not end with a slash: request paths never do, so it would never match. Use / for the root.');
         }
     }
 
