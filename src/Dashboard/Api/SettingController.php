@@ -72,8 +72,8 @@ final readonly class SettingController
         $scale = $this->current(SettingName::ScaleFactor);
 
         return [
-            'bypass' => ['on' => $bypass instanceof Setting, 'until' => self::until($bypass)],
-            'scale' => ['factor' => $scale?->value, 'until' => self::until($scale)],
+            'bypass' => ['on' => $bypass instanceof Setting, 'until' => $this->until($bypass)],
+            'scale' => ['factor' => $scale?->value, 'until' => $this->until($scale)],
         ];
     }
 
@@ -86,7 +86,7 @@ final readonly class SettingController
             : null;
     }
 
-    private static function until(?Setting $setting): ?string
+    private function until(?Setting $setting): ?string
     {
         return $setting?->expires_at?->clone()->setTimezone('UTC')->toIso8601String();
     }

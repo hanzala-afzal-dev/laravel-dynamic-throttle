@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle\Dashboard\Api;
 
+use Afzal\DynamicThrottle\Compiler\CompileResult;
+use Afzal\DynamicThrottle\Compiler\ManifestCompileFailed;
 use Afzal\DynamicThrottle\Support\ChangeOutcome;
 use Illuminate\Http\JsonResponse;
 
@@ -30,11 +32,11 @@ final class Changed
      */
     private static function manifest(ChangeOutcome $outcome): ?array
     {
-        if ($outcome->compiled !== null) {
+        if ($outcome->compiled instanceof CompileResult) {
             return ['compiled' => true, 'version' => $outcome->compiled->version];
         }
 
-        if ($outcome->compileFailed !== null) {
+        if ($outcome->compileFailed instanceof ManifestCompileFailed) {
             return ['compiled' => false, 'error' => $outcome->compileFailed->getMessage()];
         }
 
