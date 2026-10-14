@@ -88,6 +88,7 @@ Feature tests run on SQLite with the array cache store and Laravel's time travel
 - **AC-23 (audit)** Each command that changes something writes exactly one audit entry, in the change's transaction: actor `cli:<system user>`, action, target, before and after. A command that changes nothing writes none. Updating or deleting an entry through the model throws.
 - **AC-24 (the manifest's settings)** The codec rejects format 2, and a settings section with an unknown setting, a factor outside 0.1 to 10 or with more than two decimals, or an end time that is not an integer. L1 keeps the settings, and an L1 entry whose settings are invalid is a miss (SPEC-028 AC-9).
 - **AC-25 (hard rules)** The arch tests hold: no database and no wall clock on the request path, and keys only from `KeyBuilder`.
+- **AC-26 (times in UTC)** (decided at the Phase 3 review, 2026-10-13) The settings table and the audit log store their times in UTC, whatever the app's time zone, so a daylight-saving change cannot move a setting's end time by the repeated hour. Tested by `tests/Feature/Models/TimesInUtcTest.php`.
 
 ## Interfaces and files
 - `database/migrations/2026_10_01_000001_create_dynamic_throttle_settings_table.php`: `id`, `name` (unique), `value`, `expires_at` (a datetime, as exemptions use), timestamps.
@@ -120,7 +121,7 @@ Feature tests run on SQLite with the array cache store and Laravel's time travel
 - **Bypass and the factor together:** bypass wins, and nothing is counted.
 - **The servers' clocks differ:** each server ends a setting by its own clock, so they disagree by their skew. NTP keeps that to milliseconds.
 - **The end time is exact:** a setting applies while the time is before its end, and not at it.
-- **Time zones:** `expires_at` is written in the app's time zone, which the compiler reads back, as for exemptions (SPEC-009).
+- **Time zones:** `expires_at`, the timestamps and the audit log's `created_at` are stored in UTC, whatever the app's time zone, and the compiler reads them as UTC (AC-26, as SPEC-009 AC-24).
   - **Daylight saving time** (found by the review): when the clocks go back, an hour repeats, and an end time in it reads back as its later occurrence, so a setting can last up to an hour longer. Exemptions share it. Storing the package's times in UTC would fix both, and is proposed for before 0.1.0 (the roadmap).
 - **A huge limit:** a scaled limit beyond PHP's largest integer stays at that integer.
 - **The settings table is missing,** because the app has not run the new migration: the compiler compiles no settings and reports it, as for exemptions (SPEC-009). The change commands print how to publish and run the migration, and exit 1.

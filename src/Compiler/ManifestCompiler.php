@@ -317,7 +317,7 @@ final readonly class ManifestCompiler implements ManifestRebuilder
     }
 
     /**
-     * Unix seconds. The model writes the date in the app's time zone, which parse() reads.
+     * Unix seconds. The models store dates in UTC (StoresTimesInUtc).
      *
      * @throws InvalidArgumentException
      */
@@ -328,7 +328,7 @@ final readonly class ManifestCompiler implements ManifestRebuilder
         }
 
         try {
-            return is_string($value) ? Date::parse($value)->getTimestamp() : throw new InvalidArgumentException('not a string');
+            return is_string($value) ? Date::parse($value, 'UTC')->getTimestamp() : throw new InvalidArgumentException('not a string');
         } catch (InvalidArgumentException $exception) {
             throw new InvalidArgumentException('expires_at must be a date, got '.(is_string($value) ? "\"{$value}\"" : get_debug_type($value)).'.', $exception->getCode(), previous: $exception);
         }

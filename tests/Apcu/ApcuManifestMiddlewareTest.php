@@ -96,7 +96,7 @@ it('AC-2: fills L1 through a request, so the next PHP-FPM request reads nothing 
 
     expect([Throttling::headers($first)['X-RateLimit-Remaining'] ?? null, Throttling::headers($second)['X-RateLimit-Remaining'] ?? null])
         ->toBe(['4', '3'])
-        ->and($store->reads('dt:m'))->toBe(1);
+        ->and($store->reads('dt:m:3'))->toBe(1);
 });
 
 it('AC-5: answers 503 from L1\'s fail-closed rule while the cache store fails, with L0 empty', function (): void {
@@ -159,7 +159,7 @@ it('AC-8: writes nothing to APCu, and reads the store on every request, with ref
     $this->get('api/x');
 
     expect(apcu_cache_info(true)['num_entries'])->toBe(0)
-        ->and($store->reads('dt:m'))->toBe(2);
+        ->and($store->reads('dt:m:3'))->toBe(2);
 });
 
 it('AC-8: writes nothing to APCu under DynamicThrottle::fake(), even with refresh_seconds above 0', function (): void {
@@ -190,5 +190,5 @@ it('SPEC-013 AC-10: applies the settings of a manifest from L1, and ends them at
     $ended = $this->get('api/x');
 
     expect([Throttling::headers($fromL1), Throttling::headers($ended)['X-RateLimit-Remaining'] ?? null])->toBe([[], '0'])
-        ->and($store->reads('dt:m'))->toBe(1);
+        ->and($store->reads('dt:m:3'))->toBe(1);
 });

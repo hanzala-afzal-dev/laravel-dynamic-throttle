@@ -39,7 +39,7 @@ afterEach(function (): void {
  */
 function storedManifest(): ?array
 {
-    $json = Cache::get('dt:m');
+    $json = Cache::get('dt:m:3');
 
     return is_string($json) ? json_decode($json, true, flags: JSON_THROW_ON_ERROR) : null;
 }
@@ -137,7 +137,7 @@ it('AC-3: only ever increases the version, even after the manifest is deleted', 
 
     $first = $compiler->compile()->version;
     $sameMillisecond = $compiler->compile()->version;
-    Cache::forget('dt:m');
+    Cache::forget('dt:m:3');
     $this->travel(1)->seconds();
     $afterDelete = $compiler->compile()->version;
 
@@ -186,14 +186,14 @@ it('AC-5: compiles zero enabled rules to a manifest with no rules, which readers
 it('AC-6: leaves the stored manifest untouched when reading the rules fails', function (): void {
     Rule::create(RuleSchema::attributes());
     app(ManifestCompiler::class)->compile();
-    $before = Cache::get('dt:m');
+    $before = Cache::get('dt:m:3');
     Schema::drop('dynamic_throttle_rules');
 
     expect(fn () => app(ManifestCompiler::class)->compile())
         ->toThrow(function (ManifestCompileFailed $exception): void {
             expect($exception->getPrevious())->toBeInstanceOf(QueryException::class);
         })
-        ->and(Cache::get('dt:m'))->toBe($before);
+        ->and(Cache::get('dt:m:3'))->toBe($before);
 });
 
 it('AC-6: leaves the stored manifest untouched when writing it fails', function (): void {
@@ -201,33 +201,33 @@ it('AC-6: leaves the stored manifest untouched when writing it fails', function 
     $failing = failingWritesCache();
     $compiler = new ManifestCompiler($failing->cache, new KeyBuilder('dt:'));
     $compiler->compile();
-    $before = $failing->cache->get('dt:m');
+    $before = $failing->cache->get('dt:m:3');
     $failing->store->failing = true;
 
     expect(fn (): CompileResult => $compiler->compile())
         ->toThrow(function (ManifestCompileFailed $exception): void {
             expect($exception->getPrevious()?->getMessage())->toBe('The store is down.');
         })
-        ->and($failing->cache->get('dt:m'))->toBe($before);
+        ->and($failing->cache->get('dt:m:3'))->toBe($before);
 });
 
 it('AC-7: waits for the compile lock, then fails without writing', function (): void {
     Rule::create(RuleSchema::attributes());
-    Cache::forget('dt:m');
-    $held = Cache::lock('dt:m:lock', 10);
+    Cache::forget('dt:m:3');
+    $held = Cache::lock('dt:m:3:lock', 10);
     $held->get();
 
     try {
         expect(fn (): CompileResult => (new ManifestCompiler(Cache::store(), new KeyBuilder('dt:'), lockWaitSeconds: 0))->compile())
             ->toThrow(ManifestCompileFailed::class)
-            ->and(Cache::get('dt:m'))->toBeNull();
+            ->and(Cache::get('dt:m:3'))->toBeNull();
     } finally {
         $held->release();
     }
 });
 
 it('AC-8: compiles after a save commits, and not for a save that rolls back', function (): void {
-    Cache::forget('dt:m');
+    Cache::forget('dt:m:3');
 
     try {
         DB::transaction(function (): void {
@@ -265,4 +265,14 @@ it('AC-9: saves the rule and reports the failure when the observer cannot compil
     expect(Rule::query()->count())->toBe(1);
     Exceptions::assertReportedCount(1);
     Exceptions::assertReported(ManifestCompileFailed::class);
+});
+
+it('AC-22: writes only its own format\'s key, and leaves the manifest of another format alone', function (): void {
+    // As a server of another version of the package keeps it, during a rolling deploy.
+    Cache::forever('dt:m:4', '{"format":4}');
+
+    Rule::create(RuleSchema::attributes());
+
+    expect(Cache::get('dt:m:4'))->toBe('{"format":4}')
+        ->and(storedRuleIds())->toHaveCount(1);
 });

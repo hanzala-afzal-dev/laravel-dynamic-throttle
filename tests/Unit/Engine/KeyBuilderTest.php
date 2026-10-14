@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Afzal\DynamicThrottle\Engine\CounterKey;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
+use Afzal\DynamicThrottle\Manifest\ManifestCodec;
 
 covers(KeyBuilder::class);
 
@@ -49,8 +50,12 @@ it('AC-12: rejects an unsafe prefix', function (string $prefix): void {
 it('SPEC-006: builds the manifest keys from the prefix, apart from every counter key', function (): void {
     $keys = new KeyBuilder('dt:');
 
-    expect([$keys->manifest(), $keys->manifestLock(), $keys->manifestRebuild()])->toBe(['dt:m', 'dt:m:lock', 'dt:m:rebuild'])
+    expect([$keys->manifest(), $keys->manifestLock(), $keys->manifestRebuild()])->toBe(['dt:m:3', 'dt:m:3:lock', 'dt:m:3:rebuild'])
         ->and($keys->counterBase(new CounterKey('1', hash('sha256', 'A')), 60))->toStartWith('dt:c:');
+});
+
+it('SPEC-006 AC-22: names the manifest\'s format in its key, so servers of two formats never share one', function (): void {
+    expect((new KeyBuilder('dt:'))->manifest())->toBe('dt:m:'.ManifestCodec::FORMAT);
 });
 
 it('SPEC-012: builds the keys of the cooldown and of the reported causes under the prefix, for one app', function (): void {
@@ -90,7 +95,8 @@ it('SPEC-015: builds the telemetry keys under the prefix, apart from the counter
 });
 
 it('SPEC-015: rejects a telemetry metric other than hits, blocks and would_blocks', function (): void {
-    expect(fn (): string => (new KeyBuilder('dt:'))->telemetryCount(30_000_000, '12', 'misses'))->toThrow(InvalidArgumentException::class);
+    expect(fn (): string => (new KeyBuilder('dt:'))->telemetryCount(30_000_000, '12', 'misses'))
+        ->toThrow(InvalidArgumentException::class, 'Unknown telemetry metric "misses": use hits, blocks, would_blocks, guests, skipped, ignored.');
 });
 
 it('SPEC-016: builds the keys of the new metrics, and of an hour\'s traffic, under the prefix, apart from the other telemetry keys', function (): void {

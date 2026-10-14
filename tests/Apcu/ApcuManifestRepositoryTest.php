@@ -58,17 +58,17 @@ function emptyL0(): void
 
 it('AC-1: builds the manifest from a fresh L1 entry, and reads nothing from the store', function (): void {
     $store = new CountingCacheStore;
-    $store->forever('dt:m', ManifestFixtures::json(8));
+    $store->forever('dt:m:3', ManifestFixtures::json(8));
     LocalManifests::cache()->store(LocalManifests::snapshot(7, readAt: (FakeClock::T0 - 1) * 1_000_000));
 
     $manifest = repositoryWithL1($store, new FakeClock)->current();
 
-    expect([$manifest->version, $manifest->state, $store->reads('dt:m')])->toBe([7, ManifestState::Fresh, 0]);
+    expect([$manifest->version, $manifest->state, $store->reads('dt:m:3')])->toBe([7, ManifestState::Fresh, 0]);
 });
 
 it('AC-1: keeps the manifest in L0 only for what is left of the entry\'s freshness', function (): void {
     $store = new CountingCacheStore;
-    $store->forever('dt:m', ManifestFixtures::json(8));
+    $store->forever('dt:m:3', ManifestFixtures::json(8));
     LocalManifests::cache()->store(LocalManifests::snapshot(7, readAt: (FakeClock::T0 - 1) * 1_000_000));
     $clock = new FakeClock;
     $repository = repositoryWithL1($store, $clock);
@@ -79,12 +79,12 @@ it('AC-1: keeps the manifest in L0 only for what is left of the entry\'s freshne
     $clock->setSeconds(FakeClock::T0 + 1);
     $refreshed = $repository->current();
 
-    expect([$fromL0->version, $refreshed->version, $store->reads('dt:m')])->toBe([7, 8, 1]);
+    expect([$fromL0->version, $refreshed->version, $store->reads('dt:m:3')])->toBe([7, 8, 1]);
 });
 
 it('AC-2: fills L1 from the store, so the next PHP-FPM request reads nothing from it', function (): void {
     $store = new CountingCacheStore;
-    $store->forever('dt:m', ManifestFixtures::json(7));
+    $store->forever('dt:m:3', ManifestFixtures::json(7));
     $clock = new FakeClock;
 
     $first = repositoryWithL1($store, $clock)->current();
@@ -92,17 +92,17 @@ it('AC-2: fills L1 from the store, so the next PHP-FPM request reads nothing fro
     $second = repositoryWithL1($store, $clock)->current();
     $entry = LocalManifests::cache()->fetch();
 
-    expect([$first->version, $second->version, $second->state, $store->reads('dt:m')])->toBe([7, 7, ManifestState::Fresh, 1])
+    expect([$first->version, $second->version, $second->state, $store->reads('dt:m:3')])->toBe([7, 7, ManifestState::Fresh, 1])
         ->and([$entry?->version, $entry?->state, $entry?->readAt])->toBe([7, ManifestState::Fresh, FakeClock::T0 * 1_000_000]);
 });
 
 it('AC-3: uses the entry until refresh_seconds after its read, then reads the store, and a rule saved since applies', function (): void {
     $store = new CountingCacheStore;
-    $store->forever('dt:m', ManifestFixtures::json(7));
+    $store->forever('dt:m:3', ManifestFixtures::json(7));
     $clock = new FakeClock;
     repositoryWithL1($store, $clock)->current();
     // A rule saved at T0 + 1.
-    $store->forever('dt:m', ManifestFixtures::json(8, [['max_attempts' => 5]]));
+    $store->forever('dt:m:3', ManifestFixtures::json(8, [['max_attempts' => 5]]));
 
     $clock->setMicroseconds(FakeClock::T0 * 1_000_000 + 1_999_999);
     emptyL0();
@@ -111,28 +111,28 @@ it('AC-3: uses the entry until refresh_seconds after its read, then reads the st
     emptyL0();
     $afterRefresh = repositoryWithL1($store, $clock)->current();
 
-    expect([$withinRefresh->version, $afterRefresh->version, $afterRefresh->rule(0)->maxAttempts, $store->reads('dt:m')])
+    expect([$withinRefresh->version, $afterRefresh->version, $afterRefresh->rule(0)->maxAttempts, $store->reads('dt:m:3')])
         ->toBe([7, 8, 5, 2]);
 });
 
 it('AC-3: reads the store over an entry read in the future, after the clock went back', function (): void {
     $store = new CountingCacheStore;
-    $store->forever('dt:m', ManifestFixtures::json(8));
+    $store->forever('dt:m:3', ManifestFixtures::json(8));
     LocalManifests::cache()->store(LocalManifests::snapshot(7, readAt: FakeClock::T0 * 1_000_000 + 1));
 
     $manifest = repositoryWithL1($store, new FakeClock)->current();
 
-    expect([$manifest->version, $store->reads('dt:m')])->toBe([8, 1]);
+    expect([$manifest->version, $store->reads('dt:m:3')])->toBe([8, 1]);
 });
 
 it('AC-4: serves L1\'s manifest, marked stale, when the store has lost it, and the server reads nothing more for refresh_seconds', function (): void {
     Exceptions::fake();
     $store = new CountingCacheStore;
-    $store->forever('dt:m', ManifestFixtures::json(7));
+    $store->forever('dt:m:3', ManifestFixtures::json(7));
     $clock = new FakeClock;
     $rebuilder = new RecordingRebuilder;
     repositoryWithL1($store, $clock, $rebuilder)->current();
-    $store->forget('dt:m');
+    $store->forget('dt:m:3');
 
     $clock->setSeconds(FakeClock::T0 + 3);
     emptyL0();
@@ -144,7 +144,7 @@ it('AC-4: serves L1\'s manifest, marked stale, when the store has lost it, and t
     app()->terminate();
 
     expect([$manifest->version, $manifest->state, $next->version, $next->state])->toBe([7, ManifestState::Stale, 7, ManifestState::Stale])
-        ->and($store->reads('dt:m'))->toBe(2)
+        ->and($store->reads('dt:m:3'))->toBe(2)
         ->and([$rebuildsBeforeTerminate, $rebuilder->calls])->toBe([0, 1]);
     Exceptions::assertReportedCount(1);
     Exceptions::assertReported(ManifestUnavailable::class);
@@ -153,7 +153,7 @@ it('AC-4: serves L1\'s manifest, marked stale, when the store has lost it, and t
 it('AC-4: serves L1\'s manifest, marked stale, while the store fails, and the server reads nothing more for refresh_seconds', function (): void {
     Exceptions::fake();
     $store = new CountingCacheStore;
-    $store->forever('dt:m', ManifestFixtures::json(7));
+    $store->forever('dt:m:3', ManifestFixtures::json(7));
     $clock = new FakeClock;
     repositoryWithL1($store, $clock)->current();
     $store->failing = true;
@@ -166,7 +166,7 @@ it('AC-4: serves L1\'s manifest, marked stale, while the store fails, and the se
     $next = repositoryWithL1($store, $clock)->current();
 
     expect([$manifest->version, $manifest->state, $next->version, $next->state])->toBe([7, ManifestState::Stale, 7, ManifestState::Stale])
-        ->and($store->reads('dt:m'))->toBe(2);
+        ->and($store->reads('dt:m:3'))->toBe(2);
     Exceptions::assertReportedCount(1);
     Exceptions::assertReported(fn (ManifestUnavailable $exception): bool => $exception->getMessage() === 'The manifest could not be read: '.CountingCacheStore::DOWN);
 });
@@ -174,13 +174,13 @@ it('AC-4: serves L1\'s manifest, marked stale, while the store fails, and the se
 it('AC-4: serves the newer of L0\'s and L1\'s manifests when the store has lost it, and writes it back to L1', function (int $inMemory, int $inApcu): void {
     Exceptions::fake();
     $store = new CountingCacheStore;
-    $store->forever('dt:m', ManifestFixtures::json($inMemory));
+    $store->forever('dt:m:3', ManifestFixtures::json($inMemory));
     $clock = new FakeClock((FakeClock::T0 - 3) * 1_000_000);
     // A long-running worker read its manifest 3 seconds ago, into L0 only.
     (new ManifestRepository(new Repository($store), new KeyBuilder('dt:'), $clock, new RecordingRebuilder, app(), 2))->current();
     // Another worker of the server read another one at the same time, into L1.
     LocalManifests::cache()->store(LocalManifests::snapshot($inApcu, readAt: (FakeClock::T0 - 3) * 1_000_000));
-    $store->forget('dt:m');
+    $store->forget('dt:m:3');
 
     $clock->setSeconds(FakeClock::T0);
     $manifest = repositoryWithL1($store, $clock)->current();
@@ -213,13 +213,13 @@ it('AC-4: writes the stale manifest back with the time after a store that takes 
 
     $manifest = repositoryWithL1($store, $clock)->current();
     $entry = LocalManifests::cache()->fetch();
-    $readsBefore = $store->reads('dt:m');
+    $readsBefore = $store->reads('dt:m:3');
     emptyL0();
     $next = repositoryWithL1($store, $clock)->current();
 
     expect([$manifest->version, $manifest->state, $next->version])->toBe([7, ManifestState::Stale, 7])
         ->and($entry?->readAt)->toBe(FakeClock::T0 * 1_000_000 + 1_500_000)
-        ->and($store->reads('dt:m'))->toBe($readsBefore);
+        ->and($store->reads('dt:m:3'))->toBe($readsBefore);
 });
 
 it('AC-4: still writes the stale manifest back, and throws nothing, when reporting the store\'s failure fails', function (): void {
@@ -253,34 +253,34 @@ it('AC-4: still writes the stale manifest back, and throws nothing, when reporti
 
 it('AC-15: serves the expired entry while another process of the server reads the store, and reads nothing itself', function (): void {
     $store = new CountingCacheStore;
-    $store->forever('dt:m', ManifestFixtures::json(8));
+    $store->forever('dt:m:3', ManifestFixtures::json(8));
     LocalManifests::cache()->store(LocalManifests::snapshot(7, readAt: (FakeClock::T0 - 3) * 1_000_000));
     LocalManifests::cache()->claim(2);
 
     $manifest = repositoryWithL1($store, new FakeClock)->current();
 
-    expect([$manifest->version, $store->reads('dt:m')])->toBe([7, 0]);
+    expect([$manifest->version, $store->reads('dt:m:3')])->toBe([7, 0]);
 });
 
 it('AC-15: claims the refresh of an expired entry, reads the store, and ends the claim when it stores the entry', function (): void {
     $store = new CountingCacheStore;
-    $store->forever('dt:m', ManifestFixtures::json(8));
+    $store->forever('dt:m:3', ManifestFixtures::json(8));
     LocalManifests::cache()->store(LocalManifests::snapshot(7, readAt: (FakeClock::T0 - 3) * 1_000_000));
 
     $manifest = repositoryWithL1($store, new FakeClock)->current();
 
-    expect([$manifest->version, $store->reads('dt:m'), LocalManifests::cache()->fetch()?->version])->toBe([8, 1, 8])
+    expect([$manifest->version, $store->reads('dt:m:3'), LocalManifests::cache()->fetch()?->version])->toBe([8, 1, 8])
         ->and(LocalManifests::cache()->claim(2))->toBeTrue();
 });
 
 it('AC-15: reads the store when L1 holds no entry, without a claim to wait for', function (): void {
     $store = new CountingCacheStore;
-    $store->forever('dt:m', ManifestFixtures::json(8));
+    $store->forever('dt:m:3', ManifestFixtures::json(8));
     LocalManifests::cache()->claim(2);
 
     $manifest = repositoryWithL1($store, new FakeClock)->current();
 
-    expect([$manifest->version, $store->reads('dt:m')])->toBe([8, 1]);
+    expect([$manifest->version, $store->reads('dt:m:3')])->toBe([8, 1]);
 });
 
 it('AC-9: throws nothing for an object deep in an entry, even with the store down', function (): void {
@@ -301,7 +301,7 @@ it('AC-10: serves a manifest that cannot be written to L1, and throws nothing', 
     // json_decode() reads 1e400 as INF, which json_encode() cannot write.
     $json = str_replace('"response_override":null', '"response_override":{"retry":1e400}', ManifestFixtures::json(7));
     $store = new CountingCacheStore;
-    $store->forever('dt:m', $json);
+    $store->forever('dt:m:3', $json);
 
     $manifest = repositoryWithL1($store, new FakeClock)->current();
 
@@ -311,7 +311,7 @@ it('AC-10: serves a manifest that cannot be written to L1, and throws nothing', 
 it('AC-9: reads the store over an entry that is not a snapshot, replaces the entry, and throws nothing', function (): void {
     apcu_store(LocalManifests::key(), new UnreadableEntry);
     $store = new CountingCacheStore;
-    $store->forever('dt:m', ManifestFixtures::json(7));
+    $store->forever('dt:m:3', ManifestFixtures::json(7));
 
     $manifest = repositoryWithL1($store, new FakeClock)->current();
 
@@ -321,7 +321,7 @@ it('AC-9: reads the store over an entry that is not a snapshot, replaces the ent
 it('AC-9: reads the store over an entry that cannot build a manifest, replaces the entry, and throws nothing', function (array $replace): void {
     apcu_store(LocalManifests::key(), [...LocalManifests::snapshot(7)->toArray(), ...$replace]);
     $store = new CountingCacheStore;
-    $store->forever('dt:m', ManifestFixtures::json(8));
+    $store->forever('dt:m:3', ManifestFixtures::json(8));
 
     $manifest = repositoryWithL1($store, new FakeClock)->current();
 
@@ -345,7 +345,7 @@ it('AC-9: serves no rules, and throws nothing, when the store fails and L1\'s en
 
 it('AC-10: serves the store\'s rules when APCu cannot hold them, and throws nothing', function (): void {
     $store = new CountingCacheStore;
-    $store->forever('dt:m', ManifestFixtures::json(7, [['response_override' => ['message' => str_repeat('x', (int) apcu_sma_info(true)['seg_size'])]]]));
+    $store->forever('dt:m:3', ManifestFixtures::json(7, [['response_override' => ['message' => str_repeat('x', (int) apcu_sma_info(true)['seg_size'])]]]));
 
     $manifest = repositoryWithL1($store, new FakeClock)->current();
 
@@ -363,7 +363,7 @@ it('AC-11: keeps in L1 the index built from the rules, and builds from it the ma
         ['id' => '3', 'subject' => 'custom', 'parameter' => 'tenant', 'match' => str_repeat('b', 64)],
     ]);
     $store = new CountingCacheStore;
-    $store->forever('dt:m', $json);
+    $store->forever('dt:m:3', $json);
     $clock = new FakeClock;
     repositoryWithL1($store, $clock)->current();
 
@@ -371,7 +371,7 @@ it('AC-11: keeps in L1 the index built from the rules, and builds from it the ma
     $fromL1 = repositoryWithL1($store, $clock)->current();
     $decoded = ManifestCodec::decode($json);
 
-    expect($store->reads('dt:m'))->toBe(1)
+    expect($store->reads('dt:m:3'))->toBe(1)
         ->and(apcu_fetch(LocalManifests::key())['index'] ?? null)->toBe(RuleIndex::of($decoded->rules())->toArray())
         ->and([$fromL1->version, $fromL1->state, $fromL1->rules(), $fromL1->index, $fromL1->exemptions])
         ->toEqual([$decoded->version, $decoded->state, $decoded->rules(), $decoded->index, $decoded->exemptions]);

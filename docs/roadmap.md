@@ -128,11 +128,11 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 - SPEC-016: health checks (store type warnings, middleware order, scheduler, dominant IP)
 - SPEC-029: the runbook, `docs/runbook.md`, with a test per scenario, and the `emergency` health check for settings left on
 
-**Before the first release, 0.1.0, from the SPEC-013 review (2026-10-01)**, proposed for the maintainer to decide:
-- The manifest's cache key names its format, such as `dt:m:3`, so servers of two versions never rebuild each other's manifest during a rolling deploy.
-- The package's tables store times in UTC, the exemptions' and the settings' end times and the audit log's, so a daylight-saving change cannot stretch an end time by the repeated hour.
-- Telemetry's default `sample_rate`, the fallback below (SPEC-015's benchmark, `benchmarks/results/phase-3-telemetry.md`): at 1, telemetry costs about 5 µs on the response path, and after it one round trip on Redis, or about 1 ms of worker time on Memcached, where the cache driver makes two round trips per rule and metric. The README tells busy apps on Memcached to lower it.
-- The `dominant-ip` check behind several proxies (SPEC-016's review): behind a load balancer with several nodes, such as one per availability zone, each node's IP sends a share of the traffic and none may reach half, so the check says ok while `ip` rules count each node as one client. Either also warn when a few clients, say five, send most of at least 1,000 requests, which also warns about a few known heavy clients, or count each hour's requests from private and reserved ranges, a sign of an untrusted proxy that stores no client IP.
+**Before the first release, 0.1.0, from the SPEC-013 review (2026-10-01)**, decided at the Phase 3 review (2026-10-13):
+- **Yes, first in Phase 4:** the manifest's cache key names its format, such as `dt:m:3`, so servers of two versions never rebuild each other's manifest during a rolling deploy.
+- **Yes, first in Phase 4:** the package's tables store times in UTC, the exemptions' and the settings' end times and the audit log's, so a daylight-saving change cannot stretch an end time by the repeated hour.
+- **Kept at 1:** telemetry's default `sample_rate`, the fallback below (SPEC-015's benchmark, `benchmarks/results/phase-3-telemetry.md`): at 1, telemetry costs about 5 µs on the response path, and after it one round trip on Redis, or about 1 ms of worker time on Memcached, where the cache driver makes two round trips per rule and metric. The README tells busy apps on Memcached to lower it.
+- **After 0.1.0:** the `dominant-ip` check behind several proxies (SPEC-016's review), which needs real traffic to tune: behind a load balancer with several nodes, such as one per availability zone, each node's IP sends a share of the traffic and none may reach half, so the check says ok while `ip` rules count each node as one client. Either also warn when a few clients, say five, send most of at least 1,000 requests, which also warns about a few known heavy clients, or count each hour's requests from private and reserved ranges, a sign of an untrusted proxy that stores no client IP.
 
 **Exit criteria**
 - Benchmark, with 100 active rules and 3 matched, restated at the Phase 2 exit:
@@ -145,9 +145,15 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 
 **No release here.** On 2026-10-08 the maintainer decided that the package is released only with its dashboard, so the first release, 0.1.0, moves to the end of Phase 5 (ADR-0018's decision record). Phase 3 still ends with the maintainer's review.
 
+**Done.** The maintainer reviewed Phase 3 on 2026-10-13: every exit criterion holds, with 415 µs at p95 on PHP-FPM with APCu and 302 µs on Octane, and the decisions above are taken.
+
 ---
 
 ## Phase 4 — Dashboard API and security (M)
+
+**First, from the Phase 3 review**
+- The manifest's cache key names its format (SPEC-006).
+- The package's tables store times in UTC (SPEC-009, SPEC-013).
 
 **Specs**
 - SPEC-017: JSON API (rules, exemptions, settings, metrics, health, explain), [the spec](specs/017-json-api.md): each change writes its audit entry in the same transaction, and explain is a POST that masks bearer tokens and header values (decided on 2026-10-14).
@@ -173,6 +179,7 @@ A dashboard that ships with the package, as Laravel Horizon's does: served at it
 - SPEC-021: Overview + emergency controls
 - SPEC-022: Rules + dry-run promote
 - SPEC-023: Exemptions
+- SPEC-030: a live feed of the latest blocks and would-blocks, which Activity polls every few seconds: the last 500, on Redis, with the client's raw IP and user id kept for an hour, never a token or a header value. This amends ADR-0024 (decided at the Phase 3 review).
 - SPEC-024: Activity + offenders
 - SPEC-025: Audit log
 - SPEC-026: Explain tool
@@ -212,6 +219,7 @@ A dashboard that ships with the package, as Laravel Horizon's does: served at it
 - IETF `RateLimit` headers (opt-in)
 - Shadow rules: test a new limit next to an enforcing one
 - Scheduled settings ("double limits Friday 18:00–22:00")
+- The `dominant-ip` check behind several proxies (Phase 3 review, above)
 
 ## Decisions made in Phase 0 (2026-09-23)
 
