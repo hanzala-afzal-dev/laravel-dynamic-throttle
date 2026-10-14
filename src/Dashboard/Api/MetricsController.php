@@ -43,8 +43,12 @@ final readonly class MetricsController
             $current = intdiv(intdiv($this->clock->microseconds(), 1_000_000), $step);
             $first = $current - $count + 1;
             $names = Rule::query()->pluck('name', 'id')->all();
+            // At most 500, so a buffer that cannot list its own reads a bounded number of keys (AC-26).
+            $enabled = $period === 'hour'
+                ? array_values(Rule::query()->where('enabled', true)->orderBy('id')->pluck('id')->map(fn (mixed $id): string => is_scalar($id) ? (string) $id : '')->all())
+                : [];
 
-            $numbers = $period === 'hour' ? $this->minutes($first, $count, array_keys($names)) : $this->hours($first, $count);
+            $numbers = $period === 'hour' ? $this->minutes($first, $count, $enabled) : $this->hours($first, $count);
 
             return new JsonResponse([
                 'period' => $period,
@@ -58,16 +62,15 @@ final readonly class MetricsController
     /**
      * The counter store's minutes, by rule id and minute's index.
      *
-     * @param  list<int|string>  $ruleIds
+     * @param  list<string>  $ruleIds
      * @return array<int, array<int, array{int, int, int}>>
      */
     private function minutes(int $first, int $count, array $ruleIds): array
     {
-        $ids = array_map(strval(...), $ruleIds);
         $numbers = [];
 
         for ($index = 0; $index < $count; $index++) {
-            foreach ($this->buffer->counts($first + $index, $ids) as $ruleId => $counts) {
+            foreach ($this->buffer->counts($first + $index, $ruleIds) as $ruleId => $counts) {
                 $numbers[(int) $ruleId][$index] = [$counts->hits, $counts->blocks, $counts->wouldBlocks];
             }
         }

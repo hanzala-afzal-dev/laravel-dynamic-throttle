@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle\Dashboard;
 
 use Afzal\DynamicThrottle\Dashboard\Api\ExemptionController;
+use Afzal\DynamicThrottle\Dashboard\Api\ExplainController;
 use Afzal\DynamicThrottle\Dashboard\Api\HealthController;
 use Afzal\DynamicThrottle\Dashboard\Api\MetricsController;
 use Afzal\DynamicThrottle\Dashboard\Api\OffendersController;
@@ -60,6 +61,7 @@ final class DashboardRoutes
             $router->name('api.rules.offenders')->middleware(self::middleware('read'))->get('api/rules/{rule}/offenders', OffendersController::class)->whereNumber('rule');
             $router->name('api.metrics')->middleware(self::middleware('read'))->get('api/metrics', MetricsController::class);
             $router->name('api.health')->middleware(self::middleware('read'))->get('api/health', HealthController::class);
+            $router->name('api.explain')->middleware(self::middleware('inspect'))->post('api/explain', ExplainController::class);
 
             $router->name('api.exemptions.index')->middleware(self::middleware('read'))->get('api/exemptions', [ExemptionController::class, 'index']);
             $router->name('api.exemptions.store')->middleware(self::middleware('write'))->post('api/exemptions', [ExemptionController::class, 'store']);
@@ -94,7 +96,7 @@ final class DashboardRoutes
      * What every route of the group runs after dashboard.middleware: the headers first, so
      * a 403 or a 429 carries them too, then the limit, then the gates.
      *
-     * @param  'read'|'write'  $ability
+     * @param  'read'|'inspect'|'write'  $ability
      * @return list<string>
      */
     public static function middleware(string $ability): array

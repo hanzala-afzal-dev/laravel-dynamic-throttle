@@ -45,6 +45,7 @@ use Afzal\DynamicThrottle\Support\ApcuFailureMemory;
 use Afzal\DynamicThrottle\Support\ApcuManifestCache;
 use Afzal\DynamicThrottle\Support\ConfigMerger;
 use Afzal\DynamicThrottle\Support\ConfigValues;
+use Afzal\DynamicThrottle\Support\DefaultGuard;
 use Afzal\DynamicThrottle\Support\Explainer;
 use Afzal\DynamicThrottle\Support\LaravelClock;
 use Afzal\DynamicThrottle\Support\LazyManifestRebuilder;
@@ -72,6 +73,8 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->bind(DefaultGuard::class, fn (Application $app): DefaultGuard => $this->defaultGuard($app));
+
         $this->mergePackageConfig();
 
         $this->app->singleton(Clock::class, LaravelClock::class);
@@ -388,6 +391,11 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
         // Once every provider has booted, so middleware.after can name aliases that other
         // packages register. Through the kernel, which copies its lists to the router each
         // time they change, so a later change there keeps these.
+        // Before any request's auth middleware can change it (SPEC-017 AC-25).
+        $this->app->booted(function (): void {
+            $this->app->instance(DefaultGuard::class, $this->defaultGuard($this->app));
+        });
+
         $this->app->booted(function (): void {
             $this->callAfterResolving(HttpKernel::class, function (HttpKernel $kernel): void {
                 // Another kernel gets neither: the docs show the manual setup (ADR-0004's fallback).
@@ -562,5 +570,12 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
         return is_array($values)
             ? array_values(array_filter($values, fn (mixed $value): bool => is_string($value) && $value !== ''))
             : [];
+    }
+
+    private function defaultGuard(Application $app): DefaultGuard
+    {
+        $guard = $app->make('config')->get('auth.defaults.guard');
+
+        return new DefaultGuard(is_string($guard) && $guard !== '' ? $guard : null);
     }
 }

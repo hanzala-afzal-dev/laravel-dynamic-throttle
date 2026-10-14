@@ -101,6 +101,23 @@ it('AC-5: answers 503 with the store\'s error when the counter store is down', f
     expect([$response->status(), $response->json('message')])->toBe([503, 'Connection refused.']);
 });
 
+it('AC-26: asks the counter store for the enabled rules only, from the security review', function (): void {
+    $enabled = Throttling::rule(['name' => 'API']);
+    Throttling::rule(['name' => 'Off', 'pattern' => 'off', 'enabled' => false]);
+    $asked = [];
+    $this->mock(TelemetryBuffer::class, function (MockInterface $mock) use (&$asked): void {
+        $mock->shouldReceive('counts')->andReturnUsing(function (int $minute, array $ruleIds) use (&$asked): array {
+            $asked = $ruleIds;
+
+            return [];
+        });
+    });
+
+    DashboardApi::send($this, 'GET', 'metrics', user: DashboardApi::viewer())->assertOk();
+
+    expect($asked)->toBe([(string) $enabled->id]);
+});
+
 /*
 | AC-6: the last day or week, per hour.
 */

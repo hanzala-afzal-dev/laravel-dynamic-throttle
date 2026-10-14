@@ -1,6 +1,6 @@
 # SPEC-017: The dashboard's JSON API
 
-- Status: Approved
+- Status: Done
 - ADRs: ADR-0011, ADR-0013, ADR-0015, ADR-0017, ADR-0018, ADR-0024
 - Roadmap phase: 4
 
@@ -74,6 +74,14 @@ Every endpoint lives in SPEC-018's route group, under `{path}/api` (`/dynamic-th
 - **AC-21** `POST api/explain` is the only route whose non-GET request needs only the view gate: a test lists the group's routes and finds no other. Every other POST, PUT, PATCH and DELETE needs `manageDynamicThrottle` (SPEC-018 AC-23).
 - **AC-22** A 422 and a 409 are JSON with a `message` for a request that does not ask for JSON, and never a redirect. A change without a CSRF token gets 419, as SPEC-018 AC-6.
 
+### Found while building
+- **AC-24** In a dashboard request, the admin who sends it is logged in, and explain never takes them for the request it explains: without a user, or where the middleware would not see one, user rules count a guest, through the guard the request authenticated with and through `scopes.user.guards`, and a custom scope's `$request->user()` is null. With a user the middleware sees, that user counts. The admin is still logged in afterwards. The CLI, which has no logged-in user, was never affected.
+
+### From the security review
+A review subagent read the whole spec's code before it closed. Its findings, each fixed test-first or written down below:
+- **AC-25** Behind `dashboard.middleware` with `auth:<guard>`, which makes that guard the default for the rest of the request, a user id alone still means a user of the app's own default guard, as it stood once every provider booted: in a user exemption, and in explain's lookup and identities.
+- **AC-26** `api/metrics?period=hour` asks the counter store for the enabled rules only, at most 500, so a driver that cannot list its own reads a bounded number of keys. `GET api/rules/{id}` shows the rule's newest 100 exemptions; `GET api/exemptions?rule={id}` pages through all of them.
+
 ### Hard rules
 - **AC-23** The arch tests hold: the API's code is in `src/Dashboard`, outside the request path's namespaces, which never use it (SPEC-018 AC-19).
 
@@ -106,6 +114,9 @@ Every endpoint lives in SPEC-018's route group, under `{path}/api` (`/dynamic-th
 - **A guest in `local`** with no gate defined is recorded as `guest`, with its IP.
 - **A rule id given to `?rule=`** that does not exist gives an empty page, not a 404.
 - **The 500 enabled rules limit** applies to `POST` and `PATCH` (SPEC-018 AC-14).
+- **Explain resolves users as a request does** (the security review): with `scopes.user.guards` naming a token guard such as Sanctum's, a bearer token in the explained request is looked up, and that guard may update the token's `last_used_at` and dispatch its event, as `dynamic-throttle:explain` does. The package itself writes nothing.
+- **Errors show as the CLI prints them, to viewers too** (the security review): the store's and the manifest's errors in health and in explain, such as a connection refused, and "There is no user 42". Viewers are the operators who act on them. An app whose support staff should not see them gives the view gate to admins only.
+- **On the cache driver, a rule disabled within the hour** leaves the hour view, since only enabled rules are read (AC-26); the day and week views still show it.
 
 ## End-to-end verification
 
@@ -142,8 +153,12 @@ Stacked on each other, each green on its own (ADR-0027).
 | 3 | `phase-4/spec-017-3` | The rules endpoints and their entries | AC-1, AC-2, AC-12 to AC-14, AC-18 |
 | 4 | `phase-4/spec-017-4` | The exemptions endpoints and their entries | AC-3, AC-15, AC-16 |
 | 5 | `phase-4/spec-017-5` | Metrics, offenders and health | AC-5 to AC-8 |
-| 6 | `phase-4/spec-017-6` | Explain with masking, the authorization matrix, the guide, the changelog, the security review's fixes, and the spec's close | AC-9 to AC-11, AC-20, AC-21, AC-23 |
+| 6 | `phase-4/spec-017-6` | Explain with masking, the authorization matrix, the guide, the changelog, the security review's fixes, and the spec's close | AC-9 to AC-11, AC-20, AC-21, AC-23 to AC-26 |
 
 ## Open questions
 
 None. Decisions 2 and 3 were asked first: one makes an exception to a security review's finding, the other was left to the maintainer by SPEC-014.
+
+## Close
+
+Done on 2026-10-14. Every AC has a test. Building it found AC-24, and the security review AC-25 and AC-26; the review's two other findings are written down under the edge cases. Reading the audit log is SPEC-019, the next spec.
