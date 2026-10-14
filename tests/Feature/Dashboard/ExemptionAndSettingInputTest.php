@@ -65,6 +65,12 @@ it('AC-15: accepts an exemption from one rule that exists', function (): void {
     expect($attributes['rule_id'])->toBe($this->rule->id);
 });
 
+it('review: accepts a rule id as text, as a form sends it', function (): void {
+    $attributes = app(ExemptionInput::class)->validate(['subject' => 'ip', 'value' => '10.0.0.0/8', 'rule_id' => (string) $this->rule->id]);
+
+    expect((int) $attributes['rule_id'])->toBe($this->rule->id);
+});
+
 it('AC-15: refuses each invalid exemption, naming its field', function (array $input, string $field): void {
     expect(refused(fn (): array => app(ExemptionInput::class)->validate($input)))->toBe([$field]);
 })->with([
@@ -76,6 +82,9 @@ it('AC-15: refuses each invalid exemption, naming its field', function (array $i
     'a reason of 256 characters' => [['subject' => 'ip', 'value' => '10.0.0.0/8', 'reason' => str_repeat('r', 256)], 'reason'],
     'a custom scope the app did not register' => [['subject' => 'custom', 'subject_parameter' => 'planet', 'value' => 'x'], 'subject_parameter'],
     'a user id with a terminal escape' => [['subject' => 'user', 'value' => "42\e[2K"], 'value'],
+    'a rule id as text that does not exist' => [['subject' => 'ip', 'value' => '10.0.0.0/8', 'rule_id' => '999'], 'rule_id'],
+    'a rule id of true' => [['subject' => 'ip', 'value' => '10.0.0.0/8', 'rule_id' => true], 'rule_id'],
+    'a reason with a right-to-left override' => [['subject' => 'ip', 'value' => '10.0.0.0/8', 'reason' => "Partner\u{202E}"], 'reason'],
 ]);
 
 it('AC-16: takes bypass on and off, for the CLI\'s durations, an hour by default, or forever', function (array $input, bool $on, ?string $until): void {

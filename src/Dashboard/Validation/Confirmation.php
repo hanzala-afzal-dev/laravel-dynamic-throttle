@@ -69,6 +69,18 @@ final class Confirmation
     }
 
     /**
+     * @param  array<string, mixed>  $attributes
+     * @param  array<string, mixed>  $input
+     */
+    public static function ruleChanged(Rule $rule, array $attributes, array $input): void {}
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @param  array<string, mixed>  $input
+     */
+    public static function exemption(array $attributes, array $input): void {}
+
+    /**
      * An enabled, enforcing rule, which answers 429s.
      */
     private static function limits(Rule $rule): bool

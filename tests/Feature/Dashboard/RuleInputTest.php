@@ -81,6 +81,7 @@ it('AC-12: accepts a rule at each boundary, and the rule it saves compiles', fun
     'a custom rule with a registered scope' => [['scope' => 'custom', 'scope_parameter' => 'tenant']],
     'every enum' => [['method' => 'POST', 'mode' => 'dry_run', 'on_failure' => 'closed', 'on_missing_identity' => 'skip']],
     'a description with lines' => [['description' => "Limits the API.\nRaised for the launch."]],
+    'an empty override and description, as without them' => [['response_override' => '', 'description' => '']],
 ]);
 
 it('AC-13: refuses each invalid input, naming its field', function (array $overrides, string $field): void {
@@ -108,6 +109,13 @@ it('AC-13: refuses each invalid input, naming its field', function (array $overr
     'a custom rule with a scope the app did not register' => [['scope' => 'custom', 'scope_parameter' => 'planet'], 'scope_parameter'],
     'an ip rule with a scope parameter' => [['scope' => 'ip', 'scope_parameter' => 'X-Api-Key'], 'scope_parameter'],
     'enabled as text' => [['enabled' => 'sometimes'], 'enabled'],
+    'a pattern of 204 characters and 404 bytes' => [['pattern' => 'api/'.str_repeat('é', 200)], 'pattern'],
+    'a name with a right-to-left override' => [['name' => "API\u{202E}lmth.exe"], 'name'],
+    'an empty method' => [['method' => ''], 'method'],
+    'an empty mode' => [['mode' => ''], 'mode'],
+    'an empty failure policy' => [['on_failure' => ''], 'on_failure'],
+    'an empty priority' => [['priority' => ''], 'priority'],
+    'an empty enabled' => [['enabled' => ''], 'enabled'],
 ]);
 
 it('AC-13: checks a change against the rule it changes, as a whole', function (): void {

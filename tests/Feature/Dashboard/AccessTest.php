@@ -2,6 +2,10 @@
 
 declare(strict_types=1);
 
+use Illuminate\Cache\RateLimiter;
+use Afzal\DynamicThrottle\DynamicThrottleServiceProvider;
+use Afzal\DynamicThrottle\Dashboard\DashboardRoutes;
+use Afzal\DynamicThrottle\Dashboard\Authorize;
 use Afzal\DynamicThrottle\Tests\Support\Auth\TestUser;
 use Afzal\DynamicThrottle\Tests\Support\Dashboard;
 use Illuminate\Support\Facades\Route;
@@ -206,4 +210,47 @@ it('AC-8: sends no-store and nosniff on every response of the group, a 403 and a
     ], [$ok, $limited, $denied]);
 
     expect($headers)->toBe([[200, true, 'nosniff'], [429, true, 'nosniff'], [403, true, 'nosniff']]);
+});
+
+/*
+| From the security review.
+*/
+
+it('review: defines its limiter with cached routes too, which still hold the dashboard\'s routes', function (): void {
+    Dashboard::environment('local');
+    // As route:cache leaves the app: the routes come from the cache, and the limiter from no one but the provider.
+    app()->instance(RateLimiter::class, new RateLimiter(app('cache')->driver()));
+    Illuminate\Support\Facades\RateLimiter::clearResolvedInstance(RateLimiter::class);
+    app()->instance('routes.cached', true);
+    app()->register(DynamicThrottleServiceProvider::class, force: true);
+
+    expect($this->getJson(ME)->status())->toBe(200);
+});
+
+it('review: denies an undefined gate once the app defines the other one, in local too', function (): void {
+    Dashboard::environment('local');
+    Dashboard::gates(fn (TestUser $user): bool => false, null);
+
+    expect($this->getJson(ME)->status())->toBe(403)
+        ->and($this->actingAs(viewer())->getJson(ME)->status())->toBe(403);
+});
+
+it('review: needs manageDynamicThrottle for every method but GET, HEAD and OPTIONS, whatever the route asks', function (): void {
+    Dashboard::environment('production');
+    definedGates();
+    Route::middleware(['web', ...array_slice(DashboardRoutes::middleware('read'), 0)])
+        ->post('dynamic-throttle/api/test-read-post', fn (): array => ['written' => true]);
+    $token = ['_token' => 'a-token'];
+
+    $viewer = $this->actingAs(viewer())->withSession($token)->postJson('/dynamic-throttle/api/test-read-post', $token);
+    $manager = $this->actingAs(manager())->withSession($token)->postJson('/dynamic-throttle/api/test-read-post', $token);
+
+    expect([$viewer->status(), $manager->status()])->toBe([403, 200]);
+});
+
+it('review: fails loudly on a route that asks for an ability the dashboard does not know', function (): void {
+    Dashboard::environment('local');
+    Route::middleware([Authorize::class.':admin'])->get('dynamic-throttle/api/test-unknown', fn (): array => []);
+
+    expect($this->getJson('/dynamic-throttle/api/test-unknown')->status())->toBe(500);
 });

@@ -94,3 +94,28 @@ it('AC-17: answers a dashboard request without confirm with a 409 JSON message, 
     expect([$refused->status(), $refused->json('message')])->toBe([409, 'Bypass lifts every limit, with no end time.'])
         ->and($confirmed->json())->toBe(['bypassed' => true]);
 })->with(['local', 'production']);
+
+/*
+| From the security review: two more changes that loosen every limit.
+*/
+
+it('review: asks to confirm turning an enabled enforcing rule into a dry-run one, and nothing else of a rule\'s change', function (): void {
+    expect(confirmationMessage(fn () => Confirmation::ruleChanged($this->enforcing, ['mode' => 'dry_run'], [])))
+        ->toBe('Rule 1 (API) stops limiting requests while it runs in dry-run.')
+        ->and(confirmationMessage(fn () => Confirmation::ruleChanged($this->enforcing, ['mode' => 'dry_run'], ['confirm' => true])))->toBeNull()
+        ->and(confirmationMessage(fn () => Confirmation::ruleChanged($this->enforcing, ['max_attempts' => 5, 'mode' => 'enforce'], [])))->toBeNull()
+        ->and(confirmationMessage(fn () => Confirmation::ruleChanged($this->dryRun, ['mode' => 'enforce'], [])))->toBeNull();
+});
+
+it('review: asks to confirm an IP exemption wider than a /8 for IPv4 or a /32 for IPv6, which frees much of the internet', function (array $attributes, ?string $message): void {
+    expect(confirmationMessage(fn () => Confirmation::exemption($attributes, [])))->toBe($message)
+        ->and(confirmationMessage(fn () => Confirmation::exemption($attributes, ['confirm' => true])))->toBeNull();
+})->with([
+    'every IPv4 address' => [['subject' => 'ip', 'value' => '0.0.0.0/0'], 'The exemption frees every client in 0.0.0.0/0 from every rule.'],
+    'every IPv6 address' => [['subject' => 'ip', 'value' => '::/0'], 'The exemption frees every client in ::/0 from every rule.'],
+    'an IPv4 /7' => [['subject' => 'ip', 'value' => '0.0.0.0/7'], 'The exemption frees every client in 0.0.0.0/7 from every rule.'],
+    'an IPv6 /31, from one rule' => [['subject' => 'ip', 'value' => '2001::/31', 'rule_id' => 1], 'The exemption frees every client in 2001::/31 from rule 1 (API).'],
+    'an IPv4 /8' => [['subject' => 'ip', 'value' => '10.0.0.0/8'], null],
+    'an IPv6 /32' => [['subject' => 'ip', 'value' => '2001:db8::/32'], null],
+    'a user' => [['subject' => 'user', 'value' => 'App\\Models\\User:42'], null],
+]);
