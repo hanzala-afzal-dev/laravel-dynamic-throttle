@@ -47,7 +47,7 @@ Gate::define('manageDynamicThrottle', fn (User $user) => $user->is_admin);
 
 Everything the dashboard saves is checked first, so a rule saved there always compiles:
 
-- **Rules:** a name of up to 100 characters, a pattern of up to 255 without spaces, 1 to 4,294,967,295 attempts, a window of 1 second to 1 day, a header scope with a valid header name, a custom scope your app registered, and a response override of at most 4 KB. **At most 500 rules can be enabled.**
+- **Rules:** a name of up to 100 characters, a pattern of up to 255 without spaces or a trailing slash, 1 to 4,294,967,295 attempts, a window of 1 second to 1 day, a header scope with a valid header name, a custom scope your app registered, and a response override of at most 4 KB. **At most 500 rules can be enabled.**
 - **Exemptions:** an IP address or a CIDR range, a user as `App\Models\User:42` or by id alone as your default guard's model, a custom scope your app registered, a rule that exists, and an expiry in the future.
 - **Emergency settings:** the same durations and factors as the CLI.
 

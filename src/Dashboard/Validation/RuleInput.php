@@ -103,7 +103,7 @@ final readonly class RuleInput
             'name' => ['required', 'string', 'max:100', 'regex:'.self::NO_CONTROL],
             'description' => ['nullable', 'string', 'max:1000', 'regex:'.self::TEXT],
             'method' => ['filled', ValidationRule::enum(RequestMethod::class)],
-            'pattern' => ['required', 'string', 'max:255', 'regex:/\A[^\s\p{Cc}\p{Cf}]+\z/u', $this->patternBytes(...)],
+            'pattern' => ['required', 'string', 'max:255', 'regex:/\A[^\s\p{Cc}\p{Cf}]+\z/u', $this->patternBytes(...), $this->noTrailingSlash(...)],
             'scope' => ['required', ValidationRule::enum(Scope::class)],
             'scope_parameter' => $this->scopeParameter($scope),
             'max_attempts' => ['required', 'integer', 'between:1,'.self::MAX_UNSIGNED],
@@ -151,6 +151,19 @@ final readonly class RuleInput
     {
         if (is_string($value) && strlen($value) > self::MAX_PATTERN_BYTES) {
             $fail('The pattern must be at most '.self::MAX_PATTERN_BYTES.' bytes, got '.strlen($value).'.');
+        }
+    }
+
+    /**
+     * Request paths never end with a slash, so a pattern that does never matches
+     * (SPEC-007). The root is "/".
+     *
+     * @param  Closure(string): mixed  $fail
+     */
+    private function noTrailingSlash(string $attribute, mixed $value, Closure $fail): void
+    {
+        if (is_string($value) && $value !== '/' && str_ends_with($value, '/')) {
+            $fail('The pattern must not end with a slash: request paths never do, so it would never match. Use / for the root.');
         }
     }
 
