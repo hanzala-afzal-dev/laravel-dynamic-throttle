@@ -117,6 +117,10 @@ arch('engine code never uses the dashboard\'s code (SPEC-018 AC-19)')
     ->expect('Afzal\\DynamicThrottle\\Engine')
     ->not->toUse('Afzal\\DynamicThrottle\\Dashboard');
 
+arch('the JSON API\'s controllers are used only by the dashboard\'s routes (SPEC-017 AC-23)')
+    ->expect('Afzal\\DynamicThrottle\\Dashboard\\Api')
+    ->toOnlyBeUsedIn('Afzal\\DynamicThrottle\\Dashboard');
+
 arch('request handling never touches the database (ADR-0007, SPEC-007 AC-18)')
     ->expect('Afzal\DynamicThrottle\Http')
     ->not->toUse($databaseAccess);
