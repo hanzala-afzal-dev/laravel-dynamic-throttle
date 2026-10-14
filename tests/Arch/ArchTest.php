@@ -110,7 +110,7 @@ arch('the middleware never uses the dashboard\'s code (SPEC-018 AC-19)')
     ->not->toUse('Afzal\\DynamicThrottle\\Http\\Dashboard');
 
 arch('the steps that let a request through untouched never use the dashboard\'s code (SPEC-018 AC-19)')
-    ->expect('Afzal\\DynamicThrottle\\Http\\Untouched')
+    ->expect(Untouched::class)
     ->not->toUse('Afzal\\DynamicThrottle\\Http\\Dashboard');
 
 arch('engine code never uses the dashboard\'s code (SPEC-018 AC-19)')
