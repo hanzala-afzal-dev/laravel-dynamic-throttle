@@ -4,19 +4,115 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle\Dashboard\Validation;
 
+use Afzal\DynamicThrottle\DynamicThrottle;
+use Afzal\DynamicThrottle\Engine\Exemptions\IpRange;
+use Afzal\DynamicThrottle\Enums\ExemptionSubject;
+use Afzal\DynamicThrottle\Models\Rule;
+use Closure;
+use Illuminate\Contracts\Config\Repository as Config;
+use Illuminate\Contracts\Validation\Factory as ValidationFactory;
+use Illuminate\Validation\Rule as ValidationRule;
+use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
+
 /**
- * An exemption's validation (SPEC-018). A stub until its implementation.
+ * What the dashboard and its API accept for an exemption (SPEC-018), so an exemption
+ * saved through them always compiles (decision 6). A user is named as the user scope
+ * matches it, Class:id, or by its id alone, as a user of the default guard's model.
  *
  * @internal
  */
-final class ExemptionInput
+final readonly class ExemptionInput
 {
+    /** The fields an exemption takes from input. */
+    private const array FIELDS = ['subject', 'subject_parameter', 'value', 'rule_id', 'expires_at', 'reason'];
+
+    /** No control character, such as a terminal escape. */
+    private const string NO_CONTROL = '/\A[^\p{Cc}]*\z/u';
+
+    public function __construct(
+        private ValidationFactory $validation,
+        private DynamicThrottle $throttle,
+        private Config $config,
+    ) {}
+
     /**
      * @param  array<string, mixed>  $input
-     * @return array<string, mixed>
+     * @return array<string, mixed> ready for Exemption::create()
+     *
+     * @throws ValidationException
      */
     public function validate(array $input): array
     {
-        return [];
+        $data = array_intersect_key($input, array_flip(self::FIELDS));
+        $subject = $data['subject'] ?? null;
+
+        if ($subject === ExemptionSubject::User->value && (is_string($data['value'] ?? null) || is_int($data['value'] ?? null))) {
+            $data['value'] = $this->user((string) $data['value']);
+        }
+
+        return $this->validation->make($data, [
+            'subject' => ['required', ValidationRule::enum(ExemptionSubject::class)],
+            'subject_parameter' => $subject === ExemptionSubject::Custom->value
+                ? ['required', 'string', 'max:64', $this->registeredScope(...)]
+                : ['prohibited'],
+            'value' => match ($subject) {
+                ExemptionSubject::Ip->value => ['required', 'string', $this->ipRange(...)],
+                ExemptionSubject::User->value => ['required', 'string', 'max:255', 'regex:'.self::NO_CONTROL, 'regex:/\A[^:]+:.+\z/s'],
+                default => ['required', 'string', 'max:255', 'regex:'.self::NO_CONTROL],
+            },
+            'rule_id' => ['nullable', 'integer', $this->ruleExists(...)],
+            'expires_at' => ['nullable', 'date', 'after:now'],
+            'reason' => ['nullable', 'string', 'max:255', 'regex:'.self::NO_CONTROL],
+        ])->validate();
+    }
+
+    /**
+     * A user as the user scope matches it: Class:id as given, or an id alone as a user of
+     * the default guard's model, which stays an id, and so refused, without one.
+     */
+    private function user(string $value): string
+    {
+        if (str_contains($value, ':')) {
+            return $value;
+        }
+
+        $guard = $this->config->get('auth.defaults.guard');
+        $provider = is_string($guard) ? $this->config->get("auth.guards.{$guard}.provider") : null;
+        $model = is_string($provider) ? $this->config->get("auth.providers.{$provider}.model") : null;
+
+        return is_string($model) && $model !== '' ? "{$model}:{$value}" : $value;
+    }
+
+    /**
+     * @param  Closure(string): mixed  $fail
+     */
+    private function ipRange(string $attribute, mixed $value, Closure $fail): void
+    {
+        try {
+            IpRange::parse(is_string($value) ? $value : '');
+        } catch (InvalidArgumentException $exception) {
+            $fail($exception->getMessage());
+        }
+    }
+
+    /**
+     * @param  Closure(string): mixed  $fail
+     */
+    private function ruleExists(string $attribute, mixed $value, Closure $fail): void
+    {
+        if (is_int($value) && ! Rule::query()->whereKey($value)->exists()) {
+            $fail("Rule {$value} does not exist.");
+        }
+    }
+
+    /**
+     * @param  Closure(string): mixed  $fail
+     */
+    private function registeredScope(string $attribute, mixed $value, Closure $fail): void
+    {
+        if (is_string($value) && $this->throttle->scopeResolver($value) === null) {
+            $fail("No custom scope \"{$value}\" is registered: register it with DynamicThrottle::scope().");
+        }
     }
 }
