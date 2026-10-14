@@ -48,18 +48,18 @@ final readonly class ExplainController
 
             try {
                 $explanation = $this->explainer->explain(ExplanationRequest::of(
-                    self::text($input['method'] ?? null),
-                    self::text($input['path'] ?? null),
-                    self::text($input['ip'] ?? null) ?: '127.0.0.1',
-                    self::text($input['user'] ?? null) ?: null,
-                    self::text($input['guard'] ?? null) ?: null,
-                    array_map(self::text(...), is_array($input['headers'] ?? null) ? array_values($input['headers']) : []),
+                    $this->text($input['method'] ?? null),
+                    $this->text($input['path'] ?? null),
+                    $this->text($input['ip'] ?? null) ?: '127.0.0.1',
+                    $this->text($input['user'] ?? null) ?: null,
+                    $this->text($input['guard'] ?? null) ?: null,
+                    array_map($this->text(...), is_array($input['headers'] ?? null) ? array_values($input['headers']) : []),
                 ));
             } catch (InvalidArgumentException|ExplanationFailed $exception) {
                 throw ValidationException::withMessages(['request' => $exception->getMessage()]);
             }
 
-            return new JsonResponse(self::masked($explanation->jsonSerialize()), 200, [], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+            return new JsonResponse($this->masked($explanation->jsonSerialize()), 200, [], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
         });
     }
 
@@ -108,20 +108,18 @@ final readonly class ExplainController
      * @param  array<string, mixed>  $explanation
      * @return array<string, mixed>
      */
-    private static function masked(array $explanation): array
+    private function masked(array $explanation): array
     {
-        $rules = is_array($explanation['rules'] ?? null) ? $explanation['rules'] : [];
+        $rules = [];
 
-        foreach ($rules as $index => $rule) {
-            if (is_array($rule) && is_string($rule['identity'] ?? null)) {
-                $rules[$index]['identity'] = self::mask($rule['identity']);
-            }
+        foreach (is_array($explanation['rules'] ?? null) ? $explanation['rules'] : [] as $rule) {
+            $rules[] = is_array($rule) && is_string($rule['identity'] ?? null) ? [...$rule, 'identity' => $this->mask($rule['identity'])] : $rule;
         }
 
         return [...$explanation, 'rules' => $rules];
     }
 
-    private static function mask(string $identity): string
+    private function mask(string $identity): string
     {
         foreach (self::SECRET_PREFIXES as $prefix) {
             if (str_starts_with($identity, $prefix)) {
@@ -134,7 +132,7 @@ final readonly class ExplainController
         return $identity;
     }
 
-    private static function text(mixed $value): string
+    private function text(mixed $value): string
     {
         return is_scalar($value) ? (string) $value : '';
     }

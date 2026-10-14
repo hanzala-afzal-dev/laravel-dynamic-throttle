@@ -38,7 +38,7 @@ final readonly class Authorize
 
         // A change needs manage whatever the route asks, so a route marked read by mistake cannot let viewers write.
         // The one exception is inspect's POST, which writes nothing and keeps its input out of URLs (SPEC-017 decision 2).
-        if (! $request->isMethodSafe() && ! ($ability === 'inspect' && $request->isMethod('POST'))) {
+        if (! $request->isMethodSafe() && ($ability !== 'inspect' || ! $request->isMethod('POST'))) {
             $needs = 'manage';
         }
 
