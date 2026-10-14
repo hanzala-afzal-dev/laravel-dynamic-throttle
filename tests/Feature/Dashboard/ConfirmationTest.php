@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use Afzal\DynamicThrottle\Tests\Support\Auth\TestUser;
 use Afzal\DynamicThrottle\Dashboard\DashboardRoutes;
 use Afzal\DynamicThrottle\Dashboard\Validation\Confirmation;
 use Afzal\DynamicThrottle\Dashboard\Validation\ConfirmationRequired;
 use Afzal\DynamicThrottle\Enums\RuleMode;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
+use Afzal\DynamicThrottle\Tests\Support\Auth\TestUser;
 use Afzal\DynamicThrottle\Tests\Support\Dashboard;
 use Afzal\DynamicThrottle\Tests\Support\Throttling;
 use Illuminate\Http\Request;
