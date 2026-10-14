@@ -95,6 +95,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - No rule ever applies to the dashboard, by its routes' names and by its path, also with `dynamic.throttle` as global middleware. Laravel's own `throttle` limits it per user, or per IP for a guest.
   - Its first endpoint, `GET {path}/api/me`, says what the user may do.
   - Validation for what its API will save, so a saved rule always compiles, at most 500 enabled rules, and `"confirm": true` for dangerous changes: disabling, deleting or dry-running an enforcing rule, bypass on, a factor below 1, and an IP exemption wider than a /8 or a /32.
+- The dashboard's JSON API, under `{path}/api` (internal until declared stable):
+  - rules and exemptions: list, show, create, change and delete; bypass and the scale factor, as the CLI sets them;
+  - each rule's numbers per minute for the last hour, or per hour for a day or a week, its top offenders by identity hash, and the health report;
+  - `POST api/explain`, with the view gate, which masks bearer tokens and header values;
+  - every change writes one audit entry, with the user, the IP and the user agent, in the same transaction.
+  - in a dashboard request, explain never takes the admin who sends it for the request it explains.
 - The runbook, `docs/runbook.md`: what to do when Redis is down, the manifest was evicted, a bad rule blocks `/api`, or an emergency change was left on. A test follows each scenario's steps.
 - On PHP-FPM with APCu, a manifest the cache cannot give is reported at most once per 30 seconds per server, as the counter store's errors are once per cooldown.
   - It prints a line per check, `ok`, `warning`, `error` or `skipped`, with what to do, or `--json`.

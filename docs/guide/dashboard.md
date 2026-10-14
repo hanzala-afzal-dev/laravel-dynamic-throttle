@@ -1,6 +1,6 @@
 # The dashboard
 
-The dashboard ships with the package, as Horizon's does, and its pages arrive with the first release. This page covers what is in place already: where it is served, who gets in, and how it protects itself ([ADR-0015](../adr/0015-dashboard-security-and-audit.md), [SPEC-018](../specs/018-dashboard-access-and-guardrails.md)).
+The dashboard ships with the package, as Horizon's does, and its pages arrive with the first release. This page covers what is in place already: where it is served, who gets in, how it protects itself, and its JSON API ([ADR-0015](../adr/0015-dashboard-security-and-audit.md), [SPEC-018](../specs/018-dashboard-access-and-guardrails.md), [SPEC-017](../specs/017-json-api.md)).
 
 ## Where it is
 
@@ -52,6 +52,36 @@ Everything the dashboard saves is checked first, so a rule saved there always co
 - **Emergency settings:** the same durations and factors as the CLI.
 
 **Dangerous changes need confirmation,** in every environment: disabling, deleting or dry-running an enforcing rule, turning bypass on, a factor below 1, and an IP exemption wider than a /8 for IPv4 or a /32 for IPv6. The dashboard asks you in a dialog. Its JSON API answers 409 without `"confirm": true`, with a message that says what the change would do, such as "Bypass lifts every limit until 2027-01-15 15:30 UTC."
+
+## The JSON API
+
+The dashboard's pages read and change everything through a JSON API under `{path}/api`, which you can call too, for example from a script with a session. It is internal until it is declared stable, so its shape may still change before 1.0 ([SPEC-017](../specs/017-json-api.md)).
+
+| Endpoint | Gate | Does |
+|---|---|---|
+| `GET api/me` | either | What you may do |
+| `GET api/rules`, `GET api/rules/{id}` | either | Rules in evaluation order, 100 a page; one rule with its exemptions |
+| `POST api/rules`, `PATCH api/rules/{id}`, `DELETE api/rules/{id}` | manage | Create, change or delete a rule |
+| `GET api/exemptions` | either | Exemptions, newest first, 100 a page; `?rule={id}` for one rule's |
+| `POST api/exemptions`, `DELETE api/exemptions/{id}` | manage | Create or delete an exemption |
+| `GET api/settings` | either | Bypass and the scale factor |
+| `PUT api/settings/bypass`, `PUT api/settings/scale` | manage | What `dynamic-throttle:bypass` and `dynamic-throttle:scale` do |
+| `GET api/metrics?period=hour` | either | Each rule's requests, blocks and would-blocks: per minute for the last hour, or per hour for a `day` or a `week` |
+| `GET api/rules/{id}/offenders` | either | The rule's top clients by identity hash, this hour or `?hour=previous` |
+| `GET api/health` | either | What `dynamic-throttle:health --json` prints |
+| `POST api/explain` | either | What `dynamic-throttle:explain --json` prints, with tokens and header values masked |
+
+```bash
+curl -X PATCH https://example.com/dynamic-throttle/api/rules/12 \
+  -H 'Accept: application/json' -H 'Content-Type: application/json' \
+  -H "X-XSRF-TOKEN: $XSRF" -b cookies.txt \
+  -d '{"enabled": false, "confirm": true}'
+```
+
+- **Every change is recorded** in the audit log, with you as the actor, your IP and your user agent, in the same transaction as the change.
+- **A change answers with what it saved,** `"changed"`, and `"manifest"`: `{"compiled": true, "version": 41}`, or `{"compiled": false, "error": "…"}` when the change is saved but servers keep the last manifest until the next compile.
+- **Errors are JSON:** 422 with each field's message, 409 for a change that needs `"confirm": true`, and 503 when a table is missing or the counter store is down. Send `Accept: application/json`, so a 403 or a 404 is JSON too.
+- **Explain is a POST,** so a bearer token you test never lands in a URL or an access log. It needs only the view gate, and its answer shows a token's or a header value's last 4 characters, and their hashes in full.
 
 ## When it is unreachable
 
