@@ -1,6 +1,6 @@
 # SPEC-017: The dashboard's JSON API
 
-- Status: Approved
+- Status: Done
 - ADRs: ADR-0011, ADR-0013, ADR-0015, ADR-0017, ADR-0018, ADR-0024
 - Roadmap phase: 4
 
@@ -158,3 +158,7 @@ Stacked on each other, each green on its own (ADR-0027).
 ## Open questions
 
 None. Decisions 2 and 3 were asked first: one makes an exception to a security review's finding, the other was left to the maintainer by SPEC-014.
+
+## Close
+
+Done on 2026-10-14. Every AC has a test. Building it found AC-24, and the security review AC-25 and AC-26; the review's two other findings are written down under the edge cases. Reading the audit log is SPEC-019, the next spec.
