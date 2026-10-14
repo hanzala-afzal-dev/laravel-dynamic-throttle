@@ -150,3 +150,20 @@ it('AC-14: accepts a 500th enabled rule, and a change to a rule that is already 
     expect(refusedFields(['max_attempts' => 5], $enabled))->toBe([])
         ->and(refusedFields(ruleInput(['enabled' => false])))->toBe([]);
 });
+
+it('AC-26: refuses a pattern that ends with a slash, which no request path does', function (string $pattern): void {
+    try {
+        app(RuleInput::class)->validate(ruleInput(['pattern' => $pattern]));
+        $errors = [];
+    } catch (ValidationException $exception) {
+        $errors = $exception->errors();
+    }
+
+    expect($errors)->toBe(['pattern' => ['The pattern must not end with a slash: request paths never do, so it would never match. Use / for the root.']]);
+})->with(['api/users/', '/api/*/', '//']);
+
+it('AC-26: accepts the root pattern, and the rule it saves compiles', function (): void {
+    $rule = Rule::create(app(RuleInput::class)->validate(ruleInput(['pattern' => '/'])));
+
+    expect(array_column(Exemptions::stored()['rules'], 'id'))->toContain((string) $rule->id);
+});
