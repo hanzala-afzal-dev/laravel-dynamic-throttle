@@ -1,6 +1,6 @@
 # SPEC-018: Dashboard access, validation and guardrails
 
-- Status: In progress
+- Status: Done
 - ADRs: ADR-0004, ADR-0011, ADR-0015, ADR-0018
 - Roadmap phase: 4
 
@@ -27,7 +27,7 @@ The dashboard and its JSON API (SPEC-017) can switch off a login route's protect
   - **At most 500 enabled rules** (ADR-0015, ADR-0007): creating an enabled rule, or enabling one, when 500 are enabled is refused, with the count.
   - **Exemptions:** an `ip` exemption names an address or a CIDR range; a `user` one names a user as the user scope matches it, `Class:id`, or by its id alone, as a user of the default guard's model; a `custom` one names a registered scope and its value; an optional rule that exists; an optional expiry in the future; a reason of at most 255 characters.
   - **Settings:** bypass on or off, and a scale factor from 0.1 to 10 with at most two decimals, or off. Each with `for`, as the CLI takes it (`90s`, `30m`, `2h` or `1d`, up to 365 days, one hour by default), or `forever`. The API and the CLI use the same parsers, so they accept the same values.
-- **Dangerous changes need `"confirm": true`** in the request, in every environment (decision 3, ADR-0015 point 4): disabling or deleting an enforcing rule, turning bypass on, and a factor below 1. Without it, the API answers 409 with a message that says what the change does, which the dashboard's dialog shows.
+- **Dangerous changes need `"confirm": true`** in the request, in every environment (decision 3, ADR-0015 point 4): disabling, deleting or dry-running an enforcing rule, turning bypass on, a factor below 1, and an IP exemption wider than a /8 or a /32 (AC-25). Without it, the API answers 409 with a message that says what the change does, which the dashboard's dialog shows.
 
 ## Acceptance criteria
 
@@ -65,6 +65,15 @@ The dashboard and its JSON API (SPEC-017) can switch off a login route's protect
 - **AC-17** Without `"confirm": true`, these get 409 and change nothing: disabling or deleting an enforcing rule, bypass on, a factor below 1. With it, they pass. Disabling a dry-run rule, bypass off, a factor of 1 or above, and enabling a rule need no confirmation.
 - **AC-18** The 409's `message` says what the change does, such as "Bypass lifts every limit until 2027-01-15 15:30 UTC."
 
+### From the security review
+A review subagent read the whole spec's code before it closed. Its findings, each fixed test-first:
+- **AC-20** Before routing, the dashboard's path skips the rules only when routing would reach one of its routes, or no route at all. An app route that also matches there, such as `{locale}/login` for `/dynamic-throttle/login`, stays limited, with `dynamic.throttle` on a group and as global middleware. Once routing is done, only the route's name counts.
+- **AC-21** With cached routes, which still name the dashboard's limiter, the limiter is defined, and the dashboard answers 200, not a 500.
+- **AC-22** Once the app defines either gate, a gate it left out denies, in `local` too: an undefined manage gate no longer lets everyone manage when the view gate denies.
+- **AC-23** Every request but GET, HEAD and OPTIONS needs `manageDynamicThrottle`, whatever its route asks, and a route that names an unknown ability fails with a 500.
+- **AC-24** Validation counts a pattern's bytes, as the compiler does; takes an empty string as no value, so `method`, `mode`, `priority` and `enabled` cannot be empty; refuses invisible format characters, such as a right-to-left override, in names and reasons; and checks a rule id given as text.
+- **AC-25** Turning an enabled enforcing rule into a dry-run one needs `confirm`, as disabling it does, and so does an IP exemption wider than a /8 for IPv4 or a /32 for IPv6: "The exemption frees every client in 0.0.0.0/0 from every rule."
+
 ### Hard rules
 - **AC-19** The arch tests hold: the dashboard's code is not in the request path's namespaces (`Http`, `Engine`), and they never use it, so request handling still never touches the database.
 
@@ -99,6 +108,9 @@ The dashboard and its JSON API (SPEC-017) can switch off a login route's protect
 - **A path with a leading or trailing slash** (`/ops/throttle/`) is trimmed. An empty path serves no dashboard, since it would take the site's root, and the `config` health check warns about it. Refusing it at boot would take the whole app down for a config mistake (ADR-0020 point 1).
 - **Laravel's middleware priority list** would run `throttle` before the headers, so its 429 would miss them: the headers middleware goes first in that list.
 - **The path is checked on every domain,** as `explain` reads only a path: a route of the app at `/dynamic-throttle` on another domain than `dashboard.domain` is not limited either. Move the dashboard's path if that matters.
+- **A 404 or a 405 under the dashboard's path** is the app's own response, without the dashboard's headers: no route of the group matched, so none of its middleware ran (the security review).
+- **Guests behind a proxy the app does not trust** share the proxy's IP, and so one limit, when a gate lets guests in (the security review). Set the trusted proxies, as for every `ip` rule.
+- **`APP_ENV=local` on a public server** lets everyone manage the dashboard until the app defines a gate, as with Horizon. Define the gates before deploying.
 - **The cache store is down:** Laravel's `throttle` throws, as on any route the app throttles. The dashboard's limiter uses the app's default cache store, not the package's.
 - **500 enabled rules, two requests at once:** both may pass the count and save 501. The limit is a guardrail against mistakes, not a hard bound; the compiler handles more (ADR-0007).
 
@@ -132,7 +144,7 @@ Stacked on each other, each green on its own (ADR-0027).
 | 2 | `phase-4/spec-018-2` | The config, the route group, the gates, the limiter, the headers and `api/me` | AC-1 to AC-8 |
 | 3 | `phase-4/spec-018-3` | The dashboard's path in the middleware and in explain | AC-9 to AC-11, AC-19 |
 | 4 | `phase-4/spec-018-4` | The rules' validation and the 500-rule limit | AC-12 to AC-14 |
-| 5 | `phase-4/spec-018-5` | The exemptions' and the settings' validation, the confirmation, the guide page, the changelog, and the spec's close | AC-15 to AC-18 |
+| 5 | `phase-4/spec-018-5` | The exemptions' and the settings' validation, the confirmation, the guide page, the changelog, the security review's fixes, and the spec's close | AC-15 to AC-18, AC-20 to AC-25 |
 
 ## Open questions
 

@@ -92,7 +92,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - The gates `viewDynamicThrottle` and `manageDynamicThrottle`. Until your app defines them, only the `local` environment gets in. A denied request gets a 403, never a redirect.
   - No rule ever applies to the dashboard, by its routes' names and by its path, also with `dynamic.throttle` as global middleware. Laravel's own `throttle` limits it per user, or per IP for a guest.
   - Its first endpoint, `GET {path}/api/me`, says what the user may do.
-  - Validation for what its API will save, so a saved rule always compiles, at most 500 enabled rules, and `"confirm": true` for dangerous changes.
+  - Validation for what its API will save, so a saved rule always compiles, at most 500 enabled rules, and `"confirm": true` for dangerous changes: disabling, deleting or dry-running an enforcing rule, bypass on, a factor below 1, and an IP exemption wider than a /8 or a /32.
 - The runbook, `docs/runbook.md`: what to do when Redis is down, the manifest was evicted, a bad rule blocks `/api`, or an emergency change was left on. A test follows each scenario's steps.
 - On PHP-FPM with APCu, a manifest the cache cannot give is reported at most once per 30 seconds per server, as the counter store's errors are once per cooldown.
   - It prints a line per check, `ok`, `warning`, `error` or `skipped`, with what to do, or `--json`.

@@ -31,16 +31,17 @@ Gate::define('viewDynamicThrottle', fn (User $user) => $user->is_support || $use
 Gate::define('manageDynamicThrottle', fn (User $user) => $user->is_admin);
 ```
 
-- **Until you define a gate, only the `local` environment gets in**, guests too, as with Horizon. In production, nobody does.
+- **Until you define a gate, only the `local` environment gets in**, guests too, as with Horizon. In production, nobody does. So never run a public server with `APP_ENV=local`. Once you define one gate, a gate you left out denies.
 - **Managing includes viewing,** so defining `manageDynamicThrottle` alone is enough for a team of admins.
 - **Guests never get in** through a gate you define, unless its callback accepts a null user (`?User $user`).
 - **A denied request gets a 403,** never a redirect to a login page your app may not have. To send guests to your login page first, add `auth`: `'middleware' => ['web', 'auth']`.
 
 ## How it protects itself
 
-- **No rule ever applies to the dashboard,** even a `*` rule, and even with `dynamic.throttle` as global middleware: the package skips its routes by name, and its path too. So a bad rule can never lock you out of the place where you would fix it.
+- **No rule ever applies to the dashboard,** even a `*` rule, and even with `dynamic.throttle` as global middleware: the package skips its routes by name, and before routing, by its path. So a bad rule can never lock you out of the place where you would fix it. An app route that also matches under that path, such as `{locale}/login`, stays limited.
 - **Laravel's own `throttle` limits it** to `rate_limit` requests a minute per user, or per IP for a guest, 120 by default; 0 turns the limit off.
 - **Its responses are never cached,** and their type is never guessed: `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`.
+- **Every change needs `manageDynamicThrottle`,** whatever the route: any request but GET, HEAD and OPTIONS.
 
 ## What it refuses
 
@@ -50,7 +51,7 @@ Everything the dashboard saves is checked first, so a rule saved there always co
 - **Exemptions:** an IP address or a CIDR range, a user as `App\Models\User:42` or by id alone as your default guard's model, a custom scope your app registered, a rule that exists, and an expiry in the future.
 - **Emergency settings:** the same durations and factors as the CLI.
 
-**Dangerous changes need confirmation,** in every environment: disabling or deleting an enforcing rule, turning bypass on, and a factor below 1. The dashboard asks you in a dialog. Its JSON API answers 409 without `"confirm": true`, with a message that says what the change would do, such as "Bypass lifts every limit until 2027-01-15 15:30 UTC."
+**Dangerous changes need confirmation,** in every environment: disabling, deleting or dry-running an enforcing rule, turning bypass on, a factor below 1, and an IP exemption wider than a /8 for IPv4 or a /32 for IPv6. The dashboard asks you in a dialog. Its JSON API answers 409 without `"confirm": true`, with a message that says what the change would do, such as "Bypass lifts every limit until 2027-01-15 15:30 UTC."
 
 ## When it is unreachable
 
