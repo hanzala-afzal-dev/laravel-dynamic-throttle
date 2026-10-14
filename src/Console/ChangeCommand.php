@@ -8,6 +8,7 @@ use Afzal\DynamicThrottle\Compiler\CompileResult;
 use Afzal\DynamicThrottle\Compiler\ManifestCompileFailed;
 use Afzal\DynamicThrottle\Models\Rule;
 use Afzal\DynamicThrottle\Support\ChangeOutcome;
+use Afzal\DynamicThrottle\Support\Changes\Actor;
 use Afzal\DynamicThrottle\Support\TableMissing;
 use Carbon\CarbonInterface;
 use Closure;
@@ -118,12 +119,12 @@ abstract class ChangeCommand extends Command
      * Makes a change and tells its outcome: 0 when it is saved and compiled, or when
      * there was nothing to change, and 1 otherwise.
      *
-     * @param  Closure(string): ChangeOutcome  $change  given the CLI's actor
+     * @param  Closure(Actor): ChangeOutcome  $change  given the CLI's actor
      */
     protected function change(Closure $change, string $done, string $unchanged): int
     {
         try {
-            $outcome = $change(CliActor::name());
+            $outcome = $change(Actor::cli());
         } catch (TableMissing $missing) {
             return $this->refuse($missing->getMessage());
         } catch (Throwable $exception) {
