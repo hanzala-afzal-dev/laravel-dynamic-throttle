@@ -183,7 +183,7 @@ it('AC-14: deletes a rule and the exemptions that name it, and records rule.dele
         ->and([Rule::query()->count(), Exemption::query()->pluck('id')->all()])->toBe([0, [$everyRule->id]])
         ->and(manifestRuleIds())->toBe([])
         ->and(Settings::audit())->toHaveCount(1)
-        ->and([$entry['action'] ?? null, $entry['target'] ?? null, $entry['after'] ?? 'missing'])->toBe(['rule.delete', "rule:{$rule->id}", null])
+        ->and([$entry['action'] ?? null, $entry['target'] ?? null, $entry === null ? 'missing' : $entry['after']])->toBe(['rule.delete', "rule:{$rule->id}", null])
         ->and([$entry['before']['name'] ?? null, $entry['before']['pattern'] ?? null, $entry['before']['exemptions_deleted'] ?? null])->toBe(['Login', 'login', 2]);
 });
 
