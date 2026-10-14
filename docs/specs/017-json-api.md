@@ -74,6 +74,9 @@ Every endpoint lives in SPEC-018's route group, under `{path}/api` (`/dynamic-th
 - **AC-21** `POST api/explain` is the only route whose non-GET request needs only the view gate: a test lists the group's routes and finds no other. Every other POST, PUT, PATCH and DELETE needs `manageDynamicThrottle` (SPEC-018 AC-23).
 - **AC-22** A 422 and a 409 are JSON with a `message` for a request that does not ask for JSON, and never a redirect. A change without a CSRF token gets 419, as SPEC-018 AC-6.
 
+### Found while building
+- **AC-24** In a dashboard request, the admin who sends it is logged in, and explain never takes them for the request it explains: without a user, or where the middleware would not see one, user rules count a guest, through the guard the request authenticated with and through `scopes.user.guards`, and a custom scope's `$request->user()` is null. With a user the middleware sees, that user counts. The admin is still logged in afterwards. The CLI, which has no logged-in user, was never affected.
+
 ### Hard rules
 - **AC-23** The arch tests hold: the API's code is in `src/Dashboard`, outside the request path's namespaces, which never use it (SPEC-018 AC-19).
 
@@ -142,7 +145,7 @@ Stacked on each other, each green on its own (ADR-0027).
 | 3 | `phase-4/spec-017-3` | The rules endpoints and their entries | AC-1, AC-2, AC-12 to AC-14, AC-18 |
 | 4 | `phase-4/spec-017-4` | The exemptions endpoints and their entries | AC-3, AC-15, AC-16 |
 | 5 | `phase-4/spec-017-5` | Metrics, offenders and health | AC-5 to AC-8 |
-| 6 | `phase-4/spec-017-6` | Explain with masking, the authorization matrix, the guide, the changelog, the security review's fixes, and the spec's close | AC-9 to AC-11, AC-20, AC-21, AC-23 |
+| 6 | `phase-4/spec-017-6` | Explain with masking, the authorization matrix, the guide, the changelog, the security review's fixes, and the spec's close | AC-9 to AC-11, AC-20, AC-21, AC-23, AC-24 |
 
 ## Open questions
 
