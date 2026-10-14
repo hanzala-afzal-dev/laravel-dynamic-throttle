@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use Illuminate\Cache\RateLimiter;
-use Afzal\DynamicThrottle\DynamicThrottleServiceProvider;
-use Afzal\DynamicThrottle\Dashboard\DashboardRoutes;
 use Afzal\DynamicThrottle\Dashboard\Authorize;
+use Afzal\DynamicThrottle\Dashboard\DashboardRoutes;
+use Afzal\DynamicThrottle\DynamicThrottleServiceProvider;
 use Afzal\DynamicThrottle\Tests\Support\Auth\TestUser;
 use Afzal\DynamicThrottle\Tests\Support\Dashboard;
+use Illuminate\Cache\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\Response;
