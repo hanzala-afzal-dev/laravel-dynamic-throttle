@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Models\Rule;
 use Afzal\DynamicThrottle\Models\Setting;
+use Afzal\DynamicThrottle\Support\Changes\Actor;
 use Afzal\DynamicThrottle\Support\EmergencyControls;
 use Afzal\DynamicThrottle\Tests\Support\Exemptions;
 use Afzal\DynamicThrottle\Tests\Support\RuleSchema;
@@ -40,7 +41,7 @@ it('compiles once per change, and the models\' events still reach the app\'s lis
         $updated++;
     });
 
-    $outcome = app(EmergencyControls::class)->setRuleEnabled($rule, false, 'cli:deploy');
+    $outcome = app(EmergencyControls::class)->setRuleEnabled($rule, false, new Actor('cli:deploy'));
 
     expect([$outcome->changed, $outcome->compiled?->version, $updated])->toBe([true, $version + 1, 1])
         ->and(Exemptions::stored()['version'])->toBe($version + 1);
@@ -52,7 +53,7 @@ it('leaves the manifest as it was when a surrounding transaction rolls back', fu
 
     try {
         DB::transaction(function (): void {
-            app(EmergencyControls::class)->bypass(null, 'cli:deploy');
+            app(EmergencyControls::class)->bypass(null, new Actor('cli:deploy'));
 
             throw new RuntimeException('Roll back.');
         });
@@ -67,7 +68,7 @@ it('leaves the manifest as it was when a surrounding transaction rolls back', fu
 it('compiles when a surrounding transaction commits, and says meanwhile that the compile is still to come', function (): void {
     Exemptions::rule();
 
-    $outcome = DB::transaction(fn () => app(EmergencyControls::class)->bypass(null, 'cli:deploy'));
+    $outcome = DB::transaction(fn () => app(EmergencyControls::class)->bypass(null, new Actor('cli:deploy')));
 
     expect([$outcome->changed, $outcome->compiled, $outcome->compileFailed])->toBe([true, null, null])
         ->and(Settings::stored())->toBe(['bypass_all' => ['until' => null]]);
@@ -77,9 +78,9 @@ it('reads the rule again in its transaction, so a change another admin already m
     $rule = Exemptions::rule();
     $stale = Rule::query()->findOrFail($rule->id);
     // Another admin disables the rule after this one loaded it.
-    app(EmergencyControls::class)->setRuleEnabled($rule, false, 'cli:alice');
+    app(EmergencyControls::class)->setRuleEnabled($rule, false, new Actor('cli:alice'));
 
-    $outcome = app(EmergencyControls::class)->setRuleEnabled($stale, false, 'cli:bob');
+    $outcome = app(EmergencyControls::class)->setRuleEnabled($stale, false, new Actor('cli:bob'));
 
     expect($outcome->changed)->toBeFalse()
         ->and(array_column(Settings::audit(), 'actor'))->toBe(['cli:alice']);
@@ -95,7 +96,7 @@ it('tries once more when another process saved the same setting first, so the la
         }
     });
 
-    $outcome = app(EmergencyControls::class)->bypass(Carbon::parse('2027-01-01 00:30:00', 'UTC'), 'cli:deploy');
+    $outcome = app(EmergencyControls::class)->bypass(Carbon::parse('2027-01-01 00:30:00', 'UTC'), new Actor('cli:deploy'));
 
     expect([$raced, $outcome->changed])->toBe([true, true])
         ->and(Settings::stored())->toBe(['bypass_all' => ['until' => Settings::at('2027-01-01 00:30:00')]])
