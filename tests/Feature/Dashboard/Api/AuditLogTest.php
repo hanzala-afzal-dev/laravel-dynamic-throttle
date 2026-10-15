@@ -7,6 +7,7 @@ use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Models\AuditEntry;
 use Afzal\DynamicThrottle\Models\AuditLogEntry;
 use Afzal\DynamicThrottle\Tests\Support\DashboardApi;
+use Afzal\DynamicThrottle\Tests\TestCase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
 
@@ -49,9 +50,9 @@ function auditEntryAt(string $time, array $attributes = []): AuditEntry
  * @param  array<string, string>  $query
  * @return list<int>
  */
-function auditIds(array $query = []): array
+function auditIds(TestCase $test, array $query = []): array
 {
-    $data = DashboardApi::send(test(), 'GET', 'audit?'.http_build_query($query), user: DashboardApi::viewer())->json('data');
+    $data = DashboardApi::send($test, 'GET', 'audit?'.http_build_query($query), user: DashboardApi::viewer())->json('data');
 
     return is_array($data) ? array_column($data, 'id') : [];
 }
@@ -103,7 +104,7 @@ it('AC-3: narrows the list with filters, which combine', function (array $query,
         'enable' => auditEntryAt('12:00', ['action' => AuditAction::RuleEnable, 'target' => 'rule:12']),
     ];
 
-    expect(auditIds($query))->toBe(array_map(fn (string $name): int => $entries[$name]->id, $expected));
+    expect(auditIds($this, $query))->toBe(array_map(fn (string $name): int => $entries[$name]->id, $expected));
 })->with([
     'an action' => [['action' => 'rule.disable'], ['disable']],
     'a target' => [['target' => 'rule:12'], ['enable', 'update', 'disable']],
