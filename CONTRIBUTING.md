@@ -22,6 +22,8 @@ Thanks for helping. Rate-limiting bugs are quiet: an off-by-one limit or a race 
    composer refactor:check
    ```
 
+   A change to the dashboard also runs its own (see below).
+
 Tiny changes can skip the spec. Bug fixes always start with a failing regression test.
 
 If a spec would break an ADR, write a new ADR that supersedes the old one first.
@@ -65,9 +67,24 @@ These are covered by Semantic Versioning from 1.0 ([ADR-0017](docs/adr/0017-vers
 
 A PR that changes any of them must say so, and a breaking change needs an upgrade note. Published migrations are never edited. Schema changes ship as new migrations.
 
+## Working on the dashboard ([ADR-0028](docs/adr/0028-dashboard-react-shadcn.md))
+
+The dashboard is React with shadcn/ui, in `resources/dashboard/`. Vite builds it into `dist/`, which is committed: users get the build and install nothing. You need Node 22.
+
+```bash
+npm ci
+npm run build       # writes dist/: commit it with your change
+npm run test        # Vitest
+npm run typecheck
+npm run lint
+npm run budget      # the first page stays under 300 KB gzipped
+```
+
+`npm run dev` rebuilds on every change. `composer serve` starts the Workbench app; run `vendor/bin/testbench migrate --path="$(pwd)/database/migrations" --realpath` once for the package's tables, then open `/dynamic-throttle` (the `local` environment lets you in). CI fails when `dist/` is not what the sources build, so never edit it by hand. Add shadcn/ui components by copying them into `components/ui/`.
+
 ## What users download
 
-`composer require` installs only the package: `src/`, `config/` (later `database/`, `resources/` and `routes/`), `composer.json`, and the README, LICENSE, CHANGELOG and SECURITY files. Everything else in this repository is for development and stays out through `export-ignore` in `.gitattributes`: tests, docs, scripts, Docker and CI files, and `CLAUDE.md`. A CI check fails when any other file would ship. When you add a new top-level file or folder, add it to `.gitattributes` unless users need it.
+`composer require` installs only the package: `src/`, `config/`, `database/`, `resources/views/`, `dist/`, `composer.json`, and the README, LICENSE, CHANGELOG and SECURITY files. Everything else in this repository is for development and stays out through `export-ignore` in `.gitattributes`: tests, docs, scripts, Docker and CI files, the dashboard's sources and toolchain, and `CLAUDE.md`. A CI check fails when any other file would ship. When you add a new top-level file or folder, add it to `.gitattributes` unless users need it.
 
 ## Claude Code configuration
 
