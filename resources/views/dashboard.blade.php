@@ -7,6 +7,7 @@
 <meta name="csrf-token" content="{{ $csrfToken }}">
 <meta name="csp-nonce" content="{{ $nonce }}">
 <title>Dynamic Throttle</title>
+<link rel="icon" href="data:,">
 @foreach ($entry['styles'] as $style)
 <link rel="stylesheet" href="{{ $assets.$style }}">
 @endforeach
