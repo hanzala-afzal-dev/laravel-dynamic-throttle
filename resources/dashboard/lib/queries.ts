@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { Metrics, Period } from '@/lib/metrics';
 
 /** Live data polls every 5 seconds, and not while the page is hidden (SPEC-020). */
 export const LIVE = { refetchInterval: 5_000, refetchIntervalInBackground: false } as const;
@@ -40,4 +41,9 @@ export function useHealth() {
 
 export function useRuleCounts() {
     return useQuery({ queryKey: ['rules', 'counts'], queryFn: () => api<RuleCounts>('GET', 'rules/counts'), ...EVERY_MINUTE });
+}
+
+/** The counter store's hour polls with the live data; the day and the week come from the hourly table (SPEC-021 decision 4). */
+export function useMetrics(period: Period) {
+    return useQuery({ queryKey: ['metrics', period], queryFn: () => api<Metrics>('GET', `metrics?period=${period}`), ...(period === 'hour' ? LIVE : EVERY_MINUTE) });
 }

@@ -46,7 +46,8 @@ export function HealthCard() {
                         {problems.map((problem) => (
                             <li key={problem.check} className="flex gap-2">
                                 <Dot status={problem.status} />
-                                <span>
+                                {/* Three lines at most, so one long message does not stretch the row; Settings shows it whole. */}
+                                <span className="line-clamp-3" title={problem.message}>
                                     <span className="sr-only">{problem.status === 'error' ? 'Error: ' : 'Warning: '}</span>
                                     {problem.message}
                                 </span>
