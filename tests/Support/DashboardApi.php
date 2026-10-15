@@ -69,13 +69,26 @@ final class DashboardApi
      */
     public static function send(TestCase $test, string $method, string $uri, array $data = [], ?Authenticatable $user = null, array $headers = []): TestResponse
     {
+        return self::sendTo($test, $method, self::PREFIX.$uri, $data, $user, $headers);
+    }
+
+    /**
+     * As send(), to any path, such as a page or an asset of the dashboard (SPEC-020).
+     *
+     * @param  string  $path  from the site's root, such as /dynamic-throttle/rules
+     * @param  array<string, mixed>  $data
+     * @param  array<string, string>  $headers
+     * @return TestResponse<Response>
+     */
+    public static function sendTo(TestCase $test, string $method, string $path, array $data = [], ?Authenticatable $user = null, array $headers = []): TestResponse
+    {
         if ($user instanceof Authenticatable) {
             $test->actingAs($user);
         }
 
         return $test->withSession(['_token' => self::TOKEN])
             ->withHeaders(['X-CSRF-TOKEN' => self::TOKEN, 'User-Agent' => self::USER_AGENT, ...$headers])
-            ->json($method, self::PREFIX.$uri, $data);
+            ->json($method, $path, $data);
     }
 
     /**
