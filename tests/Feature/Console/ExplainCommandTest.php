@@ -283,10 +283,11 @@ it('AC-4: says the kill switch lets the request through untouched', function ():
 
 it('AC-4: says the package\'s own routes go through untouched', function (): void {
     Throttling::rule(['pattern' => '*']);
-    Throttling::route('dynamic-throttle')->name('dynamic-throttle.dashboard');
+    // At a path of its own: the dashboard's page now answers /dynamic-throttle (SPEC-020), and this checks the name.
+    Throttling::route('own-route')->name('dynamic-throttle.dashboard');
 
-    expect(Explanations::json('GET', 'dynamic-throttle')['decision'])->toBe(['outcome' => 'untouched', 'reason' => 'own_route', 'rule' => null, 'headers' => []])
-        ->and(explainText('GET', 'dynamic-throttle'))->toContain('Decision: untouched: the route is one of the package\'s own');
+    expect(Explanations::json('GET', 'own-route')['decision'])->toBe(['outcome' => 'untouched', 'reason' => 'own_route', 'rule' => null, 'headers' => []])
+        ->and(explainText('GET', 'own-route'))->toContain('Decision: untouched: the route is one of the package\'s own');
 });
 
 it('AC-4: says an except path goes through untouched, and which pattern lists it', function (): void {
