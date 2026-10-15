@@ -1,6 +1,7 @@
 laravel: '@testbench'
 
 providers:
+  - Afzal\DynamicThrottle\DynamicThrottleServiceProvider
   - Workbench\App\Providers\WorkbenchServiceProvider
 
 migrations:
