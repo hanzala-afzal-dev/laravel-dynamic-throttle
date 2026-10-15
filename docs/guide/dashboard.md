@@ -68,6 +68,7 @@ The dashboard's pages read and change everything through a JSON API under `{path
 | `PUT api/settings/bypass`, `PUT api/settings/scale` | manage | What `dynamic-throttle:bypass` and `dynamic-throttle:scale` do |
 | `GET api/metrics?period=hour` | either | Each rule's requests, blocks and would-blocks: per minute for the last hour, or per hour for a `day` or a `week` |
 | `GET api/rules/{id}/offenders` | either | The rule's top clients by identity hash, this hour or `?hour=previous` |
+| `GET api/audit` | either | The audit log, newest first, 100 a page through `next_cursor`; `?action=`, `?target=`, `?actor=`, `?from=` and `?until=` narrow it |
 | `GET api/health` | either | What `dynamic-throttle:health --json` prints |
 | `POST api/explain` | either | What `dynamic-throttle:explain --json` prints, with tokens and header values masked |
 
