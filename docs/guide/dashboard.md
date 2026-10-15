@@ -62,6 +62,7 @@ The dashboard's pages read and change everything through a JSON API under `{path
 |---|---|---|
 | `GET api/me` | either | What you may do |
 | `GET api/rules`, `GET api/rules/{id}` | either | Rules in evaluation order, 100 a page; one rule with its exemptions |
+| `GET api/rules/counts` | either | The enabled rules by mode, enforcing or dry-run, and the disabled ones |
 | `POST api/rules`, `PATCH api/rules/{id}`, `DELETE api/rules/{id}` | manage | Create, change or delete a rule |
 | `GET api/exemptions` | either | Exemptions, newest first, 100 a page; `?rule={id}` for one rule's |
 | `POST api/exemptions`, `DELETE api/exemptions/{id}` | manage | Create or delete an exemption |
