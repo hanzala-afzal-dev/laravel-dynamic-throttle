@@ -6,6 +6,7 @@ use Afzal\DynamicThrottle\Enums\AuditAction;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Models\AuditEntry;
 use Afzal\DynamicThrottle\Models\AuditLogEntry;
+use Afzal\DynamicThrottle\Tests\Support\Auth\TestUser;
 use Afzal\DynamicThrottle\Tests\Support\DashboardApi;
 use Afzal\DynamicThrottle\Tests\TestCase;
 use Illuminate\Support\Carbon;
@@ -111,7 +112,7 @@ it('AC-3: narrows the list with filters, which combine', function (array $query,
     'an actor' => [['actor' => 'cli:deploy'], ['enable', 'bypass']],
     'from, included' => [['from' => '2027-01-15T11:00:00+00:00'], ['enable', 'update', 'disable']],
     'until, included' => [['until' => '2027-01-15T11:00:00Z'], ['disable', 'bypass']],
-    'all of them' => [['target' => 'rule:12', 'actor' => 'user:'.Afzal\DynamicThrottle\Tests\Support\Auth\TestUser::class.':2', 'from' => '2027-01-15T11:15:00Z'], ['update']],
+    'all of them' => [['target' => 'rule:12', 'actor' => 'user:'.TestUser::class.':2', 'from' => '2027-01-15T11:15:00Z'], ['update']],
 ]);
 
 it('AC-3: refuses a filter it cannot use with a 422 that names it', function (array $query, string $field): void {
