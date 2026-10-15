@@ -90,10 +90,11 @@ it('AC-6: ignores a leading slash in an except pattern, as in rule patterns', fu
 it('AC-7: never limits the package\'s own routes, even with an empty except, and limits a route named like them', function (): void {
     config()->set('dynamic-throttle.except', []);
     Throttling::rule(['pattern' => '*', 'max_attempts' => 1]);
-    Throttling::route('dynamic-throttle')->name('dynamic-throttle.dashboard');
+    // At a path of its own: the dashboard's page now answers /dynamic-throttle (SPEC-020), and this checks the name.
+    Throttling::route('own-route')->name('dynamic-throttle.dashboard');
     Throttling::route('lookalike')->name('dynamic-throttled.home');
 
-    $own = [$this->get('dynamic-throttle'), $this->get('dynamic-throttle')];
+    $own = [$this->get('own-route'), $this->get('own-route')];
 
     expect(array_map(fn (TestResponse $response): int => $response->status(), $own))->toBe([200, 200])
         ->and(array_map(Throttling::headers(...), $own))->toBe([[], []])
