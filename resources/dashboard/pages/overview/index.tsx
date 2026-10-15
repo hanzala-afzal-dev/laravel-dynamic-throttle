@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Period } from '@/lib/metrics';
+import { EmergencyControls } from '@/pages/overview/emergency-controls';
 import { HealthCard } from '@/pages/overview/health-card';
 import { LastHourCards } from '@/pages/overview/last-hour-cards';
 import { RulesCard } from '@/pages/overview/rules-card';
@@ -19,10 +20,11 @@ export default function OverviewPage() {
                 <RulesCard />
                 <LastHourCards />
             </div>
-            <TrafficCard period={period} onPeriodChange={setPeriod} />
             <div className="grid gap-4 xl:grid-cols-3">
-                <TopRulesCard period={period} className="xl:col-span-2" />
+                <TrafficCard period={period} onPeriodChange={setPeriod} className="xl:col-span-2" />
+                <EmergencyControls />
             </div>
+            <TopRulesCard period={period} />
         </section>
     );
 }
