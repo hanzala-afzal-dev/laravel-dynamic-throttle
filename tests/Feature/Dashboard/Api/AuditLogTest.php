@@ -9,11 +9,12 @@ use Afzal\DynamicThrottle\Models\AuditLogEntry;
 use Afzal\DynamicThrottle\Tests\Support\Auth\TestUser;
 use Afzal\DynamicThrottle\Tests\Support\DashboardApi;
 use Afzal\DynamicThrottle\Tests\TestCase;
+use Illuminate\Pagination\Cursor;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
 
 /*
-| SPEC-019 AC-1 to AC-5 and AC-7: GET api/audit, newest first in cursor pages,
+| SPEC-019 AC-1 to AC-5, AC-7 and AC-8: GET api/audit, newest first in cursor pages,
 | with filters, through a read-only model. Entries are written at the times the
 | clock is moved to, on 2027-01-15 in UTC.
 */
@@ -149,6 +150,46 @@ it('AC-5: refuses to create, change or delete an entry through the read-only mod
     expect($attempt)->toThrow(LogicException::class)
         ->and(AuditEntry::query()->pluck('actor')->all())->toBe(['cli:deploy']);
 })->with(['create', 'update', 'delete']);
+
+/*
+| AC-8, from the security review.
+*/
+
+it('AC-8: refuses a crafted cursor with a 422, whatever its id', function (mixed $id): void {
+    $cursor = (new Cursor(['id' => $id]))->encode();
+
+    $response = DashboardApi::send($this, 'GET', 'audit?'.http_build_query(['cursor' => $cursor]), user: DashboardApi::viewer());
+
+    expect([$response->status(), array_keys($response->json('errors') ?? [])])->toBe([422, ['cursor']]);
+})->with([
+    'null' => [null],
+    'text' => ['abc'],
+    'zero' => [0],
+    'past bigint' => ['99999999999999999999'],
+]);
+
+it('AC-8: reads the cursor from the query only, never from a JSON body', function (): void {
+    $first = auditEntryAt('10:00');
+    $crafted = (new Cursor(['created_at' => 'x']))->encode();
+
+    $response = DashboardApi::send($this, 'GET', 'audit', ['cursor' => $crafted], DashboardApi::viewer());
+
+    expect([$response->status(), array_column($response->json('data') ?? [], 'id')])->toBe([200, [$first->id]]);
+});
+
+it('AC-8: answers an entry with a user agent that is not UTF-8, with the bad bytes replaced', function (): void {
+    auditEntryAt('10:00', ['user_agent' => "Mozilla\xff"]);
+
+    $response = DashboardApi::send($this, 'GET', 'audit', user: DashboardApi::viewer());
+
+    expect([$response->status(), $response->json('data.0.user_agent')])->toBe([200, "Mozilla\u{FFFD}"]);
+});
+
+it('AC-8: refuses a time past the year 9998, which would compare wrongly as text', function (): void {
+    $response = DashboardApi::send($this, 'GET', 'audit?'.http_build_query(['from' => '9999-12-31T23:59:59-10:00']), user: DashboardApi::viewer());
+
+    expect([$response->status(), array_keys($response->json('errors') ?? [])])->toBe([422, ['from']]);
+});
 
 it('AC-7: answers 503 with the way out when the audit table is missing', function (): void {
     Schema::connection((new AuditEntry)->getConnectionName())->drop((new AuditEntry)->getTable());
