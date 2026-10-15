@@ -1,43 +1,50 @@
+import { lazy, Suspense } from 'react';
 import { Link, Route, Switch } from 'wouter';
+import { Skeleton } from '@/components/ui/skeleton';
+
+/* Each page loads its own code when opened (ADR-0028 point 5). */
+const Overview = lazy(() => import('@/pages/overview'));
 
 /** The dashboard's pages, by path under its base (SPEC-020): placeholders until each page's spec. */
 export function Pages() {
     return (
-        <Switch>
-            <Route path="/">
-                <Placeholder title="Overview" spec="SPEC-021" />
-            </Route>
-            <Route path="/rules">
-                <Placeholder title="Rules" spec="SPEC-022" />
-            </Route>
-            <Route path="/rules/new">
-                <Placeholder title="New rule" spec="SPEC-022" />
-            </Route>
-            <Route path="/rules/:id">
-                <Placeholder title="Rule" spec="SPEC-022" />
-            </Route>
-            <Route path="/rules/:id/edit">
-                <Placeholder title="Edit rule" spec="SPEC-022" />
-            </Route>
-            <Route path="/exemptions">
-                <Placeholder title="Exemptions" spec="SPEC-023" />
-            </Route>
-            <Route path="/activity">
-                <Placeholder title="Activity" spec="SPEC-024" />
-            </Route>
-            <Route path="/explain">
-                <Placeholder title="Explain" spec="SPEC-026" />
-            </Route>
-            <Route path="/audit">
-                <Placeholder title="Audit log" spec="SPEC-025" />
-            </Route>
-            <Route path="/settings">
-                <Placeholder title="Settings" spec="SPEC-031" />
-            </Route>
-            <Route>
-                <NotFound />
-            </Route>
-        </Switch>
+        <Suspense fallback={<Loading />}>
+            <Switch>
+                <Route path="/">
+                    <Overview />
+                </Route>
+                <Route path="/rules">
+                    <Placeholder title="Rules" spec="SPEC-022" />
+                </Route>
+                <Route path="/rules/new">
+                    <Placeholder title="New rule" spec="SPEC-022" />
+                </Route>
+                <Route path="/rules/:id">
+                    <Placeholder title="Rule" spec="SPEC-022" />
+                </Route>
+                <Route path="/rules/:id/edit">
+                    <Placeholder title="Edit rule" spec="SPEC-022" />
+                </Route>
+                <Route path="/exemptions">
+                    <Placeholder title="Exemptions" spec="SPEC-023" />
+                </Route>
+                <Route path="/activity">
+                    <Placeholder title="Activity" spec="SPEC-024" />
+                </Route>
+                <Route path="/explain">
+                    <Placeholder title="Explain" spec="SPEC-026" />
+                </Route>
+                <Route path="/audit">
+                    <Placeholder title="Audit log" spec="SPEC-025" />
+                </Route>
+                <Route path="/settings">
+                    <Placeholder title="Settings" spec="SPEC-031" />
+                </Route>
+                <Route>
+                    <NotFound />
+                </Route>
+            </Switch>
+        </Suspense>
     );
 }
 
@@ -60,5 +67,14 @@ function NotFound() {
                 </Link>
             </p>
         </section>
+    );
+}
+
+function Loading() {
+    return (
+        <div className="grid gap-4" aria-busy="true" aria-label="Loading the page">
+            <Skeleton className="h-8 w-48" />
+            <Skeleton className="h-32 w-full" />
+        </div>
     );
 }

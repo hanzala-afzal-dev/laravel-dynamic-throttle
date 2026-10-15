@@ -66,6 +66,7 @@ final class DashboardRoutes
 
             $router->name('api.rules.index')->middleware(self::middleware('read'))->get('api/rules', [RuleController::class, 'index']);
             $router->name('api.rules.store')->middleware(self::middleware('write'))->post('api/rules', [RuleController::class, 'store']);
+            $router->name('api.rules.counts')->middleware(self::middleware('read'))->get('api/rules/counts', [RuleController::class, 'counts']);
             $router->name('api.rules.show')->middleware(self::middleware('read'))->get('api/rules/{rule}', [RuleController::class, 'show'])->whereNumber('rule');
             $router->name('api.rules.update')->middleware(self::middleware('write'))->patch('api/rules/{rule}', [RuleController::class, 'update'])->whereNumber('rule');
             $router->name('api.rules.destroy')->middleware(self::middleware('write'))->delete('api/rules/{rule}', [RuleController::class, 'destroy'])->whereNumber('rule');
