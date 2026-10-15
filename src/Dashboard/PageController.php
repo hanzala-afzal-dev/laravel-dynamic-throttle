@@ -42,14 +42,16 @@ final readonly class PageController
             return new Response('The dashboard is not built: run npm ci and npm run build.', 503, ['Content-Type' => 'text/plain; charset=utf-8']);
         }
 
-        $base = $request->getBaseUrl().'/'.DashboardPath::of($this->config);
+        // One leading slash: a request path that starts with two would make the base another host's (SPEC-020 AC-15).
+        $base = '/'.ltrim($request->getBaseUrl().'/'.DashboardPath::of($this->config), '/');
         $nonce = $request->attributes->get(ContentSecurityPolicy::NONCE);
 
         return new Response($this->views->file(self::VIEW, [
             'base' => $base,
             'assets' => $base.'/assets/',
             'entry' => $entry,
-            'csrfToken' => $request->session()->token(),
+            // A dashboard.middleware without the web group has no session, and so no CSRF token to give (SPEC-020 AC-14).
+            'csrfToken' => $request->hasSession() ? $request->session()->token() : '',
             'nonce' => is_string($nonce) ? $nonce : '',
         ])->render(), 200, ['Content-Type' => 'text/html; charset=utf-8']);
     }

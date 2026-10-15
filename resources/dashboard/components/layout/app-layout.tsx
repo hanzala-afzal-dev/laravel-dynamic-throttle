@@ -2,6 +2,7 @@ import { Activity, Gauge, LayoutDashboard, ListChecks, Monitor, Moon, ScrollText
 import type { ReactNode } from 'react';
 import { Link, useLocation } from 'wouter';
 import { EmergencyBanner } from '@/components/layout/emergency-banner';
+import { PageErrorBoundary } from '@/components/layout/page-error-boundary';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useMe } from '@/lib/queries';
@@ -22,14 +23,18 @@ const THEME_ICONS = { system: Monitor, light: Sun, dark: Moon } as const;
 
 /** The frame every page shares (SPEC-020): the sidebar, the header and the emergency banner. */
 export function AppLayout({ children }: { children: ReactNode }) {
+    const [location] = useLocation();
+
     return (
         <div className="flex min-h-svh flex-col md:flex-row">
             <Sidebar />
             <div className="flex min-w-0 flex-1 flex-col">
                 <Header />
                 <main className="flex-1 p-4 md:p-8">
-                    <EmergencyBanner />
-                    {children}
+                    <PageErrorBoundary key={location}>
+                        <EmergencyBanner />
+                        {children}
+                    </PageErrorBoundary>
                 </main>
             </div>
         </div>

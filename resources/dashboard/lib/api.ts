@@ -37,6 +37,9 @@ const MESSAGES: Partial<Record<number, string>> = {
     429: 'Too many requests: wait a moment.',
 };
 
+/** A body that does not parse as JSON. */
+const NOT_JSON = Symbol('not JSON');
+
 export async function api<T>(method: Method, path: string, body?: unknown): Promise<T> {
     const response = await fetch(`${base}/api/${path}`, {
         method,
@@ -49,7 +52,12 @@ export async function api<T>(method: Method, path: string, body?: unknown): Prom
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-    const data: unknown = await response.json().catch(() => null);
+    const data: unknown = await response.json().catch(() => NOT_JSON);
+
+    // The API answers JSON and never redirects (SPEC-017), so another page, such as an app's login, is no answer.
+    if (response.ok && (response.redirected || data === NOT_JSON)) {
+        throw new ApiError(response.status, 'The server answered with another page, such as a login: reload the page.');
+    }
 
     if (response.ok) {
         return data as T;
