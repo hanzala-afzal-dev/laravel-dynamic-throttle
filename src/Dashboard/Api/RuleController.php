@@ -6,6 +6,7 @@ namespace Afzal\DynamicThrottle\Dashboard\Api;
 
 use Afzal\DynamicThrottle\Dashboard\Validation\Confirmation;
 use Afzal\DynamicThrottle\Dashboard\Validation\RuleInput;
+use Afzal\DynamicThrottle\Enums\RuleMode;
 use Afzal\DynamicThrottle\Models\Exemption;
 use Afzal\DynamicThrottle\Models\Rule;
 use Afzal\DynamicThrottle\Support\ChangeOutcome;
@@ -40,6 +41,27 @@ final readonly class RuleController
             ->through(fn (Rule $rule): array => Payloads::rule($rule));
 
         return new JsonResponse($page);
+    }
+
+    /**
+     * The Overview's counts (SPEC-021): the enabled rules by mode, and the disabled ones,
+     * in one grouped query.
+     */
+    public function counts(): JsonResponse
+    {
+        $counts = ['enforcing' => 0, 'dry_run' => 0, 'disabled' => 0];
+        $groups = Rule::query()->toBase()->selectRaw('enabled, mode, count(*) as rules')->groupBy('enabled', 'mode')->get();
+
+        foreach ($groups as $group) {
+            $kind = match (true) {
+                ! (bool) $group->enabled => 'disabled',
+                $group->mode === RuleMode::DryRun->value => 'dry_run',
+                default => 'enforcing',
+            };
+            $counts[$kind] += is_numeric($group->rules) ? (int) $group->rules : 0;
+        }
+
+        return new JsonResponse($counts);
     }
 
     public function show(string $rule): JsonResponse
