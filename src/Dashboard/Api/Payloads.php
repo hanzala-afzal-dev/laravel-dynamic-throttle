@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle\Dashboard\Api;
 
+use Afzal\DynamicThrottle\Models\AuditLogEntry;
 use Afzal\DynamicThrottle\Models\Exemption;
 use Afzal\DynamicThrottle\Models\Rule;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Date;
 
 /**
- * How the API shows rules and exemptions (SPEC-017): every field it takes, enums
+ * How the API shows rules, exemptions (SPEC-017) and audit entries (SPEC-019): every field it takes, enums
  * as their values, and times in ISO 8601, in UTC.
  *
  * @internal
@@ -59,6 +60,24 @@ final class Payloads
             'active' => $exemption->expires_at === null || $exemption->expires_at->greaterThan(Date::now()),
             'created_at' => self::time($exemption->created_at),
             'updated_at' => self::time($exemption->updated_at),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function audit(AuditLogEntry $entry): array
+    {
+        return [
+            'id' => $entry->id,
+            'actor' => $entry->actor,
+            'action' => $entry->action,
+            'target' => $entry->target,
+            'before' => $entry->before,
+            'after' => $entry->after,
+            'ip' => $entry->ip,
+            'user_agent' => $entry->user_agent,
+            'created_at' => self::time($entry->created_at),
         ];
     }
 
