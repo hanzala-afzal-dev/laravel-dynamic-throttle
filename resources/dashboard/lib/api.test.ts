@@ -66,4 +66,22 @@ describe('the API client', () => {
             { max_attempts: ['The max attempts field must be at least 1.'] },
         ]);
     });
+
+    it.each([
+        ['a login page', () => new Response('<!doctype html><title>Log in</title>', { status: 200, headers: { 'Content-Type': 'text/html' } })],
+        ['JSON reached through a redirect', () => redirected(new Response('{"bypass":null}', { status: 200, headers: { 'Content-Type': 'application/json' } }))],
+    ])('AC-17: refuses a 2xx that is %s, rather than return it', async (_, response) => {
+        vi.stubGlobal('fetch', vi.fn(async () => response()));
+
+        const error = await failure(api('GET', 'settings'));
+
+        expect([error.status, error.message]).toEqual([200, 'The server answered with another page, such as a login: reload the page.']);
+    });
 });
+
+/** A response as fetch gives it after following a redirect. */
+function redirected(response: Response): Response {
+    Object.defineProperty(response, 'redirected', { value: true });
+
+    return response;
+}

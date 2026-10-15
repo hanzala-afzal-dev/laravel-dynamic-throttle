@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Tests\Support\Dashboard;
 use Afzal\DynamicThrottle\Tests\Support\DashboardApi;
+use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Testing\TestResponse;
@@ -168,4 +169,48 @@ it('AC-5: answers 503 with the way to build when there is no build', function ()
 
     expect($response->status())->toBe(503)
         ->and($response->getContent())->toContain('The dashboard is not built: run npm ci and npm run build.');
+});
+
+/*
+| AC-14 to AC-16: from the security review.
+*/
+
+it('AC-14: answers the shell on a stack without a session, with an empty CSRF token', function (): void {
+    Dashboard::boot(['middleware' => []]);
+    Dashboard::fixtureBuild();
+
+    $response = shell();
+
+    expect($response->status())->toBe(200)
+        ->and($response->getContent())->toContain('<meta name="csrf-token" content="">');
+});
+
+it('AC-15: keeps the base path on the site, whatever path the request names', function (): void {
+    // An app in a subdirectory, and a request whose path starts with two slashes.
+    $request = Request::create('http://localhost//evil.example/app/index.php/dynamic-throttle', 'GET', server: [
+        'SCRIPT_NAME' => '/app/index.php',
+        'SCRIPT_FILENAME' => '/var/www/app/index.php',
+        'PHP_SELF' => '/app/index.php',
+    ]);
+    $request->server->set('REQUEST_URI', '//evil.example/app/index.php/dynamic-throttle');
+    $this->actingAs(DashboardApi::viewer());
+
+    $html = (string) app(Kernel::class)->handle($request)->getContent();
+
+    expect($html)->toContain('data-base="/evil.example/app/index.php/dynamic-throttle"')
+        ->toContain('<script type="module" src="/evil.example/app/index.php/dynamic-throttle/assets/main-abc123.js"></script>')
+        ->not->toContain('"//');
+});
+
+it('AC-16: forbids framing with X-Frame-Options too, which outlasts an app\'s own policy', function (): void {
+    Route::aliasMiddleware('app-csp', fn (Request $request, Closure $next): Response => tap($next($request), function (Response $response): void {
+        $response->headers->set('Content-Security-Policy', "default-src 'self'");
+    }));
+    Dashboard::boot(['middleware' => ['web', 'app-csp']]);
+    Dashboard::fixtureBuild();
+
+    $page = shell();
+    $api = $this->actingAs(DashboardApi::viewer())->getJson('/dynamic-throttle/api/me');
+
+    expect([$page->headers->get('X-Frame-Options'), $api->headers->get('X-Frame-Options')])->toBe(['DENY', 'DENY']);
 });
