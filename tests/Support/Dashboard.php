@@ -64,7 +64,7 @@ final class Dashboard
      */
     public static function fixtureBuild(): void
     {
-        app()->instance(ViteManifest::class, new ViteManifest(dirname(__DIR__).'/Fixtures/dist'));
+        app()->instance(ViteManifest::class, new ViteManifest(__DIR__.'/../Fixtures/dist'));
     }
 
     /**
@@ -72,7 +72,7 @@ final class Dashboard
      */
     public static function noBuild(): void
     {
-        app()->instance(ViteManifest::class, new ViteManifest(dirname(__DIR__).'/Fixtures/no-build'));
+        app()->instance(ViteManifest::class, new ViteManifest(__DIR__.'/../Fixtures/no-build'));
     }
 
     /**
