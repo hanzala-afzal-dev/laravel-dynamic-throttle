@@ -4,12 +4,12 @@ import { App } from '@/app';
 import { manager, mockApi, renderAt } from '@/test/render';
 
 describe('App', () => {
-    it('renders the frame around the overview', () => {
+    it('renders the frame around the overview', async () => {
         mockApi(manager());
         renderAt(<App />);
 
         expect(screen.getByText('Dynamic Throttle')).toBeInTheDocument();
-        expect(screen.getByRole('heading', { name: 'Overview' })).toBeInTheDocument();
+        expect(await screen.findByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument();
     });
 
     it('AC-17: keeps the frame when the API answers with a login page', async () => {
@@ -19,6 +19,6 @@ describe('App', () => {
         await waitFor(() => expect([client.getQueryState(['me'])?.status, client.getQueryState(['settings'])?.status]).toEqual(['error', 'error']));
 
         expect(screen.getByText('Dynamic Throttle')).toBeInTheDocument();
-        expect(screen.getByRole('heading', { name: 'Overview' })).toBeInTheDocument();
+        expect(await screen.findByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument();
     });
 });

@@ -41,6 +41,7 @@ const API_READS = [
     'dynamic-throttle.api.settings' => ['GET', 'settings', []],
     'dynamic-throttle.api.rules.index' => ['GET', 'rules', []],
     'dynamic-throttle.api.rules.show' => ['GET', 'rules/{rule}', []],
+    'dynamic-throttle.api.rules.counts' => ['GET', 'rules/counts', []],
     'dynamic-throttle.api.rules.offenders' => ['GET', 'rules/{rule}/offenders', []],
     'dynamic-throttle.api.exemptions.index' => ['GET', 'exemptions', []],
     'dynamic-throttle.api.metrics' => ['GET', 'metrics', []],
