@@ -20,6 +20,7 @@ use Afzal\DynamicThrottle\Console\ScaleCommand;
 use Afzal\DynamicThrottle\Console\StatusCommand;
 use Afzal\DynamicThrottle\Dashboard\DashboardRoutes;
 use Afzal\DynamicThrottle\Dashboard\SecurityHeaders;
+use Afzal\DynamicThrottle\Dashboard\ViteManifest;
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
 use Afzal\DynamicThrottle\Engine\Contracts\FailureMemory;
 use Afzal\DynamicThrottle\Engine\Contracts\LimiterStore;
@@ -74,6 +75,9 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(DefaultGuard::class, fn (Application $app): DefaultGuard => $this->defaultGuard($app));
+
+        // The dashboard's build, shipped in the package (ADR-0028), read once per process.
+        $this->app->singleton(ViteManifest::class, fn (): ViteManifest => new ViteManifest(__DIR__.'/../dist'));
 
         $this->mergePackageConfig();
 
@@ -388,14 +392,14 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
             $router->aliasMiddleware(DynamicThrottleMiddleware::ALIAS, DynamicThrottleMiddleware::class);
         });
 
-        // Once every provider has booted, so middleware.after can name aliases that other
-        // packages register. Through the kernel, which copies its lists to the router each
-        // time they change, so a later change there keeps these.
         // Before any request's auth middleware can change it (SPEC-017 AC-25).
         $this->app->booted(function (): void {
             $this->app->instance(DefaultGuard::class, $this->defaultGuard($this->app));
         });
 
+        // Once every provider has booted, so middleware.after can name aliases that other
+        // packages register. Through the kernel, which copies its lists to the router each
+        // time they change, so a later change there keeps these.
         $this->app->booted(function (): void {
             $this->callAfterResolving(HttpKernel::class, function (HttpKernel $kernel): void {
                 // Another kernel gets neither: the docs show the manual setup (ADR-0004's fallback).

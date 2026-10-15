@@ -16,7 +16,7 @@ The JSON API is done, but nothing draws a page. Before the first page, the dashb
 - **CI checks the frontend:** type check, lint, Vitest, a fresh build that leaves `dist/` unchanged, the first page's JavaScript under 300 KB gzipped, and `npm audit` with no high or critical advisory in what ships.
 
 ### The routes
-- **The page shell:** `GET {path}` and any path under it that is not `api/…` or `assets/…`, such as `{path}/rules/12`, answers the same small HTML page, so the browser's own routes reload. It needs either gate (SPEC-018), and is named `dynamic-throttle.page`. The shell holds:
+- **The page shell:** `GET {path}` and each page's path under it (`rules`, `rules/new`, `rules/12`, `rules/12/edit`, `exemptions`, `activity`, `audit`, `explain`, `settings`) answers the same small HTML page, so the browser's own routes reload. Only those paths: a catch-all would take the app's own routes under the dashboard's path, such as `{locale}/login` (SPEC-018 AC-20). It needs either gate (SPEC-018), and is named `dynamic-throttle.page`. The shell holds:
   - the root element, with the dashboard's base path in a `data-` attribute;
   - the hashed stylesheet and module script, from Vite's manifest;
   - the CSRF token and a fresh nonce, each in a `<meta>` tag;
@@ -38,7 +38,7 @@ The JSON API is done, but nothing draws a page. Before the first page, the dashb
 ## Acceptance criteria
 
 ### Server (Pest)
-- **AC-1** `GET /dynamic-throttle`, `/dynamic-throttle/rules` and `/dynamic-throttle/rules/12` answer the shell, 200 `text/html`, for a viewer; a guest in production gets 403. `GET /dynamic-throttle/api/nope` is not the shell: it answers 404.
+- **AC-1** `GET /dynamic-throttle`, `/dynamic-throttle/rules`, `/dynamic-throttle/rules/12` and `/dynamic-throttle/audit` answer the shell, 200 `text/html`, for a viewer; a guest in production gets 403. `GET /dynamic-throttle/api/nope` is not the shell: it answers 404, and an app route under the dashboard's path stays the app's (SPEC-018 AC-20).
 - **AC-2** The shell holds the root element with `data-base="/dynamic-throttle"` (or the configured path), the stylesheet and the module script named in the manifest under `/dynamic-throttle/assets/`, the CSRF token and the nonce in `<meta>` tags, and no inline script body, `style` attribute or `on…` attribute.
 - **AC-3** The shell's `Content-Security-Policy` is exactly the policy above, its nonce is the one in the `<meta>` tag and differs on every request, and it comes with `Referrer-Policy: same-origin`. A response the app already gave a CSP keeps it.
 - **AC-4** `GET /dynamic-throttle/assets/{file}` for a file the manifest lists answers it with `application/javascript` or `text/css`, `Cache-Control: public, max-age=31536000, immutable` and `nosniff`, to a guest, and sets no cookie. A file the manifest does not list, `../composer.json` encoded or not, and the manifest itself answer 404.
