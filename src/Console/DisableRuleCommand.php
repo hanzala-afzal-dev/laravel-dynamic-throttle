@@ -16,6 +16,8 @@ use Afzal\DynamicThrottle\Support\EmergencyControls;
  */
 final class DisableRuleCommand extends ChangeCommand
 {
+    use NamesARule;
+
     protected $signature = 'dynamic-throttle:disable-rule
         {id : The rule\'s id, as dynamic-throttle:list shows it}
         {--force : Do not ask for confirmation in production}';

@@ -15,6 +15,8 @@ use InvalidArgumentException;
  */
 final class BypassCommand extends ChangeCommand
 {
+    use TakesAnEndTime;
+
     protected $signature = 'dynamic-throttle:bypass
         {state : on or off}
         {--for= : How long, such as 90s, 30m, 2h or 1d. One hour by default}
@@ -28,7 +30,7 @@ final class BypassCommand extends ChangeCommand
         $state = $this->argument('state');
 
         if ($state !== 'on' && $state !== 'off') {
-            return $this->refuse('The state must be on or off, got "'.(is_string($state) ? $state : '').'".');
+            return $this->refuse("The state must be on or off, got \"{$state}\".");
         }
 
         try {

@@ -6,7 +6,6 @@ namespace Afzal\DynamicThrottle\Console;
 
 use Afzal\DynamicThrottle\Compiler\CompileResult;
 use Afzal\DynamicThrottle\Compiler\ManifestCompileFailed;
-use Afzal\DynamicThrottle\Models\Rule;
 use Afzal\DynamicThrottle\Support\ChangeOutcome;
 use Afzal\DynamicThrottle\Support\Changes\Actor;
 use Afzal\DynamicThrottle\Support\TableMissing;
@@ -14,106 +13,20 @@ use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Console\Command;
 use Illuminate\Console\ConfirmableTrait;
-use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Str;
-use InvalidArgumentException;
 use Throwable;
 
 /**
- * What the commands that change a setting or a rule share (SPEC-013): --for and
- * --forever, the confirmation in production (ADR-0015 point 4), the CLI's actor,
- * and how a change's outcome is told.
+ * What the commands that change a setting or a rule share (SPEC-013): the
+ * confirmation in production (ADR-0015 point 4), the CLI's actor, and how a
+ * change's outcome is told. TakesAnEndTime and NamesARule add the options and the
+ * argument only some of them have.
  *
  * @internal
  */
 abstract class ChangeCommand extends Command
 {
     use ConfirmableTrait;
-
-    /**
-     * The end time from --for or --forever, and an hour from now without either
-     * (SPEC-013 decision 2).
-     *
-     * @throws InvalidArgumentException naming the mistake
-     */
-    protected function until(): ?CarbonInterface
-    {
-        $for = $this->option('for');
-        $forever = $this->option('forever') === true;
-
-        if ($this->forGiven() && $forever) {
-            throw new InvalidArgumentException('Pass --for or --forever, not both.');
-        }
-
-        // --for without a value would otherwise mean one hour by mistake (the review).
-        if ($this->forGiven() && ! is_string($for)) {
-            throw new InvalidArgumentException('--for needs a duration, such as 30m.');
-        }
-
-        return $forever ? null : Date::now()->addSeconds(Duration::seconds(is_string($for) ? $for : '1h'));
-    }
-
-    /**
-     * Turning a setting off takes no end time: null, or why not.
-     *
-     * @throws InvalidArgumentException
-     */
-    protected function noEndTime(): null
-    {
-        return ! $this->forGiven() && $this->option('forever') !== true
-            ? null
-            : throw new InvalidArgumentException('--for and --forever do not apply to off.');
-    }
-
-    /**
-     * Whether --for was given, with a value or without one.
-     */
-    private function forGiven(): bool
-    {
-        return $this->option('for') !== null || $this->input->hasParameterOption('--for');
-    }
-
-    /**
-     * The rule the id argument names, or null when there is none.
-     *
-     * @throws Throwable from the database
-     */
-    protected function rule(): ?Rule
-    {
-        return preg_match('/\A[1-9]\d{0,17}\z/', $this->id()) === 1 ? Rule::query()->find((int) $this->id()) : null;
-    }
-
-    /**
-     * The rule the id argument names, or why there is none, as the commands print it.
-     */
-    protected function ruleOrRefusal(): Rule|int
-    {
-        try {
-            $rule = $this->rule();
-        } catch (Throwable $exception) {
-            return $this->refuse("Could not read rule {$this->id()}: ".$exception->getMessage());
-        }
-
-        return $rule ?? $this->refuse("There is no rule {$this->id()}.");
-    }
-
-    /**
-     * A rule as messages name it: its id, and its name as text (the review).
-     */
-    protected function label(Rule $rule): string
-    {
-        return "Rule {$rule->id} ({$rule->name})";
-    }
-
-    /**
-     * The id argument, as given.
-     */
-    protected function id(): string
-    {
-        $id = $this->argument('id');
-
-        return is_string($id) ? $id : '';
-    }
 
     /**
      * Makes a change and tells its outcome: 0 when it is saved and compiled, or when
