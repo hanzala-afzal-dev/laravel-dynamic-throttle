@@ -1,6 +1,6 @@
 # The dashboard
 
-The dashboard ships with the package, as Horizon's does: open `/dynamic-throttle` in your browser. There is nothing to build or publish; the package serves its own assets. Its pages arrive one by one before the first release. This page covers where it is served, who gets in, how it protects itself, and its JSON API ([ADR-0015](../adr/0015-dashboard-security-and-audit.md), [ADR-0028](../adr/0028-dashboard-react-shadcn.md), [SPEC-018](../specs/018-dashboard-access-and-guardrails.md), [SPEC-020](../specs/020-dashboard-foundation.md), [SPEC-017](../specs/017-json-api.md)).
+The dashboard ships with the package, as Horizon's does: open `/dynamic-throttle` in your browser. There is nothing to build or publish; the package serves its own assets. Its pages arrive one by one before the first release. This page covers where it is served, who gets in, its pages, how it protects itself, and its JSON API ([ADR-0015](../adr/0015-dashboard-security-and-audit.md), [ADR-0028](../adr/0028-dashboard-react-shadcn.md), [SPEC-018](../specs/018-dashboard-access-and-guardrails.md), [SPEC-020](../specs/020-dashboard-foundation.md), [SPEC-021](../specs/021-dashboard-overview.md), [SPEC-017](../specs/017-json-api.md)).
 
 ## Where it is
 
@@ -35,6 +35,20 @@ Gate::define('manageDynamicThrottle', fn (User $user) => $user->is_admin);
 - **Managing includes viewing,** so defining `manageDynamicThrottle` alone is enough for a team of admins.
 - **Guests never get in** through a gate you define, unless its callback accepts a null user (`?User $user`).
 - **A denied request gets a 403,** never a redirect to a login page your app may not have. To send guests to your login page first, add `auth`: `'middleware' => ['web', 'auth']`.
+
+## The Overview
+
+The first page shows what limiting does now:
+
+- **Health:** the health report's status and its first errors and warnings. The whole report waits on the Settings page.
+- **Rules:** how many are enabled, enforcing or in dry-run, and how many are disabled.
+- **The last hour:** the blocks, with their share of the checks, and the would-blocks of the dry-run rules.
+- **Traffic:** the blocks and would-blocks over the last hour, day or week. Hover over a bar for its time, in your time zone and in UTC, and its checks.
+- **Top rules:** the five rules that blocked most in the chart's period, each linking to its page.
+
+A request that two rules check counts in both, so the numbers are checks, not requests. The last hour comes from the counter store and refreshes every 5 seconds. The day and the week come from the hourly table, which the scheduler fills once a minute.
+
+**The emergency controls** turn bypass or a scale factor on for 15 minutes, an hour, 4 hours, a day or with no end time, and off again, as `dynamic-throttle:bypass` and `dynamic-throttle:scale` do. Turning bypass on, or a factor below 1, asks you to confirm first, with what the change does. Viewers see the controls' state but no button. While either setting is on, every page shows a banner with a button to turn it off.
 
 ## How it protects itself
 
