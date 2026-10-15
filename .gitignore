@@ -25,3 +25,6 @@ composer.lock
 *.swp
 .DS_Store
 Thumbs.db
+
+# The dashboard's toolchain (ADR-0028): dist/ is committed, node_modules never.
+/node_modules/
