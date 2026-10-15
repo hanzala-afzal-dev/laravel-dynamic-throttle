@@ -27,6 +27,11 @@ final readonly class AuditController
     /** Entries a page (decision 2). */
     public const int PER_PAGE = 100;
 
+    /** The earliest and latest times a filter takes, so every year has four digits. */
+    private const string EARLIEST = '1000-01-01';
+
+    private const string LATEST = '9999-01-01';
+
     /** The filters that match a column exactly. */
     private const array EXACT = ['action', 'target', 'actor'];
 
@@ -48,8 +53,9 @@ final readonly class AuditController
                 'action' => ['sometimes', 'string', ValidationRule::enum(AuditAction::class)],
                 'target' => ['sometimes', 'string', 'max:255'],
                 'actor' => ['sometimes', 'string', 'max:255'],
-                'from' => ['sometimes', 'date'],
-                'until' => ['sometimes', 'date', ...(isset($query['from']) ? ['after_or_equal:from'] : [])],
+                // Four-digit years: the table's times compare as text on SQLite (AC-8).
+                'from' => ['sometimes', 'date', 'after:'.self::EARLIEST, 'before:'.self::LATEST],
+                'until' => ['sometimes', 'date', 'after:'.self::EARLIEST, 'before:'.self::LATEST, ...(isset($query['from']) ? ['after_or_equal:from'] : [])],
                 'cursor' => ['sometimes', 'string', $this->cursor(...)],
             ])->validate();
             $entries = AuditLogEntry::query()->orderByDesc('id');
@@ -67,7 +73,12 @@ final readonly class AuditController
                 }
             }
 
-            return new JsonResponse($entries->cursorPaginate(self::PER_PAGE)->through(fn (AuditLogEntry $entry): array => Payloads::audit($entry)));
+            // The checked cursor, from the query: Laravel would read the input, which a JSON body fills (AC-8).
+            $cursor = is_string($filters['cursor'] ?? null) ? Cursor::fromEncoded($filters['cursor']) : null;
+            $page = $entries->cursorPaginate(self::PER_PAGE, cursor: $cursor ?? '')->through(fn (AuditLogEntry $entry): array => Payloads::audit($entry));
+
+            // A user agent is stored as the request sent it, which may not be UTF-8 (AC-8).
+            return new JsonResponse($page, 200, [], JSON_INVALID_UTF8_SUBSTITUTE);
         });
     }
 
@@ -79,8 +90,10 @@ final readonly class AuditController
     private function cursor(string $attribute, mixed $value, Closure $fail): void
     {
         $cursor = is_string($value) ? Cursor::fromEncoded($value) : null;
+        $id = $cursor instanceof Cursor ? ($cursor->toArray()['id'] ?? null) : null;
 
-        if (! $cursor instanceof Cursor || ! array_key_exists('id', $cursor->toArray())) {
+        // A whole number in the id column's range, so the query neither throws nor compares text (AC-8).
+        if (! is_int($id) || $id < 1) {
             $fail('The cursor is not one this list gave: use next_cursor from the page before.');
         }
     }
