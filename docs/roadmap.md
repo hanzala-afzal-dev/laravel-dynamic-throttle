@@ -184,27 +184,30 @@ Sizes are rough: **S** (a few days), **M** (1–2 weeks), **L** (2–3 weeks) of
 
 ## Phase 5 — Dashboard UI (M) → release 0.1.0, the first release
 
-A dashboard that ships with the package, as Laravel Horizon's does: served at its own path behind a gate, with live numbers and charts, and every rule, exemption and emergency switch managed in the browser. Server-rendered Blade plus one hand-written JavaScript file, no build step (ADR-0018, kept on 2026-10-08).
+A dashboard that ships with the package, as Laravel Horizon's does: served at its own path behind a gate, with live numbers and charts, and every rule, exemption and emergency switch managed in the browser. React with shadcn/ui and Recharts, built ahead into a committed `dist/`, so users install nothing ([ADR-0028](adr/0028-dashboard-react-shadcn.md), decided on 2026-10-15; it amends ADR-0018). Viewers see every page read-only; managers also get the buttons that change things. Light and dark themes follow the system, with a toggle; live pages poll every 5 seconds while the tab is visible; times show in the browser's time zone, with UTC on hover.
 
 **Specs**
-- SPEC-020: Blade layout, asset route, security headers and CSP (ADR-0018)
-- SPEC-021: Overview + emergency controls
-- SPEC-022: Rules + dry-run promote
-- SPEC-023: Exemptions
-- SPEC-030: a live feed of the latest blocks and would-blocks, which Activity polls every few seconds: the last 500, on Redis, with the client's raw IP and user id kept for an hour, never a token or a header value. This amends ADR-0024 (decided at the Phase 3 review).
-- SPEC-024: Activity + offenders
-- SPEC-025: Audit log
-- SPEC-026: Explain tool
+- SPEC-020: the frontend foundation: the toolchain in `resources/dashboard/`, the committed `dist/` and its freshness check, the page shell and asset routes, the strict CSP with a nonce, the layout (sidebar, header with the role and the theme toggle, the banner while an emergency setting is on), the API client and polling, and CI for the frontend
+- SPEC-021: Overview: health, bypass, scale and rule counts; the last hour in numbers; the traffic chart over an hour, a day or a week; the top rules by blocks; the emergency controls
+- SPEC-022: Rules: the list with search and filters, a rule's page (its chart, offenders, exemptions and history), the form with templates, enable and disable, promote a dry-run rule with its last 24 hours shown, duplicate and delete
+- SPEC-023: Exemptions: the list with filters, add with expiry presets, delete
+- SPEC-030: a live feed of the latest blocks and would-blocks, which Activity polls: the last 500, on Redis, with the client's raw IP and user id kept for an hour, never a token or a header value, visible to viewers. This amends ADR-0024 (decided at the Phase 3 review).
+- SPEC-024: Activity: the live feed, and each rule's offenders this hour or the last
+- SPEC-025: Audit log: the table with before and after side by side, filters, and more on demand
+- SPEC-026: Explain: the form, and the decision with each rule's identity and counter
+- SPEC-031: Settings: the health checks with how to fix each, the effective configuration read-only, and the CLI commands for when the dashboard is down
+
+**Later, not in 0.1.0:** bulk actions on rules, CSV export, and importing or exporting rules as JSON.
 
 **Exit criteria**
-- Every page has a feature test, including the CSP header and no-inline-code checks (ADR-0018).
-- The end-to-end smoke test passes: create a rule → send requests → see the block in Activity.
-- CI confirms the repository has no `package.json`.
-- Screenshots are in the README.
+- Every page has component tests (Vitest), and the shell and the routes have Pest tests, including the CSP header, the nonce and no inline code (ADR-0028).
+- The end-to-end smoke test passes in a real browser: create a rule → send requests → see the block in Activity.
+- CI rebuilds `dist/` and finds it identical, the first page's JavaScript stays under 300 KB gzipped, and `npm audit` finds no high or critical advisory in what ships.
+- Screenshots of both themes are in the README.
 - The dashboard works under the strict CSP in the Workbench app.
 - 0.1.0 is tagged and on Packagist, the repository is public, and the three GitHub settings listed under "Repository" below are on.
 
-**Fallback:** if the phase runs more than 50% over its estimate, release 0.1.0 once Overview, Rules, Exemptions and the emergency controls are finished, since those manage throttling, and move Activity, Audit log and Explain to a minor release.
+**Fallback:** if the phase runs more than 50% over its estimate, release 0.1.0 once Overview, Rules, Exemptions, Settings and the emergency controls are finished, since those manage throttling, and move Activity, Audit log and Explain to a minor release.
 
 ---
 
@@ -247,7 +250,7 @@ These were the open decisions of the original roadmap.
   - private vulnerability reporting (`SECURITY.md` links to it)
   - branch protection on `main` requiring the `CI passed` check
   - reported content to repository admins (`CODE_OF_CONDUCT.md` relies on it)
-- **Dashboard:** ships with the package, as Laravel Horizon's does, and with the first release. Server-rendered Blade + vanilla JavaScript (ADR-0018, kept on 2026-10-08).
+- **Dashboard:** ships with the package, as Laravel Horizon's does, and with the first release. React with shadcn/ui, built ahead and shipped in the package, so users install nothing (ADR-0028, 2026-10-15; it amends ADR-0018).
 - **What is public (2026-09-24):**
   - The GitHub repository is the development repository. Tests, docs, CI, Docker, scripts, `CLAUDE.md` and `.claude/` stay visible, as contributors need them and Claude Code on the web reads them.
   - What users install with Composer is only the package: `src/`, `config/` (later `database/`, `resources/` and `routes/`), `composer.json`, README, LICENSE, CHANGELOG and SECURITY. The `export-ignore` rules in `.gitattributes` enforce it, and a CI allowlist check keeps it that way.

@@ -7,6 +7,7 @@
 - Amends: ADR-0003, ADR-0015, ADR-0016, ADR-0017 (see "Effect on other ADRs")
 - Related: ADR-0004, ADR-0015, ADR-0017
 - Amended: 2026-10-08, the dashboard ships with the package and with the first release, as Laravel Horizon's does, and its technology is kept (see the decision record)
+- Amended by: [ADR-0028](0028-dashboard-react-shadcn.md) (2026-10-15): the UI is React with shadcn/ui, built ahead and shipped in the package; API first, assets through a package route and the strict CSP stay
 
 ## Context
 
@@ -115,3 +116,5 @@ The alternatives, for a dashboard that ships inside a package:
 - **Livewire, as Pulse uses.** Server-driven like Blade, but it makes the host app install Livewire, at a version the package must match, and it is built on Alpine, which needs `unsafe-eval` under CSP in its standard build (see Alpine above). Pulse can require it because it is part of Laravel itself. Rejected.
 
 If users need more than server rendering gives after 0.1.0, the fallback above still holds: a richer frontend as a separate package on the same JSON API.
+
+On 2026-10-15, starting Phase 5, the maintainer asked for a modern dashboard with shadcn/ui components and proper charts, and chose React with shadcn/ui, built ahead and shipped in the package, so users still install nothing ([ADR-0028](0028-dashboard-react-shadcn.md)).

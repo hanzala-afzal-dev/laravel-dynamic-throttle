@@ -5,6 +5,7 @@
 - Roadmap phase: 6
 - Related: ADR-0002, ADR-0014
 - Amended by: [ADR-0018](0018-minimal-dashboard.md) (no `dist/` build or freshness check)
+- Amended by: [ADR-0028](0028-dashboard-react-shadcn.md) (a committed `dist/` again, which the release checks is fresh)
 
 ## Context
 

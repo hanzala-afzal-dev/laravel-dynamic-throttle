@@ -18,6 +18,7 @@ Decisions live in docs/adr/ (index: docs/adr/README.md). Feature specs live in d
 - Cloud sessions (claude.ai/code, where this project now runs): PHP 8.4 and Composer are native (CI covers the 8.3 floor), so run `composer …` directly. A SessionStart hook (`scripts/cloud-session-start.sh`) builds missing PHP extensions, installs the dependencies and starts the services with Docker. `scripts/cloud-setup.sh` is the environment's setup script.
 - Local machine only (it has PHP 8.2): prefix with `docker compose run --rm php`, e.g. `docker compose run --rm php composer test`
 - `docker compose up -d`: Redis, Valkey, Memcached, MySQL, PostgreSQL for driver tests (`composer test:drivers`)
+- Dashboard (ADR-0028): `npm ci` once, then `npm run build` (writes `dist/`, commit it with the sources), `npm run test` (Vitest), `npm run typecheck`, `npm run lint`. Node 22.
 - `scripts/verify-install.sh 12|13`: installs the package into a fresh Laravel app and boots it
 
 ## Workflow (IMPORTANT, see ADR-0003 and ADR-0027)
@@ -39,7 +40,7 @@ Decisions live in docs/adr/ (index: docs/adr/README.md). Feature specs live in d
 - All cache and Redis keys come from KeyBuilder.
 - No exception from storage may escape the middleware (ADR-0010).
 - Dashboard routes are never subject to dynamic rules.
-- Dashboard: Blade + one hand-written JS file. No npm, no package.json, no inline scripts or styles (ADR-0018).
+- Dashboard: React + shadcn/ui in `resources/dashboard/`, built by Vite into the committed `dist/`, which users get with nothing to install (ADR-0028). No inline scripts or styles; runtime style elements carry the page's nonce. Never ship sources or `node_modules` in the Composer download, and never edit `dist/` by hand: rebuild it.
 - tests/Arch enforces several of these rules. Never weaken an arch test to make code pass.
 
 ## Style
