@@ -1,6 +1,6 @@
 # SPEC-019: Reading the audit log
 
-- Status: Approved
+- Status: Done
 - ADRs: ADR-0015, ADR-0018
 - Roadmap phase: 4
 
@@ -70,3 +70,7 @@ The maintainer vetoes any of these in the PR (ADR-0027).
 ## Open questions
 
 None.
+
+## Close
+
+Done on 2026-10-15. Every AC has a test. AC-6, one entry per change across every change route of the API, passed from the start: SPEC-017 built it, and this spec pins it down for the Phase 4 exit.

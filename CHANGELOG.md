@@ -100,6 +100,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - each rule's numbers per minute for the last hour, or per hour for a day or a week, its top offenders by identity hash, and the health report;
   - `POST api/explain`, with the view gate, which masks bearer tokens and header values;
   - every change writes one audit entry, with the user, the IP and the user agent, in the same transaction.
+  - `GET api/audit` reads the audit log, newest first, filtered by action, target, actor and time.
   - in a dashboard request, explain never takes the admin who sends it for the request it explains.
   - behind `auth:<guard>` in `dashboard.middleware`, a user id alone still means a user of the app's default guard, in exemptions and in explain.
 - The runbook, `docs/runbook.md`: what to do when Redis is down, the manifest was evicted, a bad rule blocks `/api`, or an emergency change was left on. A test follows each scenario's steps.
