@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\RateLimiter;
 /**
  * The dashboard's route group (SPEC-018): at dashboard.path, on dashboard.domain,
  * behind dashboard.middleware, then its headers, Laravel's own throttle and the
- * gates. Its routes are named dynamic-throttle.*, which no rule ever applies to
+ * gates; and its build, outside the group (SPEC-020). Its routes are named dynamic-throttle.*, which no rule ever applies to
  * (ADR-0004 point 5).
  *
  * @internal
@@ -44,9 +44,20 @@ final class DashboardRoutes
         $middleware = $config->get('dynamic-throttle.dashboard.middleware');
         $domain = $config->get('dynamic-throttle.dashboard.domain');
 
+        $domain = is_string($domain) && $domain !== '' ? $domain : null;
+
+        // The build, outside dashboard.middleware: no gate and no session, so it caches (SPEC-020 decision 2).
         $router->group(array_filter([
             'prefix' => $path,
-            'domain' => is_string($domain) && $domain !== '' ? $domain : null,
+            'domain' => $domain,
+            'as' => DynamicThrottleMiddleware::OWN_ROUTES,
+        ]), function (Router $router): void {
+            $router->name('asset')->get('assets/{file}', AssetController::class)->where('file', '[A-Za-z0-9._-]+');
+        });
+
+        $router->group(array_filter([
+            'prefix' => $path,
+            'domain' => $domain,
             'middleware' => is_array($middleware) ? array_values(array_filter($middleware, is_string(...))) : ['web'],
             'as' => DynamicThrottleMiddleware::OWN_ROUTES,
         ]), function (Router $router): void {
@@ -64,6 +75,10 @@ final class DashboardRoutes
             $router->name('api.health')->middleware(self::middleware('read'))->get('api/health', HealthController::class);
             $router->name('api.audit')->middleware(self::middleware('read'))->get('api/audit', AuditController::class);
             $router->name('api.explain')->middleware(self::middleware('inspect'))->post('api/explain', ExplainController::class);
+
+            // Last, after the API: the shell for each page's path (SPEC-020).
+            $router->name('page')->middleware([...self::middleware('read'), ContentSecurityPolicy::class])
+                ->get('{view?}', PageController::class)->where('view', PageController::PAGES);
 
             $router->name('api.exemptions.index')->middleware(self::middleware('read'))->get('api/exemptions', [ExemptionController::class, 'index']);
             $router->name('api.exemptions.store')->middleware(self::middleware('write'))->post('api/exemptions', [ExemptionController::class, 'store']);
