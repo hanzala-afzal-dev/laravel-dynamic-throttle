@@ -128,9 +128,10 @@ it('AC-3: refuses a filter it cannot use with a 422 that names it', function (ar
 it('AC-4: lets a viewer and a manager read it, and writes nothing', function (): void {
     auditEntryAt('10:00');
 
+    // The guest first: actingAs() lasts for the rest of the test.
+    $guest = DashboardApi::send($this, 'GET', 'audit');
     $viewer = DashboardApi::send($this, 'GET', 'audit', user: DashboardApi::viewer());
     $manager = DashboardApi::send($this, 'GET', 'audit', user: DashboardApi::manager());
-    $guest = DashboardApi::send($this, 'GET', 'audit');
 
     expect([$viewer->status(), $manager->status(), $guest->status(), AuditEntry::query()->count()])->toBe([200, 200, 403, 1]);
 });
