@@ -1,6 +1,6 @@
 # SPEC-020: The dashboard's foundation
 
-- Status: Approved
+- Status: Done
 - ADRs: ADR-0015, ADR-0018, ADR-0028
 - Roadmap phase: 5
 
@@ -56,6 +56,14 @@ The JSON API is done, but nothing draws a page. Before the first page, the dashb
 ### CI
 - **AC-13** CI fails when the build changes `dist/`, when the first page's JavaScript exceeds 300 KB gzipped, on a high or critical advisory in a shipped dependency, on a type or lint error, or when a Vitest test fails. The Composer download holds `dist/` and `resources/views/`, and none of `resources/dashboard/`, `package.json` or the lock file.
 
+### From the security review
+- **AC-14** With a `dashboard.middleware` that has no session, the shell still answers 200, with an empty CSRF token.
+- **AC-15** The base path has one leading slash, so a request path that starts with two, in an app in a subdirectory, never makes the base, the assets or the API another host's.
+- **AC-16** Every dashboard response sends `X-Frame-Options: DENY`, which stays when the app replaces the page's policy with one without `frame-ancestors`.
+- **AC-17** The client refuses a 2xx that was redirected or is not JSON, such as an app's login page, with "The server answered with another page, such as a login: reload the page."; the frame stays.
+- **AC-18** A page that fails to render shows "This page failed: …" inside the frame, and opening another page clears it.
+- **AC-19** CI installs the npm packages without their install scripts, which no locked package needs on Linux.
+
 ## Interfaces and files
 
 - `package.json`, `package-lock.json`, `vite.config.ts`, `tsconfig.json`, `eslint.config.js`, `components.json` (shadcn/ui), `.nvmrc` (22).
@@ -80,6 +88,8 @@ The JSON API is done, but nothing draws a page. Before the first page, the dashb
 - **A browser with an old asset cached** after an upgrade: the hashed names differ, so it fetches the new one.
 - **The page is cached by a proxy:** the shell is `no-store`, like every dashboard response (SPEC-018).
 - **JavaScript off:** the shell says the dashboard needs JavaScript, in a `<noscript>`.
+- **A `dashboard.middleware` without the session,** such as one with token authentication only: the shell has no CSRF token to give, and answers anyway (AC-14).
+- **The app's login answers an API call** after the session expires, through a redirect or a 200 page: the client reports it as an error that says to reload, and the page keeps its frame (AC-17).
 
 ## End-to-end verification
 
@@ -105,7 +115,7 @@ The maintainer vetoes any of these in the PR (ADR-0027).
 | 1 | `phase-5/spec-020-1` | This spec | Decisions |
 | 2 | `phase-5/spec-020-2` | The toolchain, shadcn/ui's base, a first build in `dist/`, and the CI job | AC-13 |
 | 3 | `phase-5/spec-020-3` | The shell, the asset route and the CSP | AC-1 to AC-6 |
-| 4 | `phase-5/spec-020-4` | The layout, the theme, the API client, polling, the banner, the guide, the changelog, the review's fixes and the spec's close | AC-7 to AC-12 |
+| 4 | `phase-5/spec-020-4` | The layout, the theme, the API client, polling, the banner, the guide, the changelog, the review's fixes and the spec's close | AC-7 to AC-12, AC-14 to AC-19 |
 
 ## Open questions
 

@@ -40,7 +40,7 @@ Gate::define('manageDynamicThrottle', fn (User $user) => $user->is_admin);
 
 - **No rule ever applies to the dashboard,** even a `*` rule, and even with `dynamic.throttle` as global middleware: the package skips its routes by name, and before routing, by its path. So a bad rule can never lock you out of the place where you would fix it. An app route that also matches under that path, such as `{locale}/login`, stays limited.
 - **Laravel's own `throttle` limits it** to `rate_limit` requests a minute per user, or per IP for a guest, 120 by default; 0 turns the limit off.
-- **Its responses are never cached,** and their type is never guessed: `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`. Only its assets are cached, for a year, under names that change with each release.
+- **Its responses are never cached, never framed,** and their type is never guessed: `Cache-Control: no-store`, `X-Frame-Options: DENY` and `X-Content-Type-Options: nosniff`. Only its assets are cached, for a year, under names that change with each release.
 - **Its pages send a strict Content Security Policy:** scripts and styles from your own site only, nothing inline, and no framing. If your app already sets a policy on the response, the package keeps yours, and then your policy must allow the dashboard's assets and the nonce in its `<meta name="csp-nonce">` tag.
 - **Every change needs `manageDynamicThrottle`,** whatever the route: any request but GET, HEAD and OPTIONS.
 

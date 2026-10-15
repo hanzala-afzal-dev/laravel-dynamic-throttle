@@ -103,7 +103,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - `GET api/audit` reads the audit log, newest first, filtered by action, target, actor and time.
 - The dashboard's pages, at `/dynamic-throttle`, with nothing to install or publish: React and shadcn/ui, built into the package (ADR-0028).
   - A sidebar, the app's environment and your role in the header, light and dark themes that follow your system, and a banner on every page while bypass or a scale factor is on, with a button to turn it off.
-  - A strict Content Security Policy, and assets cached for a year.
+  - A strict Content Security Policy, `X-Frame-Options: DENY`, and assets cached for a year.
   - in a dashboard request, explain never takes the admin who sends it for the request it explains.
   - behind `auth:<guard>` in `dashboard.middleware`, a user id alone still means a user of the app's default guard, in exemptions and in explain.
 - The runbook, `docs/runbook.md`: what to do when Redis is down, the manifest was evicted, a bad rule blocks `/api`, or an emergency change was left on. A test follows each scenario's steps.
