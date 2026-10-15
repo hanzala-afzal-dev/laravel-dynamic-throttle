@@ -139,7 +139,7 @@ it('AC-4: serves a built file to anyone, cached for a year, with its type and no
         ->toBe([true, '31536000', true])
         ->and($response->headers->get('X-Content-Type-Options'))->toBe('nosniff')
         ->and($response->headers->getCookies())->toBe([])
-        ->and($response->streamedContent() ?: $response->getContent())->toBe(file_get_contents(dirname(__DIR__, 2)."/Fixtures/dist/{$file}"));
+        ->and($response->getContent())->toBe(file_get_contents(dirname(__DIR__, 2)."/Fixtures/dist/{$file}"));
 })->with([
     'the entry' => ['main-abc123.js', 'application/javascript'],
     'an import' => ['vendor-def456.js', 'application/javascript'],
