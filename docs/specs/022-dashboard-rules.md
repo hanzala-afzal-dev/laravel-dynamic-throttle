@@ -91,7 +91,7 @@ Deleting always asks first. The dialog names the rule and says that its exemptio
 
 - `src/Dashboard/Api/RuleController.php`: the filters in `index()`.
 - `resources/dashboard/pages/rules/`: `list.tsx`, `rule.tsx`, `form.tsx`, `templates.ts`, and their tests.
-- `resources/dashboard/components/`: the chart of SPEC-021, moved out of the Overview to take one rule; the confirmation dialog and `lib/confirmed-change.ts`, shared with the Overview.
+- `resources/dashboard/pages/overview/traffic-card.tsx`: the chart of SPEC-021 takes a `ruleId`, to show one rule alone. `components/confirm-dialog.tsx` and `lib/confirmed-change.ts` are shared with the Overview.
 - `resources/dashboard/components/ui/`: shadcn/ui's `switch` and `textarea`.
 
 ## Out of scope

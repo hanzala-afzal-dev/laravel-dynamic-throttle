@@ -47,3 +47,31 @@ export function useRuleCounts() {
 export function useMetrics(period: Period) {
     return useQuery({ queryKey: ['metrics', period], queryFn: () => api<Metrics>('GET', `metrics?period=${period}`), ...(period === 'hour' ? LIVE : EVERY_MINUTE) });
 }
+
+/** The clients a rule blocked most this hour or the last, by identity hash (SPEC-017 AC-7); null where the store keeps none. */
+export type Offenders = { hour: string; offenders: { hash: string; count: number }[] | null; clients: number | null };
+
+export function useOffenders(ruleId: number, hour: 'current' | 'previous') {
+    return useQuery({ queryKey: ['rules', 'offenders', ruleId, hour], queryFn: () => api<Offenders>('GET', `rules/${ruleId}/offenders?hour=${hour}`), ...EVERY_MINUTE });
+}
+
+/** An audit log entry (SPEC-019). */
+export type AuditEntry = {
+    id: number;
+    actor: string;
+    action: string;
+    target: string | null;
+    before: Record<string, unknown> | null;
+    after: Record<string, unknown> | null;
+    ip: string | null;
+    user_agent: string | null;
+    created_at: string | null;
+};
+
+/** The newest audit entries about one target, such as rule:12, 100 at most (SPEC-019). */
+export function useAuditOf(target: string) {
+    return useQuery({
+        queryKey: ['audit', target],
+        queryFn: () => api<{ data: AuditEntry[]; next_cursor: string | null }>('GET', `audit?target=${encodeURIComponent(target)}`),
+    });
+}

@@ -1,72 +1,128 @@
 {
-  "_native-select-BVf92Oxl.js": {
-    "file": "native-select-BVf92Oxl.js",
+  "_card-D-hjHzTM.js": {
+    "file": "card-D-hjHzTM.js",
+    "name": "card",
+    "imports": [
+      "_skeleton-3lattlqy.js"
+    ]
+  },
+  "_native-select-Bdj_wPXL.js": {
+    "file": "native-select-Bdj_wPXL.js",
     "name": "native-select",
     "imports": [
-      "main.tsx"
+      "_skeleton-3lattlqy.js",
+      "_card-D-hjHzTM.js"
     ]
   },
-  "_switch-CHzj7i_d.js": {
-    "file": "switch-CHzj7i_d.js",
+  "_rules-XJlxpkdU.js": {
+    "file": "rules-XJlxpkdU.js",
+    "name": "rules",
+    "imports": [
+      "_skeleton-3lattlqy.js",
+      "_table-BE1LyQFt.js"
+    ]
+  },
+  "_skeleton-3lattlqy.js": {
+    "file": "skeleton-3lattlqy.js",
+    "name": "skeleton"
+  },
+  "_switch-kI_nVf5Q.js": {
+    "file": "switch-kI_nVf5Q.js",
     "name": "switch",
     "imports": [
-      "_native-select-BVf92Oxl.js",
-      "main.tsx"
+      "_skeleton-3lattlqy.js",
+      "_card-D-hjHzTM.js"
     ]
   },
-  "_table-DdJEQJYw.js": {
-    "file": "table-DdJEQJYw.js",
+  "_table-BE1LyQFt.js": {
+    "file": "table-BE1LyQFt.js",
     "name": "table",
     "imports": [
-      "main.tsx"
+      "_skeleton-3lattlqy.js"
+    ]
+  },
+  "_traffic-card-CLBB3qqz.js": {
+    "file": "traffic-card-CLBB3qqz.js",
+    "name": "traffic-card",
+    "imports": [
+      "_skeleton-3lattlqy.js",
+      "_card-D-hjHzTM.js",
+      "main.tsx",
+      "_table-BE1LyQFt.js"
     ]
   },
   "main.tsx": {
-    "file": "main-CnfvJB3-.js",
+    "file": "main-D2ArEq3j.js",
     "name": "main",
     "src": "main.tsx",
     "isEntry": true,
+    "imports": [
+      "_skeleton-3lattlqy.js"
+    ],
     "dynamicImports": [
       "pages/overview/index.tsx",
       "pages/rules/list.tsx",
-      "pages/rules/form.tsx"
+      "pages/rules/form.tsx",
+      "pages/rules/rule.tsx"
     ],
     "css": [
-      "main-C6U3cnG2.css"
+      "main-JGfXYZXX.css"
     ]
   },
   "pages/overview/index.tsx": {
-    "file": "overview-BjLe41TG.js",
+    "file": "overview-DWxm03zM.js",
     "name": "overview",
     "src": "pages/overview/index.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_native-select-BVf92Oxl.js",
+      "_skeleton-3lattlqy.js",
+      "_native-select-Bdj_wPXL.js",
+      "_card-D-hjHzTM.js",
+      "_traffic-card-CLBB3qqz.js",
       "main.tsx",
-      "_table-DdJEQJYw.js"
+      "_table-BE1LyQFt.js"
     ]
   },
   "pages/rules/form.tsx": {
-    "file": "form-sgzFz4er.js",
+    "file": "form-Bwk94b3X.js",
     "name": "form",
     "src": "pages/rules/form.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_native-select-BVf92Oxl.js",
-      "_switch-CHzj7i_d.js",
+      "_skeleton-3lattlqy.js",
+      "_native-select-Bdj_wPXL.js",
+      "_card-D-hjHzTM.js",
+      "_switch-kI_nVf5Q.js",
       "main.tsx"
     ]
   },
   "pages/rules/list.tsx": {
-    "file": "list-C6jwM9TJ.js",
+    "file": "list-tBcgsMPI.js",
     "name": "list",
     "src": "pages/rules/list.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_native-select-BVf92Oxl.js",
-      "_switch-CHzj7i_d.js",
+      "_skeleton-3lattlqy.js",
+      "_native-select-Bdj_wPXL.js",
+      "_rules-XJlxpkdU.js",
+      "_card-D-hjHzTM.js",
+      "_switch-kI_nVf5Q.js",
       "main.tsx",
-      "_table-DdJEQJYw.js"
+      "_table-BE1LyQFt.js"
+    ]
+  },
+  "pages/rules/rule.tsx": {
+    "file": "rule-B6O2y30K.js",
+    "name": "rule",
+    "src": "pages/rules/rule.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_skeleton-3lattlqy.js",
+      "_rules-XJlxpkdU.js",
+      "_card-D-hjHzTM.js",
+      "_traffic-card-CLBB3qqz.js",
+      "main.tsx",
+      "_table-BE1LyQFt.js"
     ]
   }
 }
