@@ -24,7 +24,7 @@ export function ruleOf(overrides: Partial<Rule> = {}): Rule {
     };
 }
 
-/** A page of rules, as Laravel's paginator gives it. */
-export function pageOf(rules: Rule[], page = 1, lastPage = 1) {
-    return { data: rules, current_page: page, last_page: lastPage, per_page: 100, total: rules.length };
+/** A page of rules, exemptions or other rows, as Laravel's paginator gives it. */
+export function pageOf<T>(rows: T[], page = 1, lastPage = 1) {
+    return { data: rows, current_page: page, last_page: lastPage, per_page: 100, total: rows.length };
 }
