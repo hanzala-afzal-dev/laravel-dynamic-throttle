@@ -1,17 +1,30 @@
-import { Copy, Pencil } from 'lucide-react';
+import { Copy, Pencil, Power, ShieldCheck, Trash2 } from 'lucide-react';
 import { type ReactNode, useId, useState } from 'react';
-import { Link } from 'wouter';
+import { Link, useLocation } from 'wouter';
+import { ChangeOutcome, ConfirmDialog } from '@/components/confirm-dialog';
 import { QueryError } from '@/components/query-error';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ApiError } from '@/lib/api';
-import { formatCount } from '@/lib/format';
-import type { Period } from '@/lib/metrics';
-import { type AuditEntry, useAuditOf, useCanManage, useOffenders } from '@/lib/queries';
+import { type ConfirmedChange, useConfirmedChange } from '@/lib/confirmed-change';
+import { formatCount, formatShare } from '@/lib/format';
+import { type Period, totals } from '@/lib/metrics';
+import { type AuditEntry, useAuditOf, useCanManage, useMetrics, useOffenders } from '@/lib/queries';
 import { type Exemption, limitLabel, methodLabel, modeLabel, type Rule, scopeLabel, useRule } from '@/lib/rules';
 import { Time } from '@/lib/time';
 import { TrafficCard } from '@/pages/overview/traffic-card';
@@ -52,22 +65,7 @@ export function RulePage({ id }: { id: number }) {
                     </div>
                     {rule.description !== null && <p className="max-w-2xl text-sm text-muted-foreground">{rule.description}</p>}
                 </div>
-                {canManage && (
-                    <div className="flex flex-wrap gap-2">
-                        <Button variant="outline" asChild>
-                            <Link href={`/rules/${rule.id}/edit`}>
-                                <Pencil aria-hidden />
-                                Edit
-                            </Link>
-                        </Button>
-                        <Button variant="outline" asChild>
-                            <Link href={`/rules/new?from=${rule.id}`}>
-                                <Copy aria-hidden />
-                                Duplicate
-                            </Link>
-                        </Button>
-                    </div>
-                )}
+                {canManage && <RuleActions rule={rule} />}
             </div>
 
             <div className="grid gap-4 xl:grid-cols-3">
@@ -84,6 +82,129 @@ export function RulePage({ id }: { id: number }) {
 }
 
 export default RulePage;
+
+/** A manager's buttons: edit, duplicate, enable or disable, promote a dry-run rule, and delete (SPEC-022). */
+function RuleActions({ rule }: { rule: Rule }) {
+    const [, navigate] = useLocation();
+    const toggle = useConfirmedChange([['rules']]);
+    const promote = useConfirmedChange([['rules']]);
+    const remove = useConfirmedChange([['rules', 'list'], ['rules', 'counts']], { onSuccess: () => navigate('/rules') });
+
+    return (
+        <div className="grid justify-items-end gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
+                <Button variant="outline" asChild>
+                    <Link href={`/rules/${rule.id}/edit`}>
+                        <Pencil aria-hidden />
+                        Edit
+                    </Link>
+                </Button>
+                <Button variant="outline" asChild>
+                    <Link href={`/rules/new?from=${rule.id}`}>
+                        <Copy aria-hidden />
+                        Duplicate
+                    </Link>
+                </Button>
+                <Button variant="outline" disabled={toggle.pending} onClick={() => toggle.send({ method: 'PATCH', path: `rules/${rule.id}`, body: { enabled: !rule.enabled } })}>
+                    <Power aria-hidden />
+                    {rule.enabled ? 'Disable' : 'Enable'}
+                </Button>
+                {rule.mode === 'dry_run' && <PromoteDialog rule={rule} change={promote} />}
+                <DeleteDialog rule={rule} change={remove} />
+            </div>
+            {[toggle, promote, remove].map((change, index) => (
+                <ChangeOutcome key={index} change={change} />
+            ))}
+            <ConfirmDialog change={toggle} />
+            <ConfirmDialog change={promote} />
+        </div>
+    );
+}
+
+/** Promote: the rule's last 24 hours as evidence, then enforce it (SPEC-022 decision 2). */
+function PromoteDialog({ rule, change }: { rule: Rule; change: ConfirmedChange }) {
+    const [open, setOpen] = useState(false);
+
+    return (
+        <AlertDialog open={open} onOpenChange={setOpen}>
+            <AlertDialogTrigger asChild>
+                <Button disabled={change.pending}>
+                    <ShieldCheck aria-hidden />
+                    Promote
+                </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Promote {rule.name} to enforcing</AlertDialogTitle>
+                    <AlertDialogDescription asChild>
+                        <div className="grid gap-2">{open && <LastDay ruleId={rule.id} />}</div>
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => change.send({ method: 'PATCH', path: `rules/${rule.id}`, body: { mode: 'enforce' } })}>Enforce</AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+    );
+}
+
+/** What a dry-run rule would have done in the last 24 hours, from the hourly table. */
+function LastDay({ ruleId }: { ruleId: number }) {
+    const metrics = useMetrics('day');
+
+    if (metrics.isError) {
+        return <QueryError error={metrics.error} />;
+    }
+
+    if (metrics.data === undefined) {
+        return <Skeleton className="h-5 w-full" />;
+    }
+
+    const sums = totals({ ...metrics.data, rules: metrics.data.rules.filter((rule) => rule.id === ruleId) });
+
+    return (
+        <>
+            <p>
+                {sums.hits === 0
+                    ? 'In the last 24 hours it checked no request, so there is no evidence of what it would block.'
+                    : `In the last 24 hours it checked ${formatCount(sums.hits)} requests and would have blocked ${formatCount(sums.wouldBlocks)} of them (${formatShare(sums.wouldBlocks, sums.hits)}).`}
+            </p>
+            <p>Once enforcing, it answers 429 to those requests.</p>
+        </>
+    );
+}
+
+/** Delete: asks first, always, since it cannot be undone, then sends confirm (SPEC-022 decision 6). */
+function DeleteDialog({ rule, change }: { rule: Rule; change: ConfirmedChange }) {
+    const limits = rule.enabled && rule.mode === 'enforce';
+
+    return (
+        <AlertDialog>
+            <AlertDialogTrigger asChild>
+                <Button variant="destructive" disabled={change.pending}>
+                    <Trash2 aria-hidden />
+                    Delete
+                </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    {/* The trailing space keeps the title and the description apart when read as one. */}
+                    <AlertDialogTitle>Delete {rule.name}? </AlertDialogTitle>
+                    <AlertDialogDescription>
+                        Its exemptions are deleted with it.{limits ? ' It stops limiting requests.' : ''} This cannot be undone: the audit log keeps its settings.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction className={buttonVariants({ variant: 'destructive' })} onClick={() => change.send({ method: 'DELETE', path: `rules/${rule.id}`, body: { confirm: true } })}>
+                        Delete
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+    );
+}
 
 /** A card that screen readers list as a region, named by its heading. */
 function Panel({ title, children, className }: { title: string; children: ReactNode; className?: string }) {
