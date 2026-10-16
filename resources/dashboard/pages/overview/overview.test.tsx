@@ -10,7 +10,9 @@ describe('the Overview', () => {
         mockApi(manager({ 'GET health': { body: { status: 'ok', checks: [] } }, 'GET rules/counts': { body: { enforcing: 1, dry_run: 0, disabled: 0 } } }));
         renderAt(<Pages />, '/');
 
-        expect(await screen.findByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument();
+        // The Overview loads on demand, with Recharts: a busy machine can take a while.
+
+        expect(await screen.findByRole('heading', { level: 1, name: 'Overview' }, { timeout: 5_000 })).toBeInTheDocument();
         expect(await screen.findByRole('heading', { name: 'Health' })).toBeInTheDocument();
         expect(screen.getByRole('heading', { name: 'Rules' })).toBeInTheDocument();
         expect(screen.getByRole('heading', { name: 'Emergency controls' })).toBeInTheDocument();
