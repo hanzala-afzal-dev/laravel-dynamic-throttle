@@ -50,6 +50,8 @@ describe('the rules list', () => {
 
         await waitFor(() => expect(gets(sent)).toContain('rules?search=log&enabled=true&mode=enforce'));
         expect(history.at(-1)).toBe('/rules?search=log&enabled=true&mode=enforce');
+        // The search waited for the typing to pause.
+        expect(gets(sent).filter((path) => path.startsWith('rules?search=l'))).toEqual(['rules?search=log', 'rules?search=log&enabled=true', 'rules?search=log&enabled=true&mode=enforce']);
     });
 
     it('AC-3: applies the filters a URL holds', async () => {

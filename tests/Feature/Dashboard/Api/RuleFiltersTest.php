@@ -36,8 +36,8 @@ function ruleNames(TestCase $test, string $query): array
 }
 
 it('AC-1: searches the name and the pattern, ignoring case', function (): void {
-    expect([ruleNames($this, 'search=log'), ruleNames($this, 'search=LOG'), ruleNames($this, 'search=export')])
-        ->toBe([['Login', 'Catalog', 'Old blog'], ['Login', 'Catalog', 'Old blog'], ['Exports']]);
+    expect([ruleNames($this, 'search=log'), ruleNames($this, 'search=LOG'), ruleNames($this, 'search=export'), ruleNames($this, 'search=shop')])
+        ->toBe([['Login', 'Catalog', 'Old blog'], ['Login', 'Catalog', 'Old blog'], ['Exports'], ['Catalog']]);
 });
 
 it('AC-1: filters by status and by mode, and combines them with the search', function (): void {
