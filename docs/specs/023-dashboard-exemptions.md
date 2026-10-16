@@ -23,7 +23,7 @@ The JSON API already does each change, with its validation, its confirmation for
   - the reason;
   - when it ends: a time in the browser's zone, "Never", or "Ended …" for an expired one;
   - when it was added.
-- **Filters:** state (active, expired or all; active by default), subject (IP, user or custom) and rule (one rule, or the exemptions on every rule). They go to the API as `state`, `subject` and `rule`, and into the page's URL. A rule's page links here with `?rule={id}` (SPEC-022).
+- **Filters:** state (active, expired or all; active by default), subject (IP, user or custom) and rule (one rule, or the exemptions on every rule, or all). They go to the API as `state`, `subject` and `rule`, and into the page's URL. A rule's page links here with `?rule={id}` (SPEC-022).
 - **For a manager:** "Add exemption", and Remove on each row.
 - **None:** the page says so.
 
@@ -101,14 +101,15 @@ The maintainer vetoes any of these in the PR (ADR-0027).
 3. **Lengths are choices,** 1 hour to 30 days or no end, as for bypass (SPEC-021 decision 7), and 1 day by default. The end time is computed in the browser at the moment of saving.
 4. **No edit.** Remove and add again, so each change stays one plain entry in the audit log.
 5. **Remove asks first in the page,** as deleting a rule does (SPEC-022 decision 6). The API asks for no confirmation, since removing an exemption only limits more.
+6. **The rules' names come from `api/rules`,** and the exemption's payload stays as SPEC-017 gives it. The first 100 rules, in evaluation order, are the filter's and the form's choices. A rule beyond them, in a row or in the URL, is asked for by its id.
 
 ## PRs
 
 | PR | Branch | Adds | Covers |
 |---|---|---|---|
 | 1 | `phase-5/spec-023-1` | This spec | Decisions |
-| 2 | `phase-5/spec-023-2` | The API's filters, and the list with its filters | AC-1 to AC-3, AC-7 |
-| 3 | `phase-5/spec-023-3` | Add and remove, the guide, the changelog and the spec's close | AC-4 to AC-6 |
+| 2 | `phase-5/spec-023-2` | The API's filters, and the list with its filters | AC-1 to AC-3 |
+| 3 | `phase-5/spec-023-3` | Add and remove, the guide, the changelog and the spec's close | AC-4 to AC-7 |
 
 ## Open questions
 
