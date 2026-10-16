@@ -86,8 +86,9 @@ export default RulePage;
 /** A manager's buttons: edit, duplicate, enable or disable, promote a dry-run rule, and delete (SPEC-022). */
 function RuleActions({ rule }: { rule: Rule }) {
     const [, navigate] = useLocation();
-    const toggle = useConfirmedChange([['rules']]);
-    const promote = useConfirmedChange([['rules']]);
+    // The audit log too, so the History panel shows the change (AC-15).
+    const toggle = useConfirmedChange([['rules'], ['audit']]);
+    const promote = useConfirmedChange([['rules'], ['audit']]);
     const remove = useConfirmedChange([['rules', 'list'], ['rules', 'counts']], { onSuccess: () => navigate('/rules') });
 
     return (
@@ -117,6 +118,7 @@ function RuleActions({ rule }: { rule: Rule }) {
             ))}
             <ConfirmDialog change={toggle} />
             <ConfirmDialog change={promote} />
+            <ConfirmDialog change={remove} />
         </div>
     );
 }
@@ -175,7 +177,11 @@ function LastDay({ ruleId }: { ruleId: number }) {
     );
 }
 
-/** Delete: asks first, always, since it cannot be undone, then sends confirm (SPEC-022 decision 6). */
+/**
+ * Delete: asks first, always, since it cannot be undone (SPEC-022 decision 6). It sends
+ * confirm only when the dialog said the rule stops limiting, so the API still asks if
+ * another admin enforced it since (AC-14).
+ */
 function DeleteDialog({ rule, change }: { rule: Rule; change: ConfirmedChange }) {
     const limits = rule.enabled && rule.mode === 'enforce';
 
@@ -197,7 +203,7 @@ function DeleteDialog({ rule, change }: { rule: Rule; change: ConfirmedChange })
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction className={buttonVariants({ variant: 'destructive' })} onClick={() => change.send({ method: 'DELETE', path: `rules/${rule.id}`, body: { confirm: true } })}>
+                    <AlertDialogAction className={buttonVariants({ variant: 'destructive' })} onClick={() => change.send({ method: 'DELETE', path: `rules/${rule.id}`, body: limits ? { confirm: true } : {} })}>
                         Delete
                     </AlertDialogAction>
                 </AlertDialogFooter>

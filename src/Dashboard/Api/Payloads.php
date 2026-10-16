@@ -9,6 +9,7 @@ use Afzal\DynamicThrottle\Models\Exemption;
 use Afzal\DynamicThrottle\Models\Rule;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Date;
+use stdClass;
 
 /**
  * How the API shows rules, exemptions (SPEC-017) and audit entries (SPEC-019): every field it takes, enums
@@ -37,7 +38,8 @@ final class Payloads
             'mode' => $rule->mode->value,
             'on_failure' => $rule->on_failure->value,
             'on_missing_identity' => $rule->on_missing_identity->value,
-            'response_override' => $rule->response_override,
+            // The form sent {}, which the array cast reads back as [] (SPEC-022 AC-13).
+            'response_override' => $rule->response_override === [] ? new stdClass : $rule->response_override,
             'enabled' => $rule->enabled,
             'created_at' => self::time($rule->created_at),
             'updated_at' => self::time($rule->updated_at),

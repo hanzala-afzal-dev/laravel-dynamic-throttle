@@ -25,22 +25,40 @@ const SEARCH_DELAY_MS = 300;
 export function RulesList() {
     const [filters, setFilters] = useFilters();
     const [search, setSearch] = useState(filters.search);
+    const [searched, setSearched] = useState(filters.search);
     const rules = useRules(filters);
+    const lastPage = rules.isPlaceholderData ? undefined : rules.data?.last_page;
     const lastHour = useMetrics('hour').data;
     const canManage = useCanManage();
     const id = useId();
     const filtered = filters.search !== '' || filters.enabled !== '' || filters.mode !== '';
 
-    // The search goes to the URL, and so to the API, once typing pauses.
+    // The URL's search changed from outside, as the sidebar's link clears it: the box follows (AC-17).
+    if (filters.search !== searched) {
+        setSearched(filters.search);
+
+        if (filters.search !== search.trim()) {
+            setSearch(filters.search);
+        }
+    }
+
+    // The search goes to the URL, and so to the API, once typing pauses, without the spaces around it (AC-16).
     useEffect(() => {
-        if (search === filters.search) {
+        if (search.trim() === filters.search) {
             return;
         }
 
-        const timer = setTimeout(() => setFilters({ ...filters, search, page: 1 }), SEARCH_DELAY_MS);
+        const timer = setTimeout(() => setFilters({ ...filters, search: search.trim(), page: 1 }), SEARCH_DELAY_MS);
 
         return () => clearTimeout(timer);
     }, [search, filters, setFilters]);
+
+    // A page past the last, from an old link or after rows left a filter, goes to the last (AC-17).
+    useEffect(() => {
+        if (lastPage !== undefined && filters.page > lastPage) {
+            setFilters({ ...filters, page: lastPage });
+        }
+    }, [lastPage, filters, setFilters]);
 
     return (
         <section className="grid gap-6">
@@ -62,7 +80,7 @@ export function RulesList() {
             <div className="flex flex-wrap items-end gap-3">
                 <div className="relative w-full max-w-xs">
                     <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-                    <Input type="search" aria-label="Search rules" placeholder="Search by name or pattern" className="pl-8" value={search} onChange={(event) => setSearch(event.target.value)} />
+                    <Input type="search" aria-label="Search rules" placeholder="Search by name or pattern" className="pl-8" maxLength={100} value={search} onChange={(event) => setSearch(event.target.value)} />
                 </div>
                 <div className="grid gap-1.5">
                     <Label htmlFor={`${id}-enabled`}>Status</Label>
@@ -208,7 +226,7 @@ function useFilters(): [RuleFilters, (filters: RuleFilters) => void] {
     const [location, navigate] = useLocation();
     const page = Number.parseInt(params.get('page') ?? '1', 10);
     const filters: RuleFilters = {
-        search: params.get('search') ?? '',
+        search: (params.get('search') ?? '').trim(),
         enabled: asEnabled(params.get('enabled') ?? ''),
         mode: asMode(params.get('mode') ?? ''),
         page: Number.isInteger(page) && page > 0 ? page : 1,
