@@ -30,7 +30,7 @@ The JSON API already does each change, with its validation, its confirmations an
 - **For a manager:**
   - "New rule";
   - a switch in each row that enables or disables the rule;
-  - a menu in each row with Edit, Duplicate and Delete.
+  - Edit and Duplicate buttons in each row. Delete is on the rule's page, away from the switches.
 - **No rule yet:** the page says so, and offers "New rule" to a manager.
 
 ### The form, at `{path}/rules/new` and `{path}/rules/{id}/edit`
@@ -78,7 +78,7 @@ Deleting always asks first. The dialog names the rule and says that its exemptio
 ### Frontend (Vitest)
 - **AC-2** The list shows each rule's name as a link, method and pattern, scope, limit, mode, status and last hour's blocks or would-blocks, in evaluation order.
 - **AC-3** Typing in the search box, after a short pause, and choosing a filter ask `api/rules` with `search`, `enabled` and `mode`, and put them in the URL. Opening that URL applies them.
-- **AC-4** For a manager, a row's switch sends `PATCH api/rules/{id}` with `enabled`. A 409 asks to confirm. A viewer sees no switch, menu or "New rule".
+- **AC-4** For a manager, a row's switch sends `PATCH api/rules/{id}` with `enabled`. A 409 asks to confirm. "New rule", Edit and Duplicate link to the form. A viewer sees no switch, no button and no "New rule".
 - **AC-5** Choosing a template fills the form, in dry-run. Saving a new rule sends `POST api/rules` with the fields, the window in seconds, and goes to the new rule's page.
 - **AC-6** A 422 shows each field's message under it. A 409 shows its message in a dialog and resends with `confirm: true`.
 - **AC-7** Editing sends only the fields that changed. Duplicate fills the form from the rule, named "Copy of {name}", in dry-run.
@@ -91,8 +91,8 @@ Deleting always asks first. The dialog names the rule and says that its exemptio
 
 - `src/Dashboard/Api/RuleController.php`: the filters in `index()`.
 - `resources/dashboard/pages/rules/`: `list.tsx`, `rule.tsx`, `form.tsx`, `templates.ts`, and their tests.
-- `resources/dashboard/components/`: the chart of SPEC-021, moved out of the Overview to take one rule; a confirmation dialog shared with it.
-- `resources/dashboard/components/ui/`: shadcn/ui's `switch`, `dropdown-menu`, `textarea` and `badge` variants as needed.
+- `resources/dashboard/components/`: the chart of SPEC-021, moved out of the Overview to take one rule; the confirmation dialog and `lib/confirmed-change.ts`, shared with the Overview.
+- `resources/dashboard/components/ui/`: shadcn/ui's `switch` and `textarea`.
 
 ## Out of scope
 

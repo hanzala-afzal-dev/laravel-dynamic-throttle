@@ -12,8 +12,11 @@ use Afzal\DynamicThrottle\Models\Rule;
 use Afzal\DynamicThrottle\Support\ChangeOutcome;
 use Afzal\DynamicThrottle\Support\Changes\Actor;
 use Afzal\DynamicThrottle\Support\EmergencyControls;
+use Illuminate\Contracts\Validation\Factory as ValidationFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule as ValidationRule;
 
 /**
  * The API's rules (SPEC-017): listed in evaluation order, 100 a page, shown with
@@ -33,14 +36,37 @@ final readonly class RuleController
     public function __construct(
         private RuleInput $input,
         private EmergencyControls $controls,
+        private ValidationFactory $validation,
     ) {}
 
-    public function index(): JsonResponse
+    /**
+     * The rules in evaluation order, narrowed by a search of the name and the pattern,
+     * the status and the mode (SPEC-022).
+     */
+    public function index(Request $request): JsonResponse
     {
-        $page = Rule::query()->orderBy('priority')->orderBy('id')->paginate(self::PER_PAGE)
-            ->through(fn (Rule $rule): array => Payloads::rule($rule));
+        return ApiErrors::json(function () use ($request): JsonResponse {
+            $filters = $this->validation->make($request->query(), [
+                'search' => ['sometimes', 'string', 'max:100'],
+                'enabled' => ['sometimes', 'in:true,false'],
+                'mode' => ['sometimes', ValidationRule::enum(RuleMode::class)],
+            ])->validate();
+            $search = $filters['search'] ?? null;
+            $enabled = $filters['enabled'] ?? null;
+            $mode = $filters['mode'] ?? null;
 
-        return new JsonResponse($page);
+            $page = Rule::query()
+                ->when(is_string($search) && $search !== '', fn (Builder $rules) => $rules->where(
+                    fn (Builder $rules) => $rules->whereLike('name', "%{$search}%")->orWhereLike('pattern', "%{$search}%"),
+                ))
+                ->when(is_string($enabled), fn (Builder $rules) => $rules->where('enabled', $enabled === 'true'))
+                ->when(is_string($mode), fn (Builder $rules) => $rules->where('mode', $mode))
+                ->orderBy('priority')->orderBy('id')
+                ->paginate(self::PER_PAGE)->withQueryString()
+                ->through(fn (Rule $rule): array => Payloads::rule($rule));
+
+            return new JsonResponse($page);
+        });
     }
 
     /**
