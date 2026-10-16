@@ -70,7 +70,8 @@ export function RuleForm({ id }: { id?: number }) {
         return <p className="text-sm text-muted-foreground">Only managers can create or change rules.</p>;
     }
 
-    if (source.isError) {
+    // A refetch that fails later keeps the form, and what was typed in it.
+    if (source.isError && source.data === undefined) {
         return <QueryError error={source.error} />;
     }
 
@@ -87,6 +88,8 @@ export default RuleForm;
 
 function Editor({ initial, rule, duplicateOf }: { initial: Values; rule?: Rule; duplicateOf?: Rule }) {
     const [values, setValues] = useState(initial);
+    // The rule as the form opened it, which a refetch never moves, so an edit sends only what this person changed (AC-12).
+    const [before] = useState(() => bodyOf(initial) ?? { ...bodyOf({ ...initial, response_override: '' }), response_override: initial.response_override });
     const [jsonError, setJsonError] = useState<string | null>(null);
     const [unchanged, setUnchanged] = useState(false);
     const [, navigate] = useLocation();
@@ -120,7 +123,6 @@ function Editor({ initial, rule, duplicateOf }: { initial: Values; rule?: Rule; 
             return;
         }
 
-        const before = bodyOf(initial) ?? {};
         const changed = Object.fromEntries(Object.entries(body).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(before[key])));
 
         if (Object.keys(changed).length === 0) {
@@ -239,7 +241,7 @@ function Editor({ initial, rule, duplicateOf }: { initial: Values; rule?: Rule; 
                 <Section title="The limit">
                     <div className="flex flex-wrap items-start gap-3">
                         {field('max_attempts', 'Attempts', (props) => <Input {...props} className="w-32" inputMode="numeric" value={values.max_attempts} onChange={(event) => set('max_attempts', event.target.value)} />)}
-                        {field('window_seconds', 'Window', (props) => <Input {...props} className="w-24" inputMode="numeric" value={values.window} onChange={(event) => set('window', event.target.value)} />)}
+                        {field('window_seconds', 'Window', (props) => <Input {...props} className="w-24" inputMode="decimal" value={values.window} onChange={(event) => set('window', event.target.value)} />, 'At most a day.')}
                         <div className="grid gap-1.5">
                             <Label htmlFor={`${id}-unit`}>Window unit</Label>
                             <NativeSelect id={`${id}-unit`} value={values.unit} onChange={(event) => set('unit', event.target.value as Unit)}>
@@ -304,12 +306,13 @@ function Editor({ initial, rule, duplicateOf }: { initial: Values; rule?: Rule; 
 type FieldProps = { id: string; 'aria-describedby'?: string; 'aria-invalid'?: boolean };
 
 function Field({ id, label, hint, error, children }: { id: string; label: string; hint?: string; error?: string; children: (props: FieldProps) => ReactNode }) {
-    const described = [hint === undefined ? null : `${id}-hint`, error === undefined ? null : `${id}-error`].filter((part) => part !== null).join(' ');
+    // The error replaces the hint, so the field points at whichever shows.
+    const described = error !== undefined ? `${id}-error` : hint !== undefined ? `${id}-hint` : undefined;
 
     return (
         <div className="grid gap-1.5">
             <Label htmlFor={id}>{label}</Label>
-            {children({ id, 'aria-describedby': described === '' ? undefined : described, 'aria-invalid': error === undefined ? undefined : true })}
+            {children({ id, 'aria-describedby': described, 'aria-invalid': error === undefined ? undefined : true })}
             {error !== undefined && (
                 <p id={`${id}-error`} className="text-sm text-destructive">
                     {error}
@@ -355,7 +358,8 @@ function valuesOf(rule: RuleDraft): Values {
         mode: rule.mode,
         on_failure: rule.on_failure,
         on_missing_identity: rule.on_missing_identity,
-        response_override: rule.response_override === null ? '' : JSON.stringify(rule.response_override),
+        // An empty object may come back as [] from an older answer (AC-13).
+        response_override: rule.response_override === null ? '' : Array.isArray(rule.response_override) && rule.response_override.length === 0 ? '{}' : JSON.stringify(rule.response_override),
         enabled: rule.enabled,
     };
 }
@@ -388,7 +392,8 @@ function bodyOf(values: Values): Record<string, unknown> | null {
         scope: values.scope,
         scope_parameter: values.scope === 'header' || values.scope === 'custom' ? values.scope_parameter : null,
         max_attempts: number(values.max_attempts),
-        window_seconds: window === null ? null : window * unitSeconds,
+        // 1.1 hours is 3,960 seconds, not 3,960.0000000000005 (AC-18).
+        window_seconds: window === null ? null : Math.round(window * unitSeconds),
         priority: number(values.priority),
         mode: values.mode,
         on_failure: values.on_failure,

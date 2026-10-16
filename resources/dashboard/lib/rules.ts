@@ -34,8 +34,8 @@ export type RuleFilters = { search: string; enabled: '' | 'true' | 'false'; mode
 export function filterQuery(filters: RuleFilters): string {
     const params = new URLSearchParams();
 
-    if (filters.search !== '') {
-        params.set('search', filters.search);
+    if (filters.search.trim() !== '') {
+        params.set('search', filters.search.trim());
     }
 
     if (filters.enabled !== '') {

@@ -24,7 +24,7 @@ export function Pages() {
                     <RuleForm />
                 </Route>
                 <Route path="/rules/:id">{(params) => (/^[1-9]\d*$/.test(params.id) ? <RulePage id={Number(params.id)} /> : <NotFound />)}</Route>
-                <Route path="/rules/:id/edit">{(params) => <RuleForm id={Number(params.id)} />}</Route>
+                <Route path="/rules/:id/edit">{(params) => (/^[1-9]\d*$/.test(params.id) ? <RuleForm id={Number(params.id)} /> : <NotFound />)}</Route>
                 <Route path="/exemptions">
                     <ExemptionsList />
                 </Route>

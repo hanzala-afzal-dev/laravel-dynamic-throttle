@@ -107,3 +107,50 @@ describe('a rule\'s actions', () => {
         expect(screen.queryAllByRole('button', { name: /Promote|Disable|Delete/ })).toEqual([]);
     });
 });
+
+describe('a rule\'s actions, from the review', () => {
+    it('AC-14: deletes a rule the page saw not limiting without confirm, and asks when the API says it limits now', async () => {
+        const message = 'Rule 3 (Search) is deleted, and stops limiting requests.';
+        const sent = mockApi(manager(answers(TRIAL, {
+            'DELETE rules/3': (body) => (typeof body === 'object' && body !== null && 'confirm' in body ? saved(TRIAL) : { status: 409, body: { message } }),
+        })));
+        const { history } = renderAt(<RulePage id={3} />, '/rules/3');
+
+        await userEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+        await userEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete' }));
+        const dialog = await screen.findByRole('alertdialog', { name: 'Confirm the change' });
+
+        expect(dialog).toHaveTextContent(message);
+
+        await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+
+        await waitFor(() => expect(changes(sent)).toEqual([['DELETE', 'rules/3', {}], ['DELETE', 'rules/3', { confirm: true }]]));
+        await waitFor(() => expect(history.at(-1)).toBe('/rules'));
+    });
+
+    it('AC-15: refreshes the rule\'s history after a change', async () => {
+        const sent = mockApi(manager(answers(TRIAL, { 'PATCH rules/3': saved({ ...TRIAL, enabled: false }) })));
+        renderAt(<RulePage id={3} />, '/rules/3');
+
+        await userEvent.click(await screen.findByRole('button', { name: 'Disable' }));
+
+        await waitFor(() => expect(sent.filter(([, path]) => path === 'audit?target=rule%3A3')).toHaveLength(2));
+    });
+
+    it('AC-15: says there is no such rule when a change finds it deleted', async () => {
+        let deleted = false;
+        mockApi(manager(answers(LOGIN, {
+            'GET rules/3': () => (deleted ? { status: 404, body: { message: 'Not found.' } } : { body: { rule: LOGIN, exemptions: [EXEMPTION] } }),
+            'PATCH rules/3': () => {
+                deleted = true;
+
+                return { status: 404, body: { message: 'No query results for model [Rule] 3' } };
+            },
+        })));
+        renderAt(<RulePage id={3} />, '/rules/3');
+
+        await userEvent.click(await screen.findByRole('button', { name: 'Disable' }));
+
+        expect(await screen.findByText('There is no rule 3.')).toBeInTheDocument();
+    });
+});

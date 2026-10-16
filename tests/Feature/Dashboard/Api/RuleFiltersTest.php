@@ -36,8 +36,8 @@ function ruleNames(TestCase $test, string $query): array
 }
 
 it('AC-1: searches the name and the pattern, ignoring case', function (): void {
-    expect([ruleNames($this, 'search=log'), ruleNames($this, 'search=LOG'), ruleNames($this, 'search=export')])
-        ->toBe([['Login', 'Catalog', 'Old blog'], ['Login', 'Catalog', 'Old blog'], ['Exports']]);
+    expect([ruleNames($this, 'search=log'), ruleNames($this, 'search=LOG'), ruleNames($this, 'search=export'), ruleNames($this, 'search=shop')])
+        ->toBe([['Login', 'Catalog', 'Old blog'], ['Login', 'Catalog', 'Old blog'], ['Exports'], ['Catalog']]);
 });
 
 it('AC-1: filters by status and by mode, and combines them with the search', function (): void {
@@ -72,3 +72,23 @@ it('AC-1: refuses a filter it does not know the value of', function (string $que
     ['mode=fast', 'mode'],
     ['search[]=x', 'search'],
 ]);
+
+it('AC-16: matches %, _ and \\ as themselves, ignores the spaces around a search, and lists every rule for spaces alone', function (): void {
+    Throttling::rule(['name' => '100% off', 'pattern' => 'sale/*', 'priority' => 6]);
+    Throttling::rule(['name' => 'Snakes', 'pattern' => 'snake_case/*', 'priority' => 7]);
+    Throttling::rule(['name' => 'Back\\slash', 'pattern' => 'back/*', 'priority' => 8]);
+
+    expect([
+        ruleNames($this, 'search=%25'),
+        ruleNames($this, 'search=_'),
+        ruleNames($this, 'search=%5C'),
+        ruleNames($this, 'search=%20%20login%20'),
+        ruleNames($this, 'search=%20%20'),
+    ])->toBe([
+        ['100% off'],
+        ['Snakes'],
+        ['Back\\slash'],
+        ['Login'],
+        ['Login', 'API', 'Catalog', 'Old blog', 'Exports', '100% off', 'Snakes', 'Back\\slash'],
+    ]);
+});
