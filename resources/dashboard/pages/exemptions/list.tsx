@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useEffect, useId } from 'react';
 import { Link, useLocation, useSearch } from 'wouter';
 import { ExemptionWho } from '@/components/exemption-who';
 import { QueryError } from '@/components/query-error';
@@ -19,9 +19,17 @@ const FIRST_RULES = { search: '', enabled: '', mode: '', page: 1 } as const;
 export function ExemptionsList() {
     const [filters, setFilters] = useFilters();
     const exemptions = useExemptions(filters);
+    const lastPage = exemptions.isPlaceholderData ? undefined : exemptions.data?.last_page;
     // undefined until the rules load, so no row asks for a name the list will give.
     const rules = useRules(FIRST_RULES).data?.data;
     const id = useId();
+
+    // A page past the last, from an old link or after exemptions ended, goes to the last (as SPEC-022 AC-17).
+    useEffect(() => {
+        if (lastPage !== undefined && filters.page > lastPage) {
+            setFilters({ ...filters, page: lastPage });
+        }
+    }, [lastPage, filters, setFilters]);
 
     return (
         <section className="grid gap-6">
