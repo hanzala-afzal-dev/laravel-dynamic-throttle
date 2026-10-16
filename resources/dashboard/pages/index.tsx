@@ -7,6 +7,7 @@ const Overview = lazy(() => import('@/pages/overview'));
 const RulesList = lazy(() => import('@/pages/rules/list'));
 const RuleForm = lazy(() => import('@/pages/rules/form'));
 const RulePage = lazy(() => import('@/pages/rules/rule'));
+const ExemptionsList = lazy(() => import('@/pages/exemptions/list'));
 
 /** The dashboard's pages, by path under its base (SPEC-020): placeholders until each page's spec. */
 export function Pages() {
@@ -25,7 +26,7 @@ export function Pages() {
                 <Route path="/rules/:id">{(params) => (/^[1-9]\d*$/.test(params.id) ? <RulePage id={Number(params.id)} /> : <NotFound />)}</Route>
                 <Route path="/rules/:id/edit">{(params) => <RuleForm id={Number(params.id)} />}</Route>
                 <Route path="/exemptions">
-                    <Placeholder title="Exemptions" spec="SPEC-023" />
+                    <ExemptionsList />
                 </Route>
                 <Route path="/activity">
                     <Placeholder title="Activity" spec="SPEC-024" />

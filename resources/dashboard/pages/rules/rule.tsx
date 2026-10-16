@@ -2,6 +2,7 @@ import { Copy, Pencil, Power, ShieldCheck, Trash2 } from 'lucide-react';
 import { type ReactNode, useId, useState } from 'react';
 import { Link, useLocation } from 'wouter';
 import { ChangeOutcome, ConfirmDialog } from '@/components/confirm-dialog';
+import { ExemptionWho } from '@/components/exemption-who';
 import { QueryError } from '@/components/query-error';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -22,10 +23,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ApiError } from '@/lib/api';
 import { type ConfirmedChange, useConfirmedChange } from '@/lib/confirmed-change';
+import type { Exemption } from '@/lib/exemptions';
 import { formatCount, formatShare } from '@/lib/format';
 import { type Period, totals } from '@/lib/metrics';
 import { type AuditEntry, useAuditOf, useCanManage, useMetrics, useOffenders } from '@/lib/queries';
-import { type Exemption, limitLabel, methodLabel, modeLabel, type Rule, scopeLabel, useRule } from '@/lib/rules';
+import { limitLabel, methodLabel, modeLabel, type Rule, scopeLabel, useRule } from '@/lib/rules';
 import { Time } from '@/lib/time';
 import { TrafficCard } from '@/pages/overview/traffic-card';
 
@@ -319,8 +321,6 @@ function OffendersOf({ ruleId, hour }: { ruleId: number; hour: 'current' | 'prev
     );
 }
 
-const SUBJECTS: Record<Exemption['subject'], string> = { ip: 'IP', user: 'User', custom: 'Custom' };
-
 function ExemptionsPanel({ ruleId, exemptions }: { ruleId: number; exemptions: Exemption[] }) {
     return (
         <Panel title="Exemptions">
@@ -340,7 +340,7 @@ function ExemptionsPanel({ ruleId, exemptions }: { ruleId: number; exemptions: E
                             {exemptions.map((exemption) => (
                                 <TableRow key={exemption.id} className={exemption.active ? undefined : 'text-muted-foreground'}>
                                     <TableCell>
-                                        <span className="text-muted-foreground">{SUBJECTS[exemption.subject]}</span> <code className="font-mono text-xs">{exemption.value}</code>
+                                        <ExemptionWho exemption={exemption} />
                                     </TableCell>
                                     <TableCell className="max-w-48 truncate">{exemption.reason ?? '—'}</TableCell>
                                     <TableCell>{exemption.expires_at === null ? 'Never' : <Time value={exemption.expires_at} />}</TableCell>
