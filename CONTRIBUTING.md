@@ -80,7 +80,29 @@ npm run lint
 npm run budget      # the first page stays under 300 KB gzipped
 ```
 
-`npm run dev` rebuilds on every change. `composer serve` starts the Workbench app; run `vendor/bin/testbench migrate --path="$(pwd)/database/migrations" --realpath` once for the package's tables, then open `/dynamic-throttle` (the `local` environment lets you in). CI fails when `dist/` is not what the sources build, so never edit it by hand. Add shadcn/ui components by copying them into `components/ui/`.
+`npm run dev` rebuilds on every change. CI fails when `dist/` is not what the sources build, so never edit it by hand. Add shadcn/ui components by copying them into `components/ui/`.
+
+### Trying the dashboard
+
+The Workbench app is a demo of the dashboard. It has four rules, an exemption, a week of made-up hourly numbers, and routes for the rules to limit. Node is not needed: `dist/` is committed.
+
+With Docker, which counts in Redis as production would:
+
+```bash
+docker compose up workbench
+```
+
+Then open <http://127.0.0.1:8000/dynamic-throttle>. Each start seeds the demo afresh and sends a minute of traffic. The scheduler runs, so the day and week charts gain the current hour. For more traffic, from another terminal:
+
+```bash
+docker compose exec workbench vendor/bin/testbench demo:traffic --minutes=5
+```
+
+With PHP 8.3 or later installed instead, `composer serve` builds, seeds and serves the same demo at <http://127.0.0.1:8000/dynamic-throttle>, counting in the database cache store. Send traffic with `vendor/bin/testbench demo:traffic`. Offenders need Redis, so they show only in the Docker demo.
+
+As a guest you are a manager. To see the dashboard as a viewer, open `/_workbench/login/viewer@example.com`. `/_workbench/logout` signs you out again.
+
+After pulling changes, restart the demo. `npm run build` changes take effect on the next page load.
 
 ## What users download
 

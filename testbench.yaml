@@ -5,13 +5,14 @@ providers:
   - Workbench\App\Providers\WorkbenchServiceProvider
 
 migrations:
+  - database/migrations
   - workbench/database/migrations
 
 seeders:
   - Workbench\Database\Seeders\DatabaseSeeder
 
 workbench:
-  start: '/'
+  start: '/dynamic-throttle'
   install: true
   health: false
   discovers:
