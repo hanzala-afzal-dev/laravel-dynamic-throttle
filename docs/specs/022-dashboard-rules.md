@@ -1,6 +1,6 @@
 # SPEC-022: The Rules pages
 
-- Status: Approved
+- Status: Done
 - ADRs: ADR-0012, ADR-0015, ADR-0024, ADR-0028
 - Roadmap phase: 5
 
@@ -63,10 +63,10 @@ The JSON API already does each change, with its validation, its confirmations an
 - **A rule that does not exist,** or was deleted, shows "There is no rule {id}" with a link to the list.
 
 ### Deleting
-Deleting always asks first. The dialog names the rule and says that its exemptions go with it. For an enabled, enforcing rule it also says that the rule stops limiting requests. "Delete" then sends `confirm: true`, since the person has just confirmed that exact deletion (decision 6).
+Deleting always asks first. The dialog names the rule and says that its exemptions go with it. For an enabled, enforcing rule it also says that the rule stops limiting requests, and "Delete" then sends `confirm: true`, since the person has just confirmed that exact deletion (decision 6). For another rule it sends no `confirm`, so the API still asks if another admin has enforced it since.
 
 ### `GET api/rules` filters
-- `search` matches the name or the pattern, ignoring case. `enabled` takes `true` or `false`, and `mode` takes `enforce` or `dry_run`.
+- `search` matches the name or the pattern, ignoring case, without the spaces around it. `%`, `_` and `\` match themselves on every database. A search of spaces alone lists every rule. `enabled` takes `true` or `false`, and `mode` takes `enforce` or `dry_run`.
 - A filter with another value answers 422.
 - The order and the 100 a page stay.
 
@@ -87,12 +87,22 @@ Deleting always asks first. The dialog names the rule and says that its exemptio
 - **AC-10** Delete asks first, naming the rule, its exemptions, and for an enforcing rule that it stops limiting. "Delete" sends `DELETE api/rules/{id}` with `confirm: true` and goes back to the list.
 - **AC-11** A rule that does not exist shows "There is no rule {id}", with a link to the list.
 
+### From the review
+- **AC-12** An edit compares with the rule as the form opened it. A refetch, or another admin's change to a field this person left alone, is never sent back.
+- **AC-13** A rule saved with an empty 429 body, `{}`, comes back as `{}`, and the form edits it like any other. The form also reads `[]` as `{}`.
+- **AC-14** Delete sends `confirm: true` only when its dialog said the rule stops limiting. For another rule it sends none, and a 409 shows its message in a dialog to confirm.
+- **AC-15** A change on a rule's page refreshes its history. A change answered 404 shows "There is no rule {id}".
+- **AC-16** The search ignores the spaces around it, and spaces alone search nothing. `%`, `_` and `\` match themselves, on SQLite, MySQL and PostgreSQL. The search box takes at most 100 characters.
+- **AC-17** Opening the list without a search, as the sidebar's link does, empties the search box. A page past the last goes to the last.
+- **AC-18** The window rounds to whole seconds, and its hint says it is at most a day. `/rules/{id}/edit` with an id that is not a number says the page is not found. A field whose error replaces its hint points at the error alone.
+
 ## Interfaces and files
 
 - `src/Dashboard/Api/RuleController.php`: the filters in `index()`.
 - `resources/dashboard/pages/rules/`: `list.tsx`, `rule.tsx`, `form.tsx`, `templates.ts`, and their tests.
 - `resources/dashboard/pages/overview/traffic-card.tsx`: the chart of SPEC-021 takes a `ruleId`, to show one rule alone. `components/confirm-dialog.tsx` and `lib/confirmed-change.ts` are shared with the Overview.
 - `resources/dashboard/components/ui/`: shadcn/ui's `switch` and `textarea`.
+- `tests/Drivers/RuleSearchTest.php`: the search on MySQL and PostgreSQL (AC-16).
 
 ## Out of scope
 
@@ -106,7 +116,9 @@ Deleting always asks first. The dialog names the rule and says that its exemptio
 - **500 rules are enabled:** enabling one more answers 422 with the API's message, shown under the switch or the field.
 - **A custom scope the app no longer registers:** the rule's page shows its name, and saving answers 422 until the scope is registered or changed.
 - **The audit table is missing:** the history card shows the API's 503 message, and the rest of the page still shows.
-- **A deleted rule's page is open:** the next action answers 404, and the page says there is no such rule.
+- **A deleted rule's page is open:** the next action answers 404, and the page says there is no such rule (AC-15).
+- **Another admin changes a rule while its form is open:** the form keeps what it opened with, and sends only what this person changed (AC-12).
+- **Another admin enforces a rule while its delete dialog is open:** the dialog sent no `confirm`, so the API asks again (AC-14).
 
 ## End-to-end verification
 
@@ -128,7 +140,7 @@ The maintainer vetoes any of these in the PR (ADR-0027).
 3. **The templates live in the page,** as starting values, not in the database or the API. Saving one is an ordinary new rule.
 4. **The window is a number and a unit;** the API still takes seconds.
 5. **An edit sends only what changed,** so two admins editing different fields never undo each other's change.
-6. **Deleting always asks first in the page,** since it cannot be undone, and then sends `confirm: true`: the person has confirmed that exact deletion. Other changes still send no `confirm` until the API asks (SPEC-021 decision 8).
+6. **Deleting always asks first in the page,** since it cannot be undone. When the dialog said the rule stops limiting, it then sends `confirm: true`: the person has confirmed that exact deletion. Otherwise it sends none, so the API still asks if that changed (AC-14). Other changes send no `confirm` until the API asks (SPEC-021 decision 8).
 7. **Offenders stay hashes** (ADR-0024). The live feed of SPEC-030 shows the raw IPs and user ids for an hour.
 
 ## PRs
@@ -139,7 +151,7 @@ The maintainer vetoes any of these in the PR (ADR-0027).
 | 2 | `phase-5/spec-022-2` | The API's filters, and the list with search, filters and the switch | AC-1 to AC-4 |
 | 3 | `phase-5/spec-022-3` | The form, the templates, duplicate and the confirmation | AC-5 to AC-7 |
 | 4 | `phase-5/spec-022-4` | A rule's page: settings, chart, offenders, exemptions, history | AC-8, AC-11 |
-| 5 | `phase-5/spec-022-5` | Promote and delete, the guide, the changelog and the spec's close | AC-9, AC-10 |
+| 5 | `phase-5/spec-022-5` | Promote and delete, the guide, the changelog, the review's fixes and the spec's close | AC-9, AC-10, AC-12 to AC-18 |
 
 ## Open questions
 

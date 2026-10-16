@@ -1,9 +1,11 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
+import { Pages } from '@/pages';
 import { RuleForm } from '@/pages/rules/form';
 import { type Answer, manager, mockApi, renderAt, type Sent, viewer } from '@/test/render';
 import { ruleOf } from '@/test/rules';
+import type { Rule } from '@/lib/rules';
 
 /* SPEC-022 AC-5 to AC-7: the form, its templates, edit and duplicate. */
 
@@ -138,5 +140,75 @@ describe('the rule form', () => {
 
         expect(await screen.findByText('Only managers can create or change rules.')).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Create rule' })).not.toBeInTheDocument();
+    });
+});
+
+describe('the rule form, from the review', () => {
+    const patched = (rule: Rule) => (body: unknown): Answer => ({ body: { rule: { ...rule, ...(body as object) }, changed: true, manifest: { compiled: true, version: 4 } } });
+
+    it('AC-12: compares with the rule as the form opened it, so a refetch is never sent back', async () => {
+        let rule = LOGIN;
+        const sent = mockApi(manager({ 'GET rules/3': () => ({ body: { rule, exemptions: [] } }), 'PATCH rules/3': patched(LOGIN) }));
+        const { client } = renderAt(<RuleForm id={3} />, '/rules/3/edit');
+
+        await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue('Login'));
+        // Another admin raises the limit, and the form's query refetches.
+        rule = { ...LOGIN, max_attempts: 50 };
+        await client.refetchQueries({ queryKey: ['rules', 'one', 3] });
+        await userEvent.clear(screen.getByLabelText('Name'));
+        await userEvent.type(screen.getByLabelText('Name'), 'Login form');
+        await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+        await waitFor(() => expect(sentTo(sent, 'PATCH')).toEqual([['rules/3', { name: 'Login form' }]]));
+    });
+
+    it('AC-13: edits a rule whose 429 body is an empty object, even as an empty list', async () => {
+        const empty = { ...LOGIN, response_override: [] as unknown as Rule['response_override'] };
+        const sent = mockApi(manager({ 'GET rules/3': { body: { rule: empty, exemptions: [] } }, 'PATCH rules/3': patched(empty) }));
+        renderAt(<RuleForm id={3} />, '/rules/3/edit');
+
+        await waitFor(() => expect(screen.getByLabelText('429 body')).toHaveValue('{}'));
+        await userEvent.clear(screen.getByLabelText('Name'));
+        await userEvent.type(screen.getByLabelText('Name'), 'Login form');
+        await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+        await waitFor(() => expect(sentTo(sent, 'PATCH')).toEqual([['rules/3', { name: 'Login form' }]]));
+    });
+
+    it('AC-18: rounds the window to whole seconds, and says it is at most a day', async () => {
+        const sent = mockApi(manager({ 'POST rules': created }));
+        renderAt(<RuleForm />, '/rules/new');
+
+        await userEvent.selectOptions(await screen.findByLabelText('Template'), 'Login');
+        await userEvent.clear(screen.getByLabelText('Window'));
+        await userEvent.type(screen.getByLabelText('Window'), '1.1');
+        await userEvent.selectOptions(screen.getByLabelText('Window unit'), 'hours');
+
+        expect(screen.getByLabelText('Window')).toHaveAccessibleDescription('At most a day.');
+
+        await userEvent.click(screen.getByRole('button', { name: 'Create rule' }));
+
+        await waitFor(() => expect(sentTo(sent, 'POST')[0]?.[1]).toMatchObject({ window_seconds: 3_960 }));
+    });
+
+    it('AC-18: points a field at its error alone once the error replaces the hint', async () => {
+        mockApi(manager({ 'POST rules': { status: 422, body: { message: 'The pattern is invalid.', errors: { pattern: ['The pattern must not end with a slash.'] } } } }));
+        renderAt(<RuleForm />, '/rules/new');
+
+        await userEvent.selectOptions(await screen.findByLabelText('Template'), 'Login');
+        await userEvent.click(screen.getByRole('button', { name: 'Create rule' }));
+        await screen.findByText('The pattern must not end with a slash.');
+
+        const described = screen.getByLabelText('Pattern').getAttribute('aria-describedby') ?? '';
+
+        expect(described.split(' ').map((id) => document.getElementById(id)?.textContent)).toEqual(['The pattern must not end with a slash.']);
+    });
+
+    it('AC-18: says the page is not found for an edit of an id that is not a number', async () => {
+        const sent = mockApi(manager());
+        renderAt(<Pages />, '/rules/abc/edit');
+
+        expect(await screen.findByRole('heading', { name: 'Page not found' }, { timeout: 5_000 })).toBeInTheDocument();
+        expect(sent.filter(([, path]) => path.startsWith('rules/'))).toEqual([]);
     });
 });

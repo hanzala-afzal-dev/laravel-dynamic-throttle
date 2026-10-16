@@ -35,6 +35,11 @@ export function useConfirmedChange(invalidate: QueryKey[], options: { onSuccess?
             return Promise.all(invalidate.map((queryKey) => client.invalidateQueries({ queryKey })));
         },
         onError: (error, change) => {
+            // Gone since the page loaded, as another admin deleted it: refresh, so the page says so (SPEC-022 AC-15).
+            if (error instanceof ApiError && error.status === 404) {
+                return Promise.all(invalidate.map((queryKey) => client.invalidateQueries({ queryKey })));
+            }
+
             if (asksToConfirm(error, change)) {
                 waiting.current = change;
                 setConfirming({ ...change, message: error.message });
