@@ -25,7 +25,6 @@ export function useChart(): { config: ChartConfig } {
 }
 
 function ChartContainer({
-    id,
     className,
     children,
     config,
@@ -34,8 +33,8 @@ function ChartContainer({
     config: ChartConfig;
     children: React.ComponentProps<typeof RechartsPrimitive.ResponsiveContainer>['children'];
 }) {
-    const uniqueId = React.useId();
-    const chartId = `chart-${id ?? uniqueId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+    // From React alone, kept to characters a CSS selector takes as they are.
+    const chartId = `chart-${React.useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
 
     return (
         <ChartContext.Provider value={{ config }}>

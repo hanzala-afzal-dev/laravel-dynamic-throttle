@@ -41,17 +41,24 @@ const MESSAGES: Partial<Record<number, string>> = {
 const NOT_JSON = Symbol('not JSON');
 
 export async function api<T>(method: Method, path: string, body?: unknown): Promise<T> {
-    const response = await fetch(`${base}/api/${path}`, {
-        method,
-        credentials: 'same-origin',
-        headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': csrfToken(),
-            'X-Requested-With': 'XMLHttpRequest',
-        },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
+    let response: Response;
+
+    try {
+        response = await fetch(`${base}/api/${path}`, {
+            method,
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': csrfToken(),
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        });
+    } catch {
+        // Offline, a reset connection, or a redirect the browser refused to follow (SPEC-021 AC-14).
+        throw new ApiError(0, 'The server could not be reached: check the connection, then try again.');
+    }
     const data: unknown = await response.json().catch(() => NOT_JSON);
 
     // The API answers JSON and never redirects (SPEC-017), so another page, such as an app's login, is no answer.

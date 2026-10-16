@@ -1,4 +1,3 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useId, useState } from 'react';
 import {
     AlertDialog,
@@ -16,8 +15,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
-import { api, ApiError } from '@/lib/api';
 import { type Settings, useCanManage, useSettings } from '@/lib/queries';
+import { useSettingChange } from '@/lib/setting-change';
 import { Time } from '@/lib/time';
 
 /** How long a setting lasts, as the CLI's --for takes it, or no end time (SPEC-021 decision 7). */
@@ -30,8 +29,6 @@ const DURATIONS = [
 ] as const;
 
 const DEFAULT_DURATION = '1h';
-
-type Change = { path: 'settings/bypass' | 'settings/scale'; body: Record<string, unknown> };
 
 /** A setting's end time, as the API takes it. */
 function ending(duration: string): Record<string, unknown> {
@@ -66,7 +63,7 @@ export function EmergencyControls({ className }: { className?: string }) {
 
 function Bypass({ state, canManage }: { state: Settings['bypass']; canManage: boolean }) {
     const [duration, setDuration] = useState<string>(DEFAULT_DURATION);
-    const change = useChange();
+    const change = useSettingChange();
     const id = useId();
 
     return (
@@ -95,7 +92,7 @@ function Bypass({ state, canManage }: { state: Settings['bypass']; canManage: bo
                         </Button>
                     </div>
                 ))}
-            {change.error !== null && <p className="text-sm text-destructive">{change.error.message}</p>}
+            <Outcome change={change} />
             <Confirmation change={change} />
         </section>
     );
@@ -104,9 +101,9 @@ function Bypass({ state, canManage }: { state: Settings['bypass']; canManage: bo
 function Scaling({ state, canManage }: { state: Settings['scale']; canManage: boolean }) {
     const [factor, setFactor] = useState('');
     const [duration, setDuration] = useState<string>(DEFAULT_DURATION);
-    const change = useChange();
+    const change = useSettingChange();
     const id = useId();
-    const factorError = change.error?.fields.factor?.[0];
+    const factorError = change.fields.factor?.[0];
 
     return (
         <section className="grid gap-3">
@@ -161,7 +158,7 @@ function Scaling({ state, canManage }: { state: Settings['scale']; canManage: bo
                         )}
                     </form>
                 ))}
-            {change.error !== null && factorError === undefined && <p className="text-sm text-destructive">{change.error.message}</p>}
+            {factorError === undefined && <Outcome change={change} />}
             <Confirmation change={change} />
         </section>
     );
@@ -179,39 +176,15 @@ function Durations({ id, value, onChange }: { id: string; value: string; onChang
     );
 }
 
-type Changing = ReturnType<typeof useChange>;
+type Changing = ReturnType<typeof useSettingChange>;
 
-/**
- * Sends a change without "confirm". When the API answers 409, its own message waits
- * in a dialog, and "Confirm" sends the change again with "confirm": true, so the
- * server alone decides what needs confirming (SPEC-021 decision 8).
- */
-function useChange() {
-    const client = useQueryClient();
-    // The change waiting for confirmation stays after the dialog closes, so its message shows while it fades out.
-    const [confirming, setConfirming] = useState<(Change & { message: string }) | null>(null);
-    const [asking, setAsking] = useState(false);
-    const mutation = useMutation({
-        mutationFn: ({ path, body }: Change) => api('PUT', path, body),
-        onSuccess: () => client.invalidateQueries({ queryKey: ['settings'] }),
-        onError: (error, change) => {
-            if (error instanceof ApiError && error.needsConfirmation && change.body.confirm !== true) {
-                setConfirming({ ...change, message: error.message });
-                setAsking(true);
-            }
-        },
-    });
-    const error = mutation.error instanceof ApiError && !mutation.error.needsConfirmation ? mutation.error : null;
+/** Why the change failed, or that it was saved but did not compile. */
+function Outcome({ change }: { change: Changing }) {
+    if (change.error !== null) {
+        return <p className="text-sm text-destructive">{change.error.message}</p>;
+    }
 
-    return {
-        send: (change: Change) => mutation.mutate(change),
-        pending: mutation.isPending,
-        error,
-        confirming,
-        asking,
-        confirm: (change: Change) => mutation.mutate({ path: change.path, body: { ...change.body, confirm: true } }),
-        close: () => setAsking(false),
-    };
+    return change.warning === null ? null : <p className="text-sm font-medium text-amber-700 dark:text-warning">{change.warning}</p>;
 }
 
 function Confirmation({ change }: { change: Changing }) {
@@ -222,11 +195,13 @@ function Confirmation({ change }: { change: Changing }) {
             <AlertDialogContent>
                 <AlertDialogHeader>
                     <AlertDialogTitle>Confirm the change</AlertDialogTitle>
-                    <AlertDialogDescription>{confirming?.message}</AlertDialogDescription>
+                    <AlertDialogDescription>
+                        {confirming?.message} The end time counts from when you confirm.
+                    </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => confirming !== null && change.confirm(confirming)}>Confirm</AlertDialogAction>
+                    <AlertDialogAction onClick={change.confirm}>Confirm</AlertDialogAction>
                 </AlertDialogFooter>
             </AlertDialogContent>
         </AlertDialog>

@@ -1,6 +1,6 @@
 # SPEC-021: The Overview and the emergency controls
 
-- Status: Approved
+- Status: Done
 - ADRs: ADR-0013, ADR-0015, ADR-0028
 - Roadmap phase: 5
 
@@ -80,11 +80,18 @@ Numbers use the browser's locale. The last hour's cards read `api/metrics?period
 - **AC-12** A viewer sees whether bypass and scaling are on, and until when, and no button or field that changes them.
 - **AC-13** The hour's metrics and the settings poll every 5 seconds; the day's and the week's metrics, the health report and the rule counts every 60 seconds.
 
+### From the review
+- **AC-14** A change that never reaches the server, on the Overview or in the banner, shows "The server could not be reached: check the connection, then try again."
+- **AC-15** A change that is saved but whose manifest does not compile shows "Saved, but servers keep the previous manifest until a compile succeeds: …", on the Overview and in the banner.
+- **AC-16** Confirm sends the change the 409 answered, once, however often it is clicked, and nothing after the dialog closed. After Cancel, a changed form asks again with its new values. A 409 that answers a confirmed change shows its message. The dialog says the end time counts from when you confirm.
+- **AC-17** The chart's `<style>` element carries the page's nonce.
+
 ## Interfaces and files
 
 - `src/Dashboard/Api/RuleController.php`: `counts()`. `DashboardRoutes.php` registers the route, before `api/rules/{rule}`.
 - `resources/dashboard/pages/overview/`: the page and its cards (`health-card.tsx`, `rules-card.tsx`, `traffic-card.tsx`, `top-rules-card.tsx`, `emergency-controls.tsx`), with their tests.
 - `resources/dashboard/lib/metrics.ts`: the sums and the top rules, from `api/metrics`.
+- `resources/dashboard/lib/setting-change.ts`: a change of bypass or the scale factor, with its confirmation, shared by the controls and the banner.
 - `resources/dashboard/components/ui/`: shadcn/ui's `chart`, `tabs`, `alert-dialog`, `input`, `label`, `native-select`, `table` and `skeleton`.
 - `package.json`: `recharts`.
 - `scripts/dashboard-budget.mjs`: counts the Overview's chunk.
@@ -104,6 +111,9 @@ Numbers use the browser's locale. The last hour's cards read `api/metrics?period
 - **Bypass ends while the page is open:** the next poll shows it off, and the controls offer to turn it on again.
 - **Two managers change bypass at once:** each change is recorded (SPEC-017). After a change, the page shows whatever state the server then holds.
 - **The settings table is missing:** the settings and the changes answer 503 with the message, and the controls show it.
+- **The change never reaches the server,** because it is offline or the connection drops: the control says so (AC-14).
+- **The change is saved, but the manifest does not compile:** servers keep the previous one, so the control says so rather than showing success (AC-15).
+- **The dialog stays open a while:** the end time counts from when you confirm, not from when you first asked (AC-16).
 
 ## End-to-end verification
 
@@ -137,7 +147,7 @@ The maintainer vetoes any of these in the PR (ADR-0027).
 | 1 | `phase-5/spec-021-1` | This spec | Decisions |
 | 2 | `phase-5/spec-021-2` | `api/rules/counts`, pages loaded on demand, the budget, and the health and rules cards | AC-1 to AC-4 |
 | 3 | `phase-5/spec-021-3` | Recharts, the last hour's cards, the traffic chart and the top rules | AC-5 to AC-8, AC-13 |
-| 4 | `phase-5/spec-021-4` | The emergency controls, the guide, the changelog and the spec's close | AC-9 to AC-12 |
+| 4 | `phase-5/spec-021-4` | The emergency controls, the guide, the changelog, the review's fixes and the spec's close | AC-9 to AC-12, AC-14 to AC-17 |
 
 ## Open questions
 

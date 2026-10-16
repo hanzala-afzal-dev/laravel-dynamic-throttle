@@ -77,6 +77,16 @@ describe('the API client', () => {
 
         expect([error.status, error.message]).toEqual([200, 'The server answered with another page, such as a login: reload the page.']);
     });
+
+    it('SPEC-021 AC-14: turns a request that never reaches the server into an ApiError', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => {
+            throw new TypeError('Failed to fetch');
+        }));
+
+        const error = await failure(api('PUT', 'settings/bypass', { state: 'off' }));
+
+        expect([error.status, error.message]).toEqual([0, 'The server could not be reached: check the connection, then try again.']);
+    });
 });
 
 /** A response as fetch gives it after following a redirect. */
