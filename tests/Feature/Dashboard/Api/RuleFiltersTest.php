@@ -6,6 +6,7 @@ use Afzal\DynamicThrottle\Enums\RuleMode;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Tests\Support\DashboardApi;
 use Afzal\DynamicThrottle\Tests\Support\Throttling;
+use Afzal\DynamicThrottle\Tests\TestCase;
 
 /*
 | SPEC-022 AC-1: the search and the filters of GET api/rules, for the Rules page.
@@ -29,23 +30,23 @@ afterEach(function (): void {
  *
  * @return list<string>
  */
-function ruleNames(string $query): array
+function ruleNames(TestCase $test, string $query): array
 {
-    return array_column(DashboardApi::send(test(), 'GET', "rules?{$query}", user: DashboardApi::viewer())->json('data'), 'name');
+    return array_column(DashboardApi::send($test, 'GET', "rules?{$query}", user: DashboardApi::viewer())->json('data'), 'name');
 }
 
 it('AC-1: searches the name and the pattern, ignoring case', function (): void {
-    expect([ruleNames('search=log'), ruleNames('search=LOG'), ruleNames('search=export')])
+    expect([ruleNames($this, 'search=log'), ruleNames($this, 'search=LOG'), ruleNames($this, 'search=export')])
         ->toBe([['Login', 'Catalog', 'Old blog'], ['Login', 'Catalog', 'Old blog'], ['Exports']]);
 });
 
 it('AC-1: filters by status and by mode, and combines them with the search', function (): void {
     expect([
-        ruleNames('enabled=false'),
-        ruleNames('enabled=true'),
-        ruleNames('mode=dry_run'),
-        ruleNames('mode=enforce&enabled=true'),
-        ruleNames('search=o&enabled=false&mode=dry_run'),
+        ruleNames($this, 'enabled=false'),
+        ruleNames($this, 'enabled=true'),
+        ruleNames($this, 'mode=dry_run'),
+        ruleNames($this, 'mode=enforce&enabled=true'),
+        ruleNames($this, 'search=o&enabled=false&mode=dry_run'),
     ])->toBe([
         ['Old blog', 'Exports'],
         ['Login', 'API', 'Catalog'],
@@ -59,7 +60,7 @@ it('AC-1: counts and pages the filtered rules, with the filters in the next page
     $response = DashboardApi::send($this, 'GET', 'rules?enabled=false', user: DashboardApi::viewer());
 
     expect([$response->json('total'), $response->json('last_page'), $response->json('first_page_url')])
-        ->toBe([2, 1, 'http://localhost/dynamic-throttle/api/rules?enabled=false&page=1']);
+        ->toBe([2, 1, url('/dynamic-throttle/api/rules?enabled=false&page=1')]);
 });
 
 it('AC-1: refuses a filter it does not know the value of', function (string $query, string $field): void {
