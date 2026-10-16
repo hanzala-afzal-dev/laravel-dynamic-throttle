@@ -47,10 +47,13 @@ trait NamesARule
     }
 
     /**
-     * The id argument, as given.
+     * The id argument, as given: a string from a terminal, or a number from Artisan::call(),
+     * which Larastan's string type for argument() does not foresee.
      */
     protected function id(): string
     {
-        return $this->argument('id');
+        $id = $this->input->getArgument('id');
+
+        return is_scalar($id) ? (string) $id : '';
     }
 }
