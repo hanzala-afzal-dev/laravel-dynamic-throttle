@@ -129,13 +129,56 @@ describe('the emergency controls', () => {
 
     it('AC-12: show a viewer the state, and nothing that changes it', async () => {
         mockApi(viewer({ 'GET settings': { body: SCALED } }));
-        renderAt(<EmergencyControls />);
+        const { client } = renderAt(<EmergencyControls />);
 
+        // Once the user is known: until then nobody sees a control.
+        await waitFor(() => expect(client.getQueryState(['me'])?.status).toBe('success'));
         expect(await screen.findByText('Bypass is off.')).toBeInTheDocument();
         expect(screen.getByText(/^Every limit is multiplied by 2 until/)).toBeInTheDocument();
         await screen.findByRole('heading', { name: 'Emergency controls' });
         expect(screen.queryAllByRole('button')).toEqual([]);
         expect(screen.queryAllByRole('textbox')).toEqual([]);
         expect(screen.queryAllByRole('combobox')).toEqual([]);
+    });
+
+    it('AC-16: confirms the change the API answered, after the form changed, and says the end counts from then', async () => {
+        const sent = mockApi(manager({ 'PUT settings/scale': confirming('Every limit is multiplied by 0.5 until 2027-01-15 13:00 UTC, so clients are limited sooner.') }));
+        renderAt(<EmergencyControls />);
+
+        await userEvent.type(await screen.findByLabelText('Factor'), '0.5');
+        await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+        await userEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Cancel' }));
+        await userEvent.clear(screen.getByLabelText('Factor'));
+        await userEvent.type(screen.getByLabelText('Factor'), '0.4');
+        await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+        const dialog = await screen.findByRole('alertdialog');
+
+        expect(dialog).toHaveTextContent('The end time counts from when you confirm.');
+
+        await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+
+        await waitFor(() => expect(puts(sent, 'settings/scale')).toEqual([{ factor: '0.5', for: '1h' }, { factor: '0.4', for: '1h' }, { factor: '0.4', for: '1h', confirm: true }]));
+    });
+
+    it('AC-14: says when the server could not be reached', async () => {
+        mockApi(manager({
+            'PUT settings/bypass': () => {
+                throw new TypeError('Failed to fetch');
+            },
+        }));
+        renderAt(<EmergencyControls />);
+
+        await userEvent.click(await screen.findByRole('button', { name: 'Turn on bypass' }));
+
+        expect(await screen.findByText('The server could not be reached: check the connection, then try again.')).toBeInTheDocument();
+    });
+
+    it('AC-15: warns that servers keep the previous manifest when the change did not compile', async () => {
+        mockApi(manager({ 'GET settings': { body: BYPASS_ON }, 'PUT settings/bypass': { body: { changed: true, settings: OFF, manifest: { compiled: false, error: 'Connection refused' } } } }));
+        renderAt(<EmergencyControls />);
+
+        await userEvent.click(await screen.findByRole('button', { name: 'Turn off bypass' }));
+
+        expect(await screen.findByText('Saved, but servers keep the previous manifest until a compile succeeds: Connection refused')).toBeInTheDocument();
     });
 });
