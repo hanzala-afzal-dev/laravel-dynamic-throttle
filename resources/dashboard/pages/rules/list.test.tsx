@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
+import { Link } from 'wouter';
 import { Pages } from '@/pages';
 import { RulesList } from '@/pages/rules/list';
 import { metricsOf, ruleOf as seriesOf } from '@/test/metrics';
@@ -127,5 +128,57 @@ describe('the rules list', () => {
         renderAt(<Pages />, '/rules');
 
         expect(await screen.findByRole('heading', { level: 1, name: 'Rules' }, { timeout: 5_000 })).toBeInTheDocument();
+    });
+});
+
+describe('the rules list, from the review', () => {
+    const pause = () => new Promise((resolve) => setTimeout(resolve, 400));
+
+    it('AC-16: sends the search without the spaces around it, and none for spaces alone', async () => {
+        const sent = mockApi(viewer(answers({ 'GET rules?search=log': { body: pageOf([LOGIN]) } })));
+        const { history } = renderAt(<RulesList />, '/rules');
+        const search = await screen.findByRole('searchbox', { name: 'Search rules' });
+
+        expect(search).toHaveAttribute('maxLength', '100');
+
+        await userEvent.type(search, '   ');
+        await pause();
+
+        expect(gets(sent)).toEqual(['rules']);
+
+        await userEvent.type(search, 'log ');
+
+        await waitFor(() => expect(gets(sent)).toContain('rules?search=log'));
+        await pause();
+        expect(history.at(-1)).toBe('/rules?search=log');
+        expect(search).toHaveValue('   log ');
+        expect(gets(sent)).toEqual(['rules', 'rules?search=log']);
+    });
+
+    it('AC-17: clears the search box when the page opens without a search, as from the sidebar', async () => {
+        mockApi(viewer(answers({ 'GET rules?search=log': { body: pageOf([LOGIN]) } })));
+        const { history } = renderAt(
+            <>
+                <RulesList />
+                <Link href="/rules">All rules</Link>
+            </>,
+            '/rules?search=log',
+        );
+
+        await screen.findByRole('table');
+        await userEvent.click(screen.getByRole('link', { name: 'All rules' }));
+        await pause();
+
+        expect(screen.getByRole('searchbox', { name: 'Search rules' })).toHaveValue('');
+        expect(history.at(-1)).toBe('/rules');
+    });
+
+    it('AC-17: goes to the last page from a page past it', async () => {
+        const sent = mockApi(viewer(answers({ 'GET rules?page=3': { body: { ...pageOf([], 3, 1), total: 3 } } })));
+        const { history } = renderAt(<RulesList />, '/rules?page=3');
+
+        await waitFor(() => expect(rows()).toHaveLength(3));
+        expect(history.at(-1)).toBe('/rules');
+        expect(gets(sent)).toEqual(['rules?page=3', 'rules']);
     });
 });
