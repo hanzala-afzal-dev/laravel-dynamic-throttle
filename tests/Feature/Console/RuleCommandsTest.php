@@ -9,6 +9,7 @@ use Afzal\DynamicThrottle\Tests\Support\Exemptions;
 use Afzal\DynamicThrottle\Tests\Support\Settings;
 use Afzal\DynamicThrottle\Tests\Support\Throttling;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Artisan;
 
 /*
 | SPEC-013: dynamic-throttle:disable-rule and enable-rule, the recovery path
@@ -149,3 +150,12 @@ it('says it cannot read the rule when the database is down, and exits 1', functi
         ->expectsOutputToContain('Could not read rule 1:')
         ->assertExitCode(1);
 })->with(['disable-rule', 'enable-rule']);
+
+it('AC-16: takes the id as a number from Artisan::call(), as from a terminal', function (): void {
+    $rule = Throttling::rule(['mode' => RuleMode::DryRun]);
+
+    $disabled = Artisan::call('dynamic-throttle:disable-rule', ['id' => $rule->id]);
+    $enabled = [$rule->refresh()->enabled, Artisan::call('dynamic-throttle:enable-rule', ['id' => $rule->id])];
+
+    expect([$disabled, ...$enabled, $rule->refresh()->enabled])->toBe([0, false, 0, true]);
+});
