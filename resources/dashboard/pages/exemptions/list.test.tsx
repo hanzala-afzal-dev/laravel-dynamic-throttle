@@ -5,7 +5,7 @@ import { formatTime } from '@/lib/time';
 import { Pages } from '@/pages';
 import { ExemptionsList } from '@/pages/exemptions/list';
 import { exemptionOf } from '@/test/exemptions';
-import { type Answers, mockApi, renderAt, type Sent, viewer } from '@/test/render';
+import { type Answers, manager, mockApi, renderAt, type Sent, viewer } from '@/test/render';
 import { pageOf, ruleOf } from '@/test/rules';
 
 /* SPEC-023 AC-2 and AC-3: the list of exemptions and its filters. */
@@ -137,5 +137,51 @@ describe('the exemptions list', () => {
         renderAt(<Pages />, '/exemptions');
 
         expect(await screen.findByRole('combobox', { name: 'State' }, { timeout: 5_000 })).toBeInTheDocument();
+    });
+});
+
+describe('removing an exemption', () => {
+    const removed = { body: { exemption: PARTNER, changed: true, manifest: { compiled: true, version: 5 } } };
+    const changes = (sent: Sent) => sent.filter(([method]) => method !== 'GET').map(([method, path, body]) => [method, path, body]);
+
+    it('AC-6: asks first, naming who and which rule, then removes it', async () => {
+        const sent = mockApi(manager(answers({ 'DELETE exemptions/11': removed })));
+        renderAt(<ExemptionsList />, '/exemptions');
+
+        await screen.findByRole('link', { name: 'Login' });
+        await userEvent.click(screen.getByRole('button', { name: 'Remove the exemption for User 42' }));
+        const dialog = await screen.findByRole('alertdialog');
+
+        expect(dialog).toHaveTextContent('Remove the exemption for User 42 on Login? Its requests are limited again.');
+
+        await userEvent.click(within(dialog).getByRole('button', { name: 'Remove' }));
+
+        await waitFor(() => expect(changes(sent)).toEqual([['DELETE', 'exemptions/11', {}]]));
+        await waitFor(() => expect(gets(sent).filter((path) => path === 'exemptions?state=active')).toHaveLength(2));
+    });
+
+    it('AC-6: names every rule, and sends nothing when cancelled', async () => {
+        const sent = mockApi(manager(answers()));
+        renderAt(<ExemptionsList />, '/exemptions');
+
+        await userEvent.click(await screen.findByRole('button', { name: 'Remove the exemption for IP 203.0.113.0/24' }));
+        const dialog = await screen.findByRole('alertdialog');
+
+        expect(dialog).toHaveTextContent('Remove the exemption for IP 203.0.113.0/24 on every rule?');
+
+        await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+        expect(changes(sent)).toEqual([]);
+    });
+
+    it('AC-7: shows a viewer no Add exemption and no Remove', async () => {
+        mockApi(viewer(answers()));
+        const { client } = renderAt(<ExemptionsList />, '/exemptions');
+
+        await screen.findByRole('table');
+        await waitFor(() => expect(client.getQueryState(['me'])?.status).toBe('success'));
+
+        expect(screen.queryByRole('button', { name: 'Add exemption' })).not.toBeInTheDocument();
+        expect(screen.queryAllByRole('button', { name: /Remove/ })).toEqual([]);
     });
 });
