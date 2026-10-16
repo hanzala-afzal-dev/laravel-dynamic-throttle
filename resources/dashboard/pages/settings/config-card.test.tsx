@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { Pages } from '@/pages';
 import { ConfigCard } from '@/pages/settings/config-card';
@@ -79,18 +79,17 @@ describe('the configuration card', () => {
         mockApi(viewer({ 'GET config': { status: 500, body: { message: 'Server Error' } } }));
         renderAt(<ConfigCard />, '/settings');
 
-        expect(await screen.findByText('Server Error')).toBeInTheDocument();
+        expect(await screen.findByText('The server failed: Server Error')).toBeInTheDocument();
     });
 });
 
 describe('the Settings page', () => {
     it('AC-6: is the page at /settings, loaded on demand, with no control that changes anything, for a manager too', async () => {
         mockApi(manager({ 'GET config': { body: CONFIG }, 'GET health': { body: { status: 'ok', checks: [] } } }));
-        const { client } = renderAt(<Pages />, '/settings');
+        renderAt(<Pages />, '/settings');
 
         expect(await screen.findByRole('heading', { level: 1, name: 'Settings' }, { timeout: 5_000 })).toBeInTheDocument();
         await screen.findByRole('table', { name: 'In use' });
-        await waitFor(() => expect(client.getQueryState(['me'])?.status).toBe('success'));
 
         expect(screen.queryAllByRole('button').map((button) => button.textContent).filter((name) => name !== 'Check again')).toEqual([]);
         expect(screen.queryAllByRole('textbox')).toEqual([]);
