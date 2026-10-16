@@ -24,6 +24,7 @@ The JSON API already does each change, with its validation, its confirmation for
   - when it ends: a time in the browser's zone, "Never", or "Ended …" for an expired one;
   - when it was added.
 - **Filters:** state (active, expired or all; active by default), subject (IP, user or custom) and rule (one rule, or the exemptions on every rule, or all). They go to the API as `state`, `subject` and `rule`, and into the page's URL. A rule's page links here with `?rule={id}` (SPEC-022).
+- **Pages:** 100 exemptions a page. A page past the last, from an old link or after exemptions ended, goes to the last, as on the rules list (SPEC-022 AC-17).
 - **For a manager:** "Add exemption", and Remove on each row.
 - **None:** the page says so.
 
@@ -56,7 +57,7 @@ The JSON API already does each change, with its validation, its confirmation for
 
 ### Frontend (Vitest)
 - **AC-2** The list shows who, which rule (a link, or "Every rule"), the reason, the end ("Never", a time, or "Ended …") and when each was added, newest first.
-- **AC-3** The filters ask `api/exemptions` with `state`, `subject` and `rule`, and put them in the URL; opening `?rule=3` applies it. The state starts at active.
+- **AC-3** The filters ask `api/exemptions` with `state`, `subject` and `rule`, and put them in the URL; opening `?rule=3` applies it. The state starts at active. The pages keep the filters, and a page past the last goes to the last.
 - **AC-4** For a manager, adding an IP exemption for 7 days on every rule sends `POST api/exemptions` with `subject: ip`, the value, `rule_id: null`, the reason, and `expires_at` seven days from now. "No end" sends `expires_at: null`. A 422 shows under its field.
 - **AC-5** A 409 shows its message in a dialog, and Confirm sends the same exemption with `confirm: true`.
 - **AC-6** Remove asks first, naming who and which rule, and then sends `DELETE api/exemptions/{id}`. Cancel sends nothing.
