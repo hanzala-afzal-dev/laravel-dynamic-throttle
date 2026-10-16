@@ -1,6 +1,6 @@
 # SPEC-023: The Exemptions page
 
-- Status: Approved
+- Status: Done
 - ADRs: ADR-0015, ADR-0028
 - Roadmap phase: 5
 
@@ -32,7 +32,7 @@ The JSON API already does each change, with its validation, its confirmation for
 - **The form, in a dialog:**
   - who: IP or range, user, or custom with the scope's name;
   - the value: an IP or CIDR range, a user's id, or the custom scope's value;
-  - the rule: every rule, or one rule, chosen by name;
+  - the rule: every rule, or one rule, chosen by name; the rule the list shows, by default;
   - how long: 1 hour, 1 day (the default), 7 days, 30 days, or no end;
   - an optional reason.
 - **Saving** sends `POST api/exemptions`. The end time is computed in the browser as now plus the chosen length, in UTC.
@@ -66,8 +66,9 @@ The JSON API already does each change, with its validation, its confirmation for
 ## Interfaces and files
 
 - `src/Dashboard/Api/ExemptionController.php`: the filters in `index()`.
-- `resources/dashboard/pages/exemptions/`: `list.tsx`, `add-dialog.tsx`, and their tests.
-- `resources/dashboard/lib/exemptions.ts`: the types, the query and the labels.
+- `resources/dashboard/pages/exemptions/`: `list.tsx`, `add-dialog.tsx`, `rule-name.tsx`, and their tests.
+- `resources/dashboard/lib/exemptions.ts`: the types, the query and the labels. `components/exemption-who.tsx` shows who an exemption lets through, on this page and a rule's.
+- `resources/dashboard/components/ui/dialog.tsx`: shadcn/ui's dialog, for the add form.
 
 ## Out of scope
 

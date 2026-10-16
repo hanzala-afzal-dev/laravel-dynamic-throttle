@@ -107,6 +107,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - `GET api/rules/counts`: the enabled rules by mode, and the disabled ones.
   - The Rules pages: the list with search and filters, the form with templates, a rule's page with its traffic, offenders, exemptions and history, and promote, duplicate and delete.
   - `GET api/rules` takes `search`, `enabled` and `mode`.
+  - The Exemptions page: the exemptions with their filters, and adding one for 1 hour to 30 days or with no end, or removing it.
+  - `GET api/exemptions` takes `state`, `subject` and `rule=none`.
   - A strict Content Security Policy, `X-Frame-Options: DENY`, and assets cached for a year.
   - in a dashboard request, explain never takes the admin who sends it for the request it explains.
   - behind `auth:<guard>` in `dashboard.middleware`, a user id alone still means a user of the app's default guard, in exemptions and in explain.

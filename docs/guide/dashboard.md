@@ -75,6 +75,20 @@ There, a manager can:
 
 Disabling an enforcing rule, or switching it to dry-run, asks you to confirm, with what the change does.
 
+## The Exemptions page
+
+An exemption lets a client through one rule, or every rule, for a while or with no end: the office's IP range, a partner's user, a load test.
+
+**The list** shows who each exemption lets through, which rule, why, and when it ends, newest first. It opens on the active exemptions. Filter by state (active, expired or all), by subject (IP, user or custom) and by rule, or the exemptions on every rule. A rule's page links to its own exemptions here.
+
+**Add exemption,** for a manager, asks:
+- who: an IP address or a CIDR range, a user's id, or a custom scope's name and value;
+- which rule, or every rule;
+- for how long: 1 hour, 1 day, 7 days, 30 days or no end;
+- why, which the audit log keeps.
+
+A range wider than a /8 for IPv4, or a /32 for IPv6, asks you to confirm first. There is no edit: remove an exemption and add another, so the audit log shows each change. Remove asks first, naming who and which rule.
+
 ## How it protects itself
 
 - **No rule ever applies to the dashboard,** even a `*` rule, and even with `dynamic.throttle` as global middleware: the package skips its routes by name, and before routing, by its path. So a bad rule can never lock you out of the place where you would fix it. An app route that also matches under that path, such as `{locale}/login`, stays limited.
@@ -103,7 +117,7 @@ The dashboard's pages read and change everything through a JSON API under `{path
 | `GET api/rules`, `GET api/rules/{id}` | either | Rules in evaluation order, 100 a page, narrowed by `search` (name or pattern, ignoring case; `%` and `_` match themselves), `enabled` and `mode`; one rule with its exemptions |
 | `GET api/rules/counts` | either | The enabled rules by mode, enforcing or dry-run, and the disabled ones |
 | `POST api/rules`, `PATCH api/rules/{id}`, `DELETE api/rules/{id}` | manage | Create, change or delete a rule |
-| `GET api/exemptions` | either | Exemptions, newest first, 100 a page; `?rule={id}` for one rule's |
+| `GET api/exemptions` | either | Exemptions, newest first, 100 a page, narrowed by `state` (`active` or `expired`), `subject` (`ip`, `user` or `custom`) and `rule` (an id, or `none` for those on every rule) |
 | `POST api/exemptions`, `DELETE api/exemptions/{id}` | manage | Create or delete an exemption |
 | `GET api/settings` | either | Bypass and the scale factor |
 | `PUT api/settings/bypass`, `PUT api/settings/scale` | manage | What `dynamic-throttle:bypass` and `dynamic-throttle:scale` do |
