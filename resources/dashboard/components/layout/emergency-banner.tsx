@@ -1,24 +1,19 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { TriangleAlert } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { api, ApiError } from '@/lib/api';
 import { useCanManage, useSettings } from '@/lib/queries';
+import { useSettingChange } from '@/lib/setting-change';
 import { Time } from '@/lib/time';
 
 /**
  * On every page while bypass or a scale factor is on: what it does, until when, and
  * for a manager a button that turns it off (SPEC-020). Turning off needs no
- * confirmation (SPEC-018).
+ * confirmation (SPEC-018); a failure or a failed compile shows here (SPEC-021).
  */
 export function EmergencyBanner() {
     const settings = useSettings().data;
     const canManage = useCanManage();
-    const client = useQueryClient();
-    const turnOff = useMutation({
-        mutationFn: ({ path, body }: { path: string; body: Record<string, string> }) => api('PUT', path, body),
-        onSuccess: () => client.invalidateQueries({ queryKey: ['settings'] }),
-    });
+    const turnOff = useSettingChange();
 
     if (settings === undefined || (!settings.bypass.on && settings.scale.factor === null)) {
         return null;
@@ -35,7 +30,7 @@ export function EmergencyBanner() {
                             Bypass is on: no rule limits any request <Until value={settings.bypass.until} />.
                         </p>
                         {canManage && (
-                            <Button size="sm" variant="outline" disabled={turnOff.isPending} onClick={() => turnOff.mutate({ path: 'settings/bypass', body: { state: 'off' } })}>
+                            <Button size="sm" variant="outline" disabled={turnOff.pending} onClick={() => turnOff.send({ path: 'settings/bypass', body: { state: 'off' } })}>
                                 Turn off bypass
                             </Button>
                         )}
@@ -48,13 +43,14 @@ export function EmergencyBanner() {
                             <Until value={settings.scale.until} comma />.
                         </p>
                         {canManage && (
-                            <Button size="sm" variant="outline" disabled={turnOff.isPending} onClick={() => turnOff.mutate({ path: 'settings/scale', body: { factor: 'off' } })}>
+                            <Button size="sm" variant="outline" disabled={turnOff.pending} onClick={() => turnOff.send({ path: 'settings/scale', body: { factor: 'off' } })}>
                                 Turn off scaling
                             </Button>
                         )}
                     </div>
                 )}
-                {turnOff.error instanceof ApiError && <p className="text-destructive">{turnOff.error.message}</p>}
+                {turnOff.error !== null && <p className="text-destructive">{turnOff.error.message}</p>}
+                {turnOff.warning !== null && <p className="font-medium">{turnOff.warning}</p>}
             </AlertDescription>
         </Alert>
     );
