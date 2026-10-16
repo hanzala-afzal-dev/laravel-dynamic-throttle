@@ -123,6 +123,15 @@ describe('the exemptions list', () => {
         expect(history.at(-1)).toBe('/exemptions?page=2');
     });
 
+    it('AC-3: goes to the last page from a page past it', async () => {
+        const sent = mockApi(viewer(answers({ 'GET exemptions?state=active&page=3': { body: { ...pageOf([], 3, 1), total: 2 } } })));
+        const { history } = renderAt(<ExemptionsList />, '/exemptions?page=3');
+
+        await waitFor(() => expect(rows()).toHaveLength(2));
+        expect(history.at(-1)).toBe('/exemptions');
+        expect(gets(sent)).toEqual(['exemptions?state=active&page=3', 'exemptions?state=active']);
+    });
+
     it('AC-2: is the page at /exemptions, loaded on demand', async () => {
         mockApi(viewer(answers()));
         renderAt(<Pages />, '/exemptions');
