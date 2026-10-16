@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Tests\Support\DashboardApi;
-use Afzal\DynamicThrottle\Tests\Support\RuleSchema;
 use Afzal\DynamicThrottle\Tests\Support\Throttling;
+use Illuminate\Support\Facades\Schema;
 
 /*
 | SPEC-022 AC-1 and AC-16 on the docker compose MySQL and PostgreSQL, whose LIKE
@@ -44,7 +44,13 @@ it('SPEC-022 AC-16: searches ignoring case, with %, _ and \\ as themselves', fun
         $names = fn (string $query): array => array_column(DashboardApi::send($this, 'GET', "rules?{$query}", user: DashboardApi::viewer())->json('data') ?? [], 'name');
         $found = [$names('search=LOGIN'), $names('search=SHOP'), $names('search=%25'), $names('search=_'), $names('search=%5C'), $names('search=!')];
     } finally {
-        RuleSchema::rollback();
+        // After the API's requests, migrate:rollback finds no batch: drop the tables by hand.
+        $schema = Schema::connection("search-{$driver}");
+        $schema->disableForeignKeyConstraints();
+
+        foreach (['metrics_hourly', 'audit_log', 'settings', 'exemptions', 'rules'] as $table) {
+            $schema->dropIfExists("dynamic_throttle_{$table}");
+        }
     }
 
     expect($found)->toBe([['Login'], ['Catalog'], ['100% off'], ['Snakes'], ['Back\\slash'], []]);
