@@ -28,7 +28,9 @@ final class ScaleCommand extends ChangeCommand
 
     public function handle(EmergencyControls $controls): int
     {
-        $factor = $this->argument('factor');
+        // A string from a terminal, or a number from Artisan::call().
+        $factor = $this->input->getArgument('factor');
+        $factor = is_scalar($factor) ? (string) $factor : '';
 
         try {
             $percent = $factor === 'off' ? null : ScaleFactor::percent($factor);
