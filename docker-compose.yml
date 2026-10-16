@@ -3,6 +3,7 @@
 #   docker compose up -d                        start Redis, Valkey, Memcached, MySQL, PostgreSQL
 #   docker compose run --rm php composer test   run the suite with PHP 8.3, no local PHP needed
 #   docker compose run --rm php composer test:drivers
+#   docker compose up workbench                 the dashboard's demo at http://127.0.0.1:8000/dynamic-throttle
 #   docker compose down -v                      stop everything and delete the data
 #
 # Ports are bound to 127.0.0.1 only, so these unauthenticated test services are
@@ -32,6 +33,41 @@ services:
       MYSQL_PORT: 3306
       PGSQL_HOST: postgres
       PGSQL_PORT: 5432
+
+  # The dashboard's demo (CONTRIBUTING.md): docker compose up workbench, then open
+  # http://127.0.0.1:8000/dynamic-throttle. The Workbench app, seeded afresh on each
+  # start with demo rules and a minute of traffic, the scheduler running, and Redis
+  # counting.
+  workbench:
+    image: dynamic-throttle-php:${PHP_VERSION:-8.3}
+    build:
+      context: docker/php
+      args:
+        PHP_VERSION: ${PHP_VERSION:-8.3}
+    profiles: [demo]
+    working_dir: /app
+    volumes:
+      - .:/app
+      - composer-cache:/tmp/composer-cache
+    ports: ["127.0.0.1:8000:8000"]
+    environment:
+      CACHE_STORE: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # Adds docker/workbench/php.ini, so the served app sees CACHE_STORE and REDIS_HOST.
+      PHP_INI_SCAN_DIR: ":/app/docker/workbench"
+    depends_on:
+      redis:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - |
+        [ -f vendor/autoload.php ] || composer install --no-interaction --no-progress
+        vendor/bin/testbench workbench:build --ansi
+        vendor/bin/testbench demo:traffic
+        vendor/bin/testbench schedule:work > /dev/null 2>&1 &
+        exec vendor/bin/testbench serve --host=0.0.0.0 --port=8000 --no-reload
 
   redis:
     image: redis:7.4-alpine

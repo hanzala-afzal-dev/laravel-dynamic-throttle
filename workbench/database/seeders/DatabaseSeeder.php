@@ -4,24 +4,23 @@ declare(strict_types=1);
 
 namespace Workbench\Database\Seeders;
 
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Workbench\Database\Factories\UserFactory;
 
+/**
+ * The Workbench app's data, which composer serve seeds afresh each time: two users
+ * for the dashboard's two roles, and the demo's rules and numbers (CONTRIBUTING.md).
+ */
 class DatabaseSeeder extends Seeder
 {
-    use WithoutModelEvents;
-
     /**
      * Seed the application's database.
      */
     public function run(): void
     {
-        // UserFactory::new()->times(10)->create();
+        UserFactory::new()->create(['name' => 'Manager', 'email' => 'manager@example.com']);
+        UserFactory::new()->create(['name' => 'Viewer', 'email' => 'viewer@example.com']);
 
-        UserFactory::new()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        $this->call(DemoSeeder::class);
     }
 }
