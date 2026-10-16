@@ -50,6 +50,31 @@ A request that two rules check counts in both, so the numbers are checks, not re
 
 **The emergency controls** turn bypass or a scale factor on for 15 minutes, an hour, 4 hours, a day or with no end time, and off again, as `dynamic-throttle:bypass` and `dynamic-throttle:scale` do. Turning bypass on, or a factor below 1, asks you to confirm first, with what the change does. Viewers see the controls' state but no button. While either setting is on, every page shows a banner with a button to turn it off.
 
+## The Rules pages
+
+**The list** shows every rule in the order it is evaluated:
+- what it applies to, who it counts per, and its limit;
+- its mode and status;
+- its blocks, or would-blocks, in the last hour.
+
+Search by name or pattern, and filter by status and mode. The filters stay in the page's address, so you can bookmark or share a filtered list. A manager switches a rule on or off from its row.
+
+**A new rule** starts from a template or blank, and always in dry-run, so it shows what it would block before it blocks anything. The templates are Login, Password reset, Sign-up, API per token, API per user and Expensive endpoint. Duplicate copies a rule into a new one, also in dry-run. An edit sends only the fields you changed.
+
+**A rule's page** shows:
+- its settings;
+- its traffic over an hour, a day or a week;
+- the clients it blocked most, by identity hash;
+- its exemptions;
+- its history from the audit log.
+
+There, a manager can:
+- **Promote** a dry-run rule, after seeing how many requests it would have blocked in the last 24 hours;
+- disable or enable the rule;
+- delete it. Deleting always asks first, and takes the rule's exemptions with it.
+
+Disabling an enforcing rule, or switching it to dry-run, asks you to confirm, with what the change does.
+
 ## How it protects itself
 
 - **No rule ever applies to the dashboard,** even a `*` rule, and even with `dynamic.throttle` as global middleware: the package skips its routes by name, and before routing, by its path. So a bad rule can never lock you out of the place where you would fix it. An app route that also matches under that path, such as `{locale}/login`, stays limited.
@@ -75,7 +100,7 @@ The dashboard's pages read and change everything through a JSON API under `{path
 | Endpoint | Gate | Does |
 |---|---|---|
 | `GET api/me` | either | What you may do |
-| `GET api/rules`, `GET api/rules/{id}` | either | Rules in evaluation order, 100 a page; one rule with its exemptions |
+| `GET api/rules`, `GET api/rules/{id}` | either | Rules in evaluation order, 100 a page, narrowed by `search` (name or pattern), `enabled` and `mode`; one rule with its exemptions |
 | `GET api/rules/counts` | either | The enabled rules by mode, enforcing or dry-run, and the disabled ones |
 | `POST api/rules`, `PATCH api/rules/{id}`, `DELETE api/rules/{id}` | manage | Create, change or delete a rule |
 | `GET api/exemptions` | either | Exemptions, newest first, 100 a page; `?rule={id}` for one rule's |
