@@ -8,6 +8,7 @@ use Afzal\DynamicThrottle\Tests\Support\RuleSchema;
 use Afzal\DynamicThrottle\Tests\Support\Settings;
 use Afzal\DynamicThrottle\Tests\Support\Throttling;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Artisan;
 
 /*
 | SPEC-013: dynamic-throttle:scale (ADR-0011). AC-13 the command, AC-15 the
@@ -141,3 +142,8 @@ it('AC-23: writes one audit entry for each change, with the CLI\'s actor, and th
 
     expect(Settings::audit())->toBe([$entry(null, $double), $entry($double, $half), $entry($half, null)]);
 });
+
+it('AC-13: takes the factor as a number from Artisan::call(), as from a terminal', function (int|float $factor, int $percent): void {
+    expect(Artisan::call('dynamic-throttle:scale', ['factor' => $factor]))->toBe(0)
+        ->and(Settings::stored())->toBe(['scale_factor' => ['percent' => $percent, 'until' => Settings::at('2027-01-01 01:00:00')]]);
+})->with([[2, 200], [1.5, 150]]);
