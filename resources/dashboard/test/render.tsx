@@ -50,12 +50,13 @@ export function viewer(overrides: Answers = {}): Answers {
 }
 
 /**
- * Renders inside the dashboard's providers, at a path of the dashboard, with a
- * client that does not retry.
+ * Renders inside the dashboard's providers, at a path of the dashboard, which may
+ * hold a search string, with a client that does not retry.
  */
-export function renderAt(ui: ReactElement, path = '/'): RenderResult & { client: QueryClient } {
+export function renderAt(ui: ReactElement, path = '/'): RenderResult & { client: QueryClient; history: string[] } {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    const { hook } = memoryLocation({ path });
+    // Recorded, so a test can see where the page navigated, its search string too.
+    const { hook, history } = memoryLocation({ path, record: true });
 
     const result = render(
         <QueryClientProvider client={client}>
@@ -65,5 +66,5 @@ export function renderAt(ui: ReactElement, path = '/'): RenderResult & { client:
         </QueryClientProvider>,
     );
 
-    return { ...result, client };
+    return { ...result, client, history };
 }
