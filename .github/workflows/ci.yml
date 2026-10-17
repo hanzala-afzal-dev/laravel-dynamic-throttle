@@ -442,7 +442,7 @@ jobs:
       # export-ignore rules in .gitattributes. Users get the package, nothing else.
       - name: The Composer download contains only package files
         run: |
-          allowed='^(src|config|database|resources|routes|lang)/|^(composer\.json|LICENSE|README\.md|CHANGELOG\.md|SECURITY\.md)$'
+          allowed='^(src|config|database|resources|routes|lang|dist)/|^(composer\.json|LICENSE|README\.md|CHANGELOG\.md|SECURITY\.md)$'
           unexpected="$(git archive HEAD | tar -t | grep -v '/$' | grep -v -E "$allowed" || true)"
           if [ -n "$unexpected" ]; then
             echo "::error::These files would ship to users. Add them to export-ignore in .gitattributes, or to this allowlist if users need them:"
@@ -450,13 +450,65 @@ jobs:
             exit 1
           fi
 
-      - name: No npm toolchain in the package (ADR-0018)
+      # ADR-0028: users get the dashboard's build, never its sources or its toolchain.
+      - name: The Composer download holds the dashboard's build and none of its sources
         run: |
-          found="$(git ls-files '*package.json' '*package-lock.json' '*yarn.lock' '*pnpm-lock.yaml')"
-          if [ -n "$found" ]; then
-            echo "::error::ADR-0018: the dashboard uses no npm packages, but the repository contains: $found"
+          files="$(git archive HEAD | tar -t)"
+          if ! echo "$files" | grep -q '^dist/\.vite/manifest\.json$'; then
+            echo "::error::dist/.vite/manifest.json is not in the Composer download: run npm run build and commit dist/."
             exit 1
           fi
+          leaked="$(echo "$files" | grep -E '^(resources/dashboard/|package(-lock)?\.json$|vite\.config\.ts$|tsconfig\.json$|node_modules/)' || true)"
+          if [ -n "$leaked" ]; then
+            echo "::error::The dashboard's sources or toolchain would ship to users: $leaked"
+            exit 1
+          fi
+
+  # ADR-0028: the dashboard's frontend. dist/ is committed, so the build must be
+  # what the sources build, within its budget, with no known high advisory shipped.
+  frontend:
+    name: Dashboard frontend
+    needs: matrix
+    if: needs.matrix.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm run test
+
+      - name: The committed build is what the sources build
+        run: |
+          npm run build
+          changed="$(git status --porcelain -- dist)"
+          if [ -n "$changed" ]; then
+            echo "::error::dist/ differs from a fresh build: run npm run build and commit dist/."
+            echo "$changed"
+            exit 1
+          fi
+
+      - name: Bundle budget
+        run: npm run budget
+
+      - name: Known vulnerabilities in what ships
+        run: npm audit --omit=dev --audit-level=high
 
   install:
     name: Install into fresh Laravel ${{ matrix.laravel }}
@@ -523,7 +575,7 @@ jobs:
   ci-passed:
     name: CI passed
     if: always()
-    needs: [matrix, tests, drivers, mutation-stores, mutation-engine, mutation-changed, static-analysis, code-style, install, security]
+    needs: [matrix, tests, drivers, mutation-stores, mutation-engine, mutation-changed, static-analysis, code-style, frontend, install, security]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any job failed or was cancelled

@@ -31,3 +31,17 @@
 /pint.json export-ignore
 /rector.php export-ignore
 /testbench.yaml export-ignore
+
+# The dashboard's sources and toolchain (ADR-0028): users get dist/ only.
+/resources/dashboard export-ignore
+/package.json export-ignore
+/package-lock.json export-ignore
+/vite.config.ts export-ignore
+/tsconfig.json export-ignore
+/eslint.config.js export-ignore
+/components.json export-ignore
+/.nvmrc export-ignore
+
+# The build is generated: diffs and merges take it whole, and it is never edited by hand.
+/dist/** -diff linguist-generated=true
+
