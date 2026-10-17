@@ -1,0 +1,1 @@
+function e(e,t){return new Intl.NumberFormat(t).format(e)}function t(e,t,n){return new Intl.NumberFormat(n,{style:`percent`,maximumFractionDigits:1}).format(t===0?0:e/t)}export{t as n,e as t};
