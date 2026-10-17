@@ -94,6 +94,17 @@ final class DynamicThrottle
     }
 
     /**
+     * @internal the custom scopes' names, in the order the app registered them, for the Settings page (SPEC-031)
+     *
+     * @return list<string>
+     */
+    public function scopeNames(): array
+    {
+        // A name of digits alone is an integer key.
+        return array_map(strval(...), array_keys($this->scopes));
+    }
+
+    /**
      * @internal whether fake() replaced the counter store
      */
     public function isFaked(): bool
