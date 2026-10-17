@@ -47,7 +47,7 @@ export default ConfigCard;
 function Rows({ caption, rows }: { caption: string; rows: [React.ReactNode, React.ReactNode][] }) {
     return (
         <Table>
-            <caption className="mb-2 text-left text-sm font-medium">{caption}</caption>
+            <caption className="mb-2 caption-top text-left text-sm font-medium">{caption}</caption>
             <TableBody>
                 {rows.map(([key, value], index) => (
                     <TableRow key={index}>
