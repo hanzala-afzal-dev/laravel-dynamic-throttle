@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ExemptionsList } from '@/pages/exemptions/list';
 import { exemptionOf } from '@/test/exemptions';
-import { type Answer, type Answers, manager, mockApi, renderAt, type Sent } from '@/test/render';
+import { type Answer, type Answers, manager, mockApi, renderAt, type Sent, viewer } from '@/test/render';
 import { pageOf, ruleOf } from '@/test/rules';
 
 /* SPEC-023 AC-4 and AC-5: adding an exemption, for a while or with no end. */
@@ -160,5 +160,45 @@ describe('adding an exemption', () => {
 
         const exemption = { subject: 'ip', subject_parameter: null, value: '0.0.0.0/0', rule_id: null, expires_at: null, reason: null };
         await waitFor(() => expect(posts(sent)).toEqual([exemption, { ...exemption, confirm: true }]));
+    });
+});
+
+/* SPEC-024 AC-5: "Exempt…" on Activity opens the dialog filled with the entry's IP and rule. */
+
+describe('adding an exemption from Activity', () => {
+    const fromActivity = '/exemptions?rule=3&exempt=203.0.113.7';
+
+    it('SPEC-024 AC-5: opens filled with the IP and the rule the link names, and takes them out of the URL', async () => {
+        mockApi(manager(answers({ 'GET exemptions?state=active&rule=3': { body: pageOf([]) } })));
+        const { history } = renderAt(<ExemptionsList />, fromActivity);
+
+        const dialog = within(await screen.findByRole('dialog', { name: 'Add an exemption' }));
+
+        expect(dialog.getByLabelText('Who')).toHaveValue('ip');
+        expect(dialog.getByLabelText('Value')).toHaveValue('203.0.113.7');
+        await waitFor(() => expect(dialog.getByLabelText('Rule')).toHaveValue('3'));
+        expect(history.at(-1)).toBe('/exemptions?rule=3');
+    });
+
+    it('SPEC-024 AC-5: opens blank the next time', async () => {
+        mockApi(manager(answers({ 'GET exemptions?state=active&rule=3': { body: pageOf([]) } })));
+        renderAt(<ExemptionsList />, fromActivity);
+
+        const first = within(await screen.findByRole('dialog', { name: 'Add an exemption' }));
+        await userEvent.click(first.getByRole('button', { name: 'Cancel' }));
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+        const again = await openDialog();
+
+        expect(again.getByLabelText('Value')).toHaveValue('');
+    });
+
+    it('SPEC-024 AC-5: opens nothing for a viewer', async () => {
+        mockApi(viewer(answers({ 'GET exemptions?state=active&rule=3': { body: pageOf([]) } })));
+        renderAt(<ExemptionsList />, fromActivity);
+
+        await screen.findByRole('heading', { name: 'Exemptions' });
+        await waitFor(() => expect(screen.queryByRole('button', { name: 'Add exemption' })).not.toBeInTheDocument());
+
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
 });
