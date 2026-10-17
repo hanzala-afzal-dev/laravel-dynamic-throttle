@@ -49,4 +49,27 @@ describe('the emergency banner', () => {
         await waitFor(() => expect(sent.map(([method, path]) => `${method} ${path}`)).toContain('GET settings'));
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
+
+    it('SPEC-021 AC-14: says when turning off could not reach the server', async () => {
+        mockApi(manager({
+            ...bypassOn,
+            'PUT settings/bypass': () => {
+                throw new TypeError('Failed to fetch');
+            },
+        }));
+        renderAt(<EmergencyBanner />);
+
+        await userEvent.click(await screen.findByRole('button', { name: 'Turn off bypass' }));
+
+        expect(await screen.findByText('The server could not be reached: check the connection, then try again.')).toBeInTheDocument();
+    });
+
+    it('SPEC-021 AC-15: warns when turning off did not compile', async () => {
+        mockApi(manager({ ...bypassOn, 'PUT settings/bypass': { body: { ...turnedOff.body, manifest: { compiled: false, error: 'Connection refused' } } } }));
+        renderAt(<EmergencyBanner />);
+
+        await userEvent.click(await screen.findByRole('button', { name: 'Turn off bypass' }));
+
+        expect(await screen.findByText('Saved, but servers keep the previous manifest until a compile succeeds: Connection refused')).toBeInTheDocument();
+    });
 });

@@ -8,6 +8,9 @@ import { memoryLocation } from 'wouter/memory-location';
 /** A JSON answer of the mocked API. */
 export type Answer = { status?: number; body: unknown };
 
+/** An answer, or a function of the request's body that gives one. */
+export type Answers = Record<string, Answer | ((body: unknown) => Answer)>;
+
 /** The requests the mocked API received, as [method, path, body]. */
 export type Sent = [string, string, unknown][];
 
@@ -15,7 +18,7 @@ export type Sent = [string, string, unknown][];
  * Mocks fetch with answers by "METHOD path", the path after /dynamic-throttle/api/,
  * such as "GET me". Unknown requests answer 404.
  */
-export function mockApi(answers: Record<string, Answer | ((body: unknown) => Answer)>): Sent {
+export function mockApi(answers: Answers): Sent {
     const sent: Sent = [];
 
     vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
@@ -33,7 +36,7 @@ export function mockApi(answers: Record<string, Answer | ((body: unknown) => Ans
 }
 
 /** The answers every page needs: a manager, and no emergency setting on. */
-export function manager(overrides: Record<string, Answer> = {}): Record<string, Answer> {
+export function manager(overrides: Answers = {}): Answers {
     return {
         'GET me': { body: { can: { view: true, manage: true }, environment: 'production' } },
         'GET settings': { body: { bypass: { on: false, until: null }, scale: { factor: null, until: null } } },
@@ -42,7 +45,7 @@ export function manager(overrides: Record<string, Answer> = {}): Record<string, 
 }
 
 /** As manager(), for a viewer. */
-export function viewer(overrides: Record<string, Answer> = {}): Record<string, Answer> {
+export function viewer(overrides: Answers = {}): Answers {
     return manager({ 'GET me': { body: { can: { view: true, manage: false }, environment: 'local' } }, ...overrides });
 }
 

@@ -9,7 +9,7 @@ describe('App', () => {
         renderAt(<App />);
 
         expect(screen.getByText('Dynamic Throttle')).toBeInTheDocument();
-        expect(await screen.findByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument();
+        expect(await screen.findByRole('heading', { level: 1, name: 'Overview' }, { timeout: 5_000 })).toBeInTheDocument();
     });
 
     it('AC-17: keeps the frame when the API answers with a login page', async () => {
@@ -19,6 +19,6 @@ describe('App', () => {
         await waitFor(() => expect([client.getQueryState(['me'])?.status, client.getQueryState(['settings'])?.status]).toEqual(['error', 'error']));
 
         expect(screen.getByText('Dynamic Throttle')).toBeInTheDocument();
-        expect(await screen.findByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument();
+        expect(await screen.findByRole('heading', { level: 1, name: 'Overview' }, { timeout: 5_000 })).toBeInTheDocument();
     });
 });

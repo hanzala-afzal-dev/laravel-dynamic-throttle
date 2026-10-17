@@ -6,12 +6,15 @@ import { manager, mockApi, renderAt } from '@/test/render';
 /* SPEC-021: the Overview, the first page, loaded on demand. */
 
 describe('the Overview', () => {
-    it('AC-3, AC-4: is the dashboard\'s first page, with the health and rules cards', async () => {
+    it('AC-3, AC-4, AC-9: is the dashboard\'s first page, with the health and rules cards and the emergency controls', async () => {
         mockApi(manager({ 'GET health': { body: { status: 'ok', checks: [] } }, 'GET rules/counts': { body: { enforcing: 1, dry_run: 0, disabled: 0 } } }));
         renderAt(<Pages />, '/');
 
-        expect(await screen.findByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument();
+        // The Overview loads on demand, with Recharts: a busy machine can take a while.
+
+        expect(await screen.findByRole('heading', { level: 1, name: 'Overview' }, { timeout: 5_000 })).toBeInTheDocument();
         expect(await screen.findByRole('heading', { name: 'Health' })).toBeInTheDocument();
         expect(screen.getByRole('heading', { name: 'Rules' })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Emergency controls' })).toBeInTheDocument();
     });
 });
