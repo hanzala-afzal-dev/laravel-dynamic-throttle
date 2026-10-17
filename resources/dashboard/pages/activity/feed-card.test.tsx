@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FeedEntry } from '@/lib/feed';
 import { Pages } from '@/pages';
 import { FeedCard } from '@/pages/activity/feed-card';
-import { type Answers, mockApi, renderAt, viewer } from '@/test/render';
+import { type Answers, manager, mockApi, renderAt, viewer } from '@/test/render';
 
 /* SPEC-024 AC-1 to AC-4: the live feed of blocks, newest first, polled with since. */
 
@@ -277,5 +277,35 @@ describe('the Activity page', () => {
 
         expect(await screen.findByRole('heading', { level: 1, name: 'Activity' }, { timeout: 5_000 })).toBeInTheDocument();
         expect(await screen.findByRole('table', { name: 'Blocks in the last hour' })).toBeInTheDocument();
+    });
+});
+
+describe('the live feed\'s Exempt…', () => {
+    it('AC-5: opens the Exemptions page for a manager, with the entry\'s IP and rule', async () => {
+        mockApi(manager({ ...config(), 'GET feed': { body: { feed: [entry(500)] } } }));
+        const { history } = renderAt(<FeedCard />, '/activity');
+
+        await screen.findByRole('table', { name: 'Blocks in the last hour' });
+        await userEvent.click(within(rows()[0]!).getByRole('link', { name: 'Exempt 203.0.113.7 from Login' }));
+
+        expect(history.at(-1)).toBe('/exemptions?rule=3&exempt=203.0.113.7');
+    });
+
+    it('AC-5: offers none for an entry without an IP or a rule that was deleted', async () => {
+        mockApi(manager({ ...config(), 'GET feed': { body: { feed: [entry(900, { ip: null }), entry(500, { rule: 9, rule_name: null })] } } }));
+        renderAt(<FeedCard />, '/activity');
+
+        await screen.findByRole('table', { name: 'Blocks in the last hour' });
+
+        expect(screen.queryByRole('link', { name: /^Exempt/ })).not.toBeInTheDocument();
+    });
+
+    it('AC-5: offers none to a viewer', async () => {
+        mockApi(viewer({ ...config(), 'GET feed': { body: { feed: [entry(500)] } } }));
+        renderAt(<FeedCard />, '/activity');
+
+        await screen.findByRole('table', { name: 'Blocks in the last hour' });
+
+        expect(screen.queryByRole('link', { name: /^Exempt/ })).not.toBeInTheDocument();
     });
 });

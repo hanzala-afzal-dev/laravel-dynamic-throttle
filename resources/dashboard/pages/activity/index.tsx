@@ -1,4 +1,5 @@
 import { FeedCard } from '@/pages/activity/feed-card';
+import { OffendersCard } from '@/pages/activity/offenders-card';
 
 /** Activity (SPEC-024): who is blocked right now, from where, and on which route. */
 export function ActivityPage() {
@@ -9,6 +10,7 @@ export function ActivityPage() {
                 <p className="mt-1 text-sm text-muted-foreground">Who the rules block right now, from where, and on which route.</p>
             </div>
             <FeedCard />
+            <OffendersCard />
         </section>
     );
 }
