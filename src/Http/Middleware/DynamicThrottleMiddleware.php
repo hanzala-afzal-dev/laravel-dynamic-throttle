@@ -46,6 +46,7 @@ use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
+use stdClass;
 use Stringable;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
@@ -76,6 +77,12 @@ final readonly class DynamicThrottleMiddleware
      * decision 2, SPEC-015). One attribute, so a request costs one write.
      */
     private const string AFTER_RESPONSE = 'dynamic-throttle.after-response';
+
+    /**
+     * The methods the live feed keeps as sent: a client can send any run of capital
+     * letters as _method, ahead of routing, so a longer one is kept as OTHER (the review).
+     */
+    private const string FEED_METHOD = '/\A[A-Z_-]{1,16}\z/';
 
     public function __construct(
         // The rest is resolved in handle(), where its errors are caught: a config
@@ -244,7 +251,15 @@ final readonly class DynamicThrottleMiddleware
                 }
 
                 $microseconds = $this->clock->microseconds();
-                $feed = $this->feed($request, $records, intdiv($microseconds, 1_000), $feedIp === false ? null : $feedIp, $user);
+
+                try {
+                    $feed = $this->feed($request, $records, intdiv($microseconds, 1_000), $feedIp === false ? null : $feedIp, $user);
+                } catch (Throwable $exception) {
+                    // The request's numbers are still written, without its entries (the review).
+                    $this->report($exception);
+                    $feed = [];
+                }
+
                 $this->container->make(TelemetryBuffer::class)->record(intdiv($microseconds, 60_000_000), $weight, $records, $this->client($ip), $feed);
             }
         } catch (Throwable $exception) {
@@ -299,10 +314,12 @@ final readonly class DynamicThrottleMiddleware
 
         $route = $request->route();
         $route = $route instanceof Route ? $route->uri() : null;
+        $method = $request->getMethod();
+        $method = preg_match(self::FEED_METHOD, $method) === 1 ? $method : 'OTHER';
         $user ??= $this->heldUser();
 
         return array_map(
-            fn (TelemetryRecord $record): FeedEntry => new FeedEntry($time, $record->ruleId, $record->outcome, $request->getMethod(), $route, $ip, $user, $record->identityHash),
+            fn (TelemetryRecord $record): FeedEntry => new FeedEntry($time, $record->ruleId, $record->outcome, $method, $route, $ip, $user, $record->identityHash),
             $blocks,
         );
     }
@@ -317,11 +334,10 @@ final readonly class DynamicThrottleMiddleware
             $guard = $this->container->make(AuthFactory::class)->guard();
             $user = $guard->hasUser() ? $guard->user() : null;
             $id = $user?->getAuthIdentifier();
+            $id = $id instanceof Stringable ? (string) $id : $id;
         } catch (Throwable) {
             return null;
         }
-
-        $id = $id instanceof Stringable ? (string) $id : $id;
 
         return $user !== null && ((is_string($id) && $id !== '') || is_int($id)) ? $user::class.':'.$id : null;
     }
@@ -444,6 +460,8 @@ final readonly class DynamicThrottleMiddleware
         try {
             $events = $this->events($target, $evaluation);
             $records = $telemetry && $this->config->get('dynamic-throttle.telemetry.enabled') !== false ? $this->records($rules, $evaluation, $identities) : [];
+            // Only a block or a would-block leaves a feed entry: an allowed request keeps nothing more for it.
+            $blocks = $records !== [] && ($evaluation->rejection instanceof RuleAttempt || $evaluation->wouldBlock !== []);
 
             // Added to what an earlier run kept: an app that also lists the middleware
             // globally runs it twice for one request, which counts it twice (the review).
@@ -454,8 +472,8 @@ final readonly class DynamicThrottleMiddleware
                     // The client IP the rules counted, for the hour's traffic (SPEC-016).
                     'ip' => $this->keptIp($request, 'ip') ?? $identities->countedIp(),
                     // The same IP whole, and the user a rule resolved, for the live feed (SPEC-030).
-                    'feed_ip' => $this->keptIp($request, 'feed_ip') ?? $identities->wholeIp(),
-                    'user' => $this->keptUser($request) ?? $identities->resolvedUser(),
+                    'feed_ip' => $this->keptIp($request, 'feed_ip') ?? ($blocks ? $identities->wholeIp() : null),
+                    'user' => $this->keptUser($request) ?? ($blocks ? $identities->resolvedUser() : null),
                 ]);
             }
         } catch (Throwable $exception) {
@@ -600,7 +618,8 @@ final readonly class DynamicThrottleMiddleware
 
         return $override === null
             ? new ThrottleRequestsException('Too Many Attempts.', null, $headers)
-            : new HttpResponseException(new JsonResponse($override, 429, $headers));
+            // {} was saved, and the array cast read it back as [] (AC-22).
+            : new HttpResponseException(new JsonResponse($override === [] ? new stdClass : $override, 429, $headers));
     }
 
     /**
