@@ -37,8 +37,9 @@ export function SettingsHealthCard() {
                 {report === undefined && !health.isError && <Skeleton className="h-40 w-full" />}
                 {report !== undefined && (
                     <>
-                        <p className={cn('text-2xl font-semibold', report.status === 'error' ? 'text-destructive' : report.status === 'warning' ? 'text-warning' : 'text-success')}>{OVERALL[report.status]}</p>
+                        <p role="status" className={cn('text-2xl font-semibold', report.status === 'error' ? 'text-destructive' : report.status === 'warning' ? 'text-warning' : 'text-success')}>{OVERALL[report.status]}</p>
                         <Table>
+                            <caption className="sr-only">Checks</caption>
                             <TableHeader>
                                 <TableRow>
                                     <TableHead>Status</TableHead>

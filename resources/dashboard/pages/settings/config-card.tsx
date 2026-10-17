@@ -51,7 +51,10 @@ function Rows({ caption, rows }: { caption: string; rows: [React.ReactNode, Reac
             <TableBody>
                 {rows.map(([key, value], index) => (
                     <TableRow key={index}>
-                        <TableCell className="w-1/3 align-top text-muted-foreground">{key}</TableCell>
+                        {/* The key heads its row, so a screen reader names each value by it. */}
+                        <th scope="row" className="w-1/3 p-2 text-left align-top font-normal break-all text-muted-foreground">
+                            {key}
+                        </th>
                         <TableCell className="whitespace-normal">{value}</TableCell>
                     </TableRow>
                 ))}
