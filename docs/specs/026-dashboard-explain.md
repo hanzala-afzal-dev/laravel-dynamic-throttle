@@ -1,6 +1,6 @@
 # SPEC-026: The Explain page
 
-- Status: Approved
+- Status: Done
 - ADRs: ADR-0008, ADR-0028
 - Roadmap phase: 5
 
