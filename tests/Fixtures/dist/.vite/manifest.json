@@ -1,0 +1,22 @@
+{
+  "main.tsx": {
+    "file": "main-abc123.js",
+    "name": "main",
+    "src": "main.tsx",
+    "isEntry": true,
+    "imports": ["_vendor-def456.js"],
+    "dynamicImports": ["pages/rules.tsx"],
+    "css": ["main-ghi789.css"]
+  },
+  "_vendor-def456.js": {
+    "file": "vendor-def456.js",
+    "name": "vendor"
+  },
+  "pages/rules.tsx": {
+    "file": "rules-jkl012.js",
+    "name": "rules",
+    "src": "pages/rules.tsx",
+    "isDynamicEntry": true,
+    "imports": ["_vendor-def456.js"]
+  }
+}

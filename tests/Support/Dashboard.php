@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle\Tests\Support;
 
 use Afzal\DynamicThrottle\Dashboard\DashboardRoutes;
+use Afzal\DynamicThrottle\Dashboard\ViteManifest;
 use Afzal\DynamicThrottle\DynamicThrottleServiceProvider;
 use Closure;
 use Illuminate\Routing\RouteCollection;
@@ -55,6 +56,23 @@ final class Dashboard
         if ($manage instanceof Closure) {
             Gate::define('manageDynamicThrottle', $manage);
         }
+    }
+
+    /**
+     * The fixture build in tests/Fixtures/dist, so tests never depend on the hashes of
+     * the real dist/ (SPEC-020). After boot(), which binds the package's own.
+     */
+    public static function fixtureBuild(): void
+    {
+        app()->instance(ViteManifest::class, new ViteManifest(__DIR__.'/../Fixtures/dist'));
+    }
+
+    /**
+     * No build at all, as in a fresh clone before npm run build.
+     */
+    public static function noBuild(): void
+    {
+        app()->instance(ViteManifest::class, new ViteManifest(__DIR__.'/../Fixtures/no-build'));
     }
 
     /**
