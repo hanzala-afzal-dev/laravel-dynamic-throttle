@@ -9,6 +9,7 @@ const RuleForm = lazy(() => import('@/pages/rules/form'));
 const RulePage = lazy(() => import('@/pages/rules/rule'));
 const ExemptionsList = lazy(() => import('@/pages/exemptions/list'));
 const SettingsPage = lazy(() => import('@/pages/settings'));
+const ActivityPage = lazy(() => import('@/pages/activity'));
 
 /** The dashboard's pages, by path under its base (SPEC-020): placeholders until each page's spec. */
 export function Pages() {
@@ -30,7 +31,7 @@ export function Pages() {
                     <ExemptionsList />
                 </Route>
                 <Route path="/activity">
-                    <Placeholder title="Activity" spec="SPEC-024" />
+                    <ActivityPage />
                 </Route>
                 <Route path="/explain">
                     <Placeholder title="Explain" spec="SPEC-026" />
