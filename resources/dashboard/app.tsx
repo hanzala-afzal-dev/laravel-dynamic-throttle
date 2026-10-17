@@ -1,19 +1,11 @@
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { AppLayout } from '@/components/layout/app-layout';
+import { Pages } from '@/pages';
 
-/** The dashboard. Its frame and pages come with SPEC-020's later parts. */
+/** The dashboard: its frame around the page the path names (SPEC-020). */
 export function App() {
     return (
-        <main className="mx-auto max-w-xl p-8">
-            <Card>
-                <CardHeader>
-                    <CardTitle>Dynamic Throttle</CardTitle>
-                    <CardDescription>The dashboard is being built.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <Button variant="outline">Reload</Button>
-                </CardContent>
-            </Card>
-        </main>
+        <AppLayout>
+            <Pages />
+        </AppLayout>
     );
 }

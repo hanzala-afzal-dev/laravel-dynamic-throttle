@@ -14,6 +14,8 @@ use Afzal\DynamicThrottle\Support\EmergencyControls;
  */
 final class EnableRuleCommand extends ChangeCommand
 {
+    use NamesARule;
+
     protected $signature = 'dynamic-throttle:enable-rule
         {id : The rule\'s id, as dynamic-throttle:list shows it}
         {--force : Accepted, so scripts can pass it to every command: enabling a rule never asks}';

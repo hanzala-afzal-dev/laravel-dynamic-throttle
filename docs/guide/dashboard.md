@@ -1,6 +1,6 @@
 # The dashboard
 
-The dashboard ships with the package, as Horizon's does, and its pages arrive with the first release. This page covers what is in place already: where it is served, who gets in, how it protects itself, and its JSON API ([ADR-0015](../adr/0015-dashboard-security-and-audit.md), [SPEC-018](../specs/018-dashboard-access-and-guardrails.md), [SPEC-017](../specs/017-json-api.md)).
+The dashboard ships with the package, as Horizon's does: open `/dynamic-throttle` in your browser. There is nothing to build or publish; the package serves its own assets. Its pages arrive one by one before the first release. This page covers where it is served, who gets in, how it protects itself, and its JSON API ([ADR-0015](../adr/0015-dashboard-security-and-audit.md), [ADR-0028](../adr/0028-dashboard-react-shadcn.md), [SPEC-018](../specs/018-dashboard-access-and-guardrails.md), [SPEC-020](../specs/020-dashboard-foundation.md), [SPEC-017](../specs/017-json-api.md)).
 
 ## Where it is
 
@@ -40,7 +40,8 @@ Gate::define('manageDynamicThrottle', fn (User $user) => $user->is_admin);
 
 - **No rule ever applies to the dashboard,** even a `*` rule, and even with `dynamic.throttle` as global middleware: the package skips its routes by name, and before routing, by its path. So a bad rule can never lock you out of the place where you would fix it. An app route that also matches under that path, such as `{locale}/login`, stays limited.
 - **Laravel's own `throttle` limits it** to `rate_limit` requests a minute per user, or per IP for a guest, 120 by default; 0 turns the limit off.
-- **Its responses are never cached,** and their type is never guessed: `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`.
+- **Its responses are never cached, never framed,** and their type is never guessed: `Cache-Control: no-store`, `X-Frame-Options: DENY` and `X-Content-Type-Options: nosniff`. Only its assets are cached, for a year, under names that change with each release.
+- **Its pages send a strict Content Security Policy:** scripts and styles from your own site only, nothing inline, and no framing. If your app already sets a policy on the response, the package keeps yours, and then your policy must allow the dashboard's assets and the nonce in its `<meta name="csp-nonce">` tag.
 - **Every change needs `manageDynamicThrottle`,** whatever the route: any request but GET, HEAD and OPTIONS.
 
 ## What it refuses

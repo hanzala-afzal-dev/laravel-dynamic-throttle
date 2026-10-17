@@ -9,9 +9,9 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Every response of the dashboard, a 403 and a 429 too: never cached, and never
- * read as another type than it says (SPEC-018). The pages' Content Security Policy
- * comes with them (SPEC-020).
+ * Every response of the dashboard, a 403 and a 429 too: never cached, never read as
+ * another type than it says (SPEC-018), and never framed. The pages' Content
+ * Security Policy comes with them (SPEC-020).
  *
  * @internal
  */
@@ -25,6 +25,8 @@ final class SecurityHeaders
         $response = $next($request);
         $response->headers->set('Cache-Control', 'no-store, private');
         $response->headers->set('X-Content-Type-Options', 'nosniff');
+        // As the pages' frame-ancestors 'none', for an app whose own policy replaces the package's (SPEC-020 AC-16).
+        $response->headers->set('X-Frame-Options', 'DENY');
 
         return $response;
     }

@@ -4,7 +4,8 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-    { ignores: ['dist/', 'vendor/', 'node_modules/', 'workbench/'] },
+    // PHP's tests hold fixture builds, which are not ours to lint.
+    { ignores: ['dist/', 'vendor/', 'node_modules/', 'workbench/', 'tests/'] },
     {
         files: ['resources/dashboard/**/*.{ts,tsx}', 'vite.config.ts'],
         extends: [js.configs.recommended, ...tseslint.configs.recommended, reactHooks.configs.flat.recommended],

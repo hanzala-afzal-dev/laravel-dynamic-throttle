@@ -16,6 +16,8 @@ use InvalidArgumentException;
  */
 final class ScaleCommand extends ChangeCommand
 {
+    use TakesAnEndTime;
+
     protected $signature = 'dynamic-throttle:scale
         {factor : From 0.1 to 10, with at most two decimals, such as 1.5, or off}
         {--for= : How long, such as 90s, 30m, 2h or 1d. One hour by default}
@@ -26,8 +28,9 @@ final class ScaleCommand extends ChangeCommand
 
     public function handle(EmergencyControls $controls): int
     {
-        $factor = $this->argument('factor');
-        $factor = is_string($factor) ? $factor : '';
+        // A string from a terminal, or a number from Artisan::call().
+        $factor = $this->input->getArgument('factor');
+        $factor = is_scalar($factor) ? (string) $factor : '';
 
         try {
             $percent = $factor === 'off' ? null : ScaleFactor::percent($factor);

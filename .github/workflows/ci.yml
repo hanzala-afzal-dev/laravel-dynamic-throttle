@@ -483,7 +483,8 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        # Without install scripts, which no locked package needs on Linux: one way fewer for a compromised package to run code (SPEC-020 AC-19).
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Type check
         run: npm run typecheck
