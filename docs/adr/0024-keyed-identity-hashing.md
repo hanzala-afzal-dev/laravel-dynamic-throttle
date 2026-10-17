@@ -49,3 +49,16 @@
 
 - SPEC-008 AC-15: the same identity under two app keys hashes differently, and neither hash is the plain SHA-256.
 - SPEC-008 AC-14: no raw identifier appears in any key the store writes.
+
+## Amendment: the live feed (SPEC-030)
+
+Decided by the maintainer at the Phase 3 review (2026-10-13); written down on 2026-10-17.
+
+- The dashboard keeps the latest blocks and would-blocks with the client's **raw IP** and **user**, as `Class:id`, for an hour, so an admin can act on them during an incident. Viewers see them, as they see the audit log (ADR-0028).
+- Everything else stays as decided above:
+  - counters, offenders and metrics hold identity hashes only;
+  - an API token, a header's value or a custom scope's value is never kept raw, in the feed either;
+  - a request's path and query string are never kept: the feed holds the route's template.
+- The feed lives in the counter store, on Redis and Valkey only, in per-minute lists that expire 61 minutes after they are created. It is never written to the database.
+- `telemetry.live_feed` turns it off, for apps that must not keep raw IPs even for an hour.
+- **Consequence:** "the dashboard can never show which IP or user an identity belongs to" no longer holds for the last hour's blocks. A leaked counter store now reveals that hour's blocked clients.
