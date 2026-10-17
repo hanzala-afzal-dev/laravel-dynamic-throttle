@@ -46,6 +46,7 @@ use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
+use stdClass;
 use Stringable;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
@@ -617,7 +618,8 @@ final readonly class DynamicThrottleMiddleware
 
         return $override === null
             ? new ThrottleRequestsException('Too Many Attempts.', null, $headers)
-            : new HttpResponseException(new JsonResponse($override, 429, $headers));
+            // {} was saved, and the array cast read it back as [] (AC-22).
+            : new HttpResponseException(new JsonResponse($override === [] ? new stdClass : $override, 429, $headers));
     }
 
     /**
