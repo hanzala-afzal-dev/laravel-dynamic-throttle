@@ -21,7 +21,8 @@ function DialogOverlay({ className, ...props }: React.ComponentProps<typeof Dial
     );
 }
 
-function DialogContent({ className, children, ...props }: React.ComponentProps<typeof DialogPrimitive.Content>) {
+/** closeDisabled turns the corner's Close off, such as while the dialog's change is being sent. */
+function DialogContent({ className, children, closeDisabled = false, ...props }: React.ComponentProps<typeof DialogPrimitive.Content> & { closeDisabled?: boolean }) {
     return (
         <DialogPrimitive.Portal>
             <DialogOverlay />
@@ -34,7 +35,7 @@ function DialogContent({ className, children, ...props }: React.ComponentProps<t
                 {...props}
             >
                 {children}
-                <DialogPrimitive.Close className="absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
+                <DialogPrimitive.Close disabled={closeDisabled} className="absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
                     <XIcon aria-hidden />
                     <span className="sr-only">Close</span>
                 </DialogPrimitive.Close>

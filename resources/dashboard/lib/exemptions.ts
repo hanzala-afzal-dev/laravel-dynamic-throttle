@@ -83,20 +83,29 @@ export function useExemptions(filters: ExemptionFilters) {
 }
 
 /**
- * Who an exemption lets through, as a kind and a value: "IP" and "203.0.113.0/24", "User"
- * and "42" for App\Models\User:42, or the custom scope's name and its value.
+ * Who an exemption lets through, as a kind, a value and a detail: "IP" and
+ * "203.0.113.0/24"; "User", "42" and the class App\Models\User for App\Models\User:42;
+ * or "tenant:" and "acme" for a custom scope, marked so a scope named "user" never
+ * reads as a user (AC-10).
  */
-export function whoOf(exemption: Pick<Exemption, 'subject' | 'subject_parameter' | 'value'>): { kind: string; value: string } {
+export function whoOf(exemption: Pick<Exemption, 'subject' | 'subject_parameter' | 'value'>): { kind: string; value: string; detail: string | null } {
     if (exemption.subject === 'ip') {
-        return { kind: 'IP', value: exemption.value };
+        return { kind: 'IP', value: exemption.value, detail: null };
     }
 
     if (exemption.subject === 'user') {
-        // A user is stored as Class:id; a class name holds no colon.
-        return { kind: 'User', value: exemption.value.slice(exemption.value.lastIndexOf(':') + 1) };
+        // A user is stored as Class:id. A class name holds no colon, and an id may.
+        const colon = exemption.value.indexOf(':');
+
+        return colon < 0 ? { kind: 'User', value: exemption.value, detail: null } : { kind: 'User', value: exemption.value.slice(colon + 1), detail: exemption.value.slice(0, colon) };
     }
 
-    const scope = exemption.subject_parameter ?? 'custom';
+    return { kind: `${exemption.subject_parameter ?? 'custom'}:`, value: exemption.value, detail: null };
+}
 
-    return { kind: scope.charAt(0).toUpperCase() + scope.slice(1), value: exemption.value };
+/** Who an exemption lets through, in a sentence: "User 42", "IP 203.0.113.0/24". */
+export function whoLabel(exemption: Pick<Exemption, 'subject' | 'subject_parameter' | 'value'>): string {
+    const { kind, value } = whoOf(exemption);
+
+    return `${kind} ${value}`;
 }

@@ -106,11 +106,20 @@ export function useRule(id: number) {
 }
 
 /**
- * The name of a rule beyond the first 100, for a page that names rules by id (SPEC-023
- * decision 6). Names change rarely, so each row and filter that asks shares one request.
+ * The names of rules beyond the first 100, by id, in one request of at most 100 ids
+ * (SPEC-023 decision 6, AC-10). Names change rarely, and an exemption's change does not
+ * touch them, so they stay a minute.
  */
-export function useRuleName(id: number, enabled: boolean) {
-    return useQuery({ ...ruleQuery(id), enabled, staleTime: 60_000, select: (found) => found.rule.name });
+export function useRuleNames(ids: number[]) {
+    const asked = [...new Set(ids)].sort((a, b) => a - b).slice(0, 100).join(',');
+
+    return useQuery({
+        queryKey: ['rules', 'names', asked],
+        queryFn: () => api<RulePage>('GET', `rules?ids=${asked}`),
+        enabled: asked !== '',
+        staleTime: 60_000,
+        select: (page) => new Map(page.data.map((rule) => [rule.id, rule.name])),
+    });
 }
 
 function ruleQuery(id: number) {
