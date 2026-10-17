@@ -44,7 +44,9 @@ final readonly class RedisTelemetryBuffer implements TelemetryBuffer
      *   or the hour's traffic. A new client that would make the set 201 first cuts
      *   it back to the top 100, so it stays small, and a new heavy hitter can still
      *   climb into the top (AC-4);
-     * - "u", a rule's distinct clients in an hour, and the client.
+     * - "u", a rule's distinct clients in an hour, and the client;
+     * - "l", a minute's live feed, and "TTL SIZE" then its entries, a line each:
+     *   pushed so the last is first, cut to SIZE, and given its own TTL (SPEC-030).
      * A key gets its TTL when it is created, so a later write never pushes it back.
      * Returns how many keys it wrote.
      */
@@ -60,6 +62,15 @@ final readonly class RedisTelemetryBuffer implements TelemetryBuffer
                     redis.call('ZREMRANGEBYRANK', key, 0, -101)
                 end
                 redis.call('ZINCRBY', key, ARGV[1], argument)
+            elseif kind == 'l' then
+                local ttl, size, entries = string.match(argument, '^(%d+) (%d+)\n(.*)$')
+                for entry in string.gmatch(entries, '[^\n]+') do
+                    redis.call('LPUSH', key, entry)
+                end
+                redis.call('LTRIM', key, 0, tonumber(size) - 1)
+                if redis.call('TTL', key) == -1 then
+                    redis.call('EXPIRE', key, ttl)
+                end
             else
                 redis.call('PFADD', key, argument)
             end
@@ -68,6 +79,20 @@ final readonly class RedisTelemetryBuffer implements TelemetryBuffer
             end
         end
         return #KEYS
+        LUA;
+
+    /**
+     * KEYS: minutes' feeds, newest first. ARGV[1]: how many entries to read from each.
+     * Returns their entries, in turn.
+     */
+    private const string FEED_SCRIPT = <<<'LUA'
+        local entries = {}
+        for _, key in ipairs(KEYS) do
+            for _, entry in ipairs(redis.call('LRANGE', key, 0, tonumber(ARGV[1]) - 1)) do
+                entries[#entries + 1] = entry
+            end
+        end
+        return entries
         LUA;
 
     /** KEYS[1]: a minute's hash. Returns its fields and values, in turn. */
@@ -111,7 +136,7 @@ final readonly class RedisTelemetryBuffer implements TelemetryBuffer
         private KeyBuilder $keys,
     ) {}
 
-    public function record(int $minute, int $weight, array $records, ?string $client = null): void
+    public function record(int $minute, int $weight, array $records, ?string $client = null, array $feed = []): void
     {
         if ($weight < 1) {
             throw new InvalidArgumentException("A request stands for at least 1 request, got {$weight}.");
@@ -153,6 +178,13 @@ final readonly class RedisTelemetryBuffer implements TelemetryBuffer
             $setArguments[] = 'requests';
         }
 
+        // The live feed: the request's blocks and would-blocks, in the same call (SPEC-030 decision 2).
+        if ($feed !== []) {
+            $sets[] = $this->keys->feed($minute);
+            $setArguments[] = 'l';
+            $setArguments[] = self::FEED_TTL_SECONDS.' '.self::FEED_SIZE."\n".implode("\n", array_map(fn (FeedEntry $entry): string => $entry->toJson(), $feed));
+        }
+
         $keys = [$this->keys->telemetryMinute($minute), ...$sets];
         $arguments = [(string) $weight, (string) self::TTL_SECONDS, 'h', implode(' ', $fields), ...$setArguments];
 
@@ -172,6 +204,46 @@ final readonly class RedisTelemetryBuffer implements TelemetryBuffer
         foreach ($keys as $index => $key) {
             $this->wrote(1, $this->run(self::RECORD_SCRIPT, 'record the request', [$key], [$arguments[0], $arguments[1], $arguments[2 * $index + 2], $arguments[2 * $index + 3]]));
         }
+    }
+
+    public function feed(int $minute, ?int $since = null): array
+    {
+        // The minutes a read covers, newest first, from the one $since falls in when it is later.
+        $oldest = max($minute - self::FEED_MINUTES + 1, $since === null ? PHP_INT_MIN : intdiv($since, 60_000));
+        $keys = array_map($this->keys->feed(...), $oldest > $minute ? [] : range($minute, $oldest));
+        $lines = [];
+
+        try {
+            $connection = $this->redis->connection($this->connection);
+        } catch (Throwable $exception) {
+            throw StorageUnavailableException::because('The Redis telemetry buffer could not read the feed.', $exception);
+        }
+
+        // One call outside Redis Cluster, and one per key on it (AC-6).
+        foreach ($connection instanceof PhpRedisClusterConnection || $connection instanceof PredisClusterConnection ? array_map(fn (string $key): array => [$key], $keys) : [$keys] as $batch) {
+            $reply = $batch === [] ? [] : $this->run(self::FEED_SCRIPT, 'read the feed', $batch, [(string) self::FEED_SIZE]);
+
+            if (! is_array($reply)) {
+                throw $this->unexpectedReply();
+            }
+
+            array_push($lines, ...$reply);
+        }
+
+        $entries = [];
+
+        foreach ($lines as $line) {
+            $entry = is_string($line) ? FeedEntry::fromJson($line) : null;
+
+            if ($entry instanceof FeedEntry && ($since === null || $entry->time > $since)) {
+                $entries[] = $entry;
+            }
+        }
+
+        // Newest first across minutes and servers; entries of one time keep the order Redis gave.
+        usort($entries, fn (FeedEntry $a, FeedEntry $b): int => $b->time <=> $a->time);
+
+        return array_slice($entries, 0, self::FEED_SIZE);
     }
 
     /**

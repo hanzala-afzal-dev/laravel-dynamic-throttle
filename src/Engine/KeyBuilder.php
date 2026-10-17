@@ -135,6 +135,17 @@ final readonly class KeyBuilder
     }
 
     /**
+     * A minute's live feed on Redis: a list of its blocks and would-blocks, newest first
+     * (SPEC-030).
+     *
+     * @param  int  $minute  Unix minutes
+     */
+    public function feed(int $minute): string
+    {
+        return "{$this->prefix}t:f:{$minute}";
+    }
+
+    /**
      * The last minute the flush moved (SPEC-015).
      */
     public function telemetryFlushed(): string
