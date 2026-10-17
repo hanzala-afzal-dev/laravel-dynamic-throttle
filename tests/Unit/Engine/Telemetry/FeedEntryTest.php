@@ -42,6 +42,7 @@ it('SPEC-030 AC-4: reads anything but a whole entry as none', function (string $
     expect(FeedEntry::fromJson($json))->toBeNull();
 })->with([
     'not JSON' => ['{'],
+    'a string' => ['"an entry"'],
     'a list' => ['[1,2]'],
     'no time' => ['{"r":"1","o":"blocked","m":"GET","p":null,"i":null,"u":null,"h":"x"}'],
     'a time as text' => ['{"t":"1","r":"1","o":"blocked","m":"GET","p":null,"i":null,"u":null,"h":"x"}'],
@@ -52,6 +53,13 @@ it('SPEC-030 AC-4: reads anything but a whole entry as none', function (string $
     'an ip as a number' => ['{"t":1,"r":"1","o":"blocked","m":"GET","p":null,"i":7,"u":null,"h":"x"}'],
     'no identity' => ['{"t":1,"r":"1","o":"blocked","m":"GET","p":null,"i":null,"u":null}'],
 ]);
+
+it('SPEC-030 AC-4: writes compact JSON, slashes and non-ASCII as they are, and invalid UTF-8 replaced', function (): void {
+    $entry = new FeedEntry(1, '7', TelemetryOutcome::Blocked, 'GET', 'café/{order}', null, "App\\Models\\User:\xff", 'h');
+
+    expect($entry->toJson())->toBe('{"t":1,"r":"7","o":"blocked","m":"GET","p":"café/{order}","i":null,"u":"App\\\\Models\\\\User:'."\u{FFFD}".'","h":"h"}')
+        ->and(FeedEntry::fromJson($entry->toJson())?->user)->toBe("App\\Models\\User:\u{FFFD}");
+});
 
 it('SPEC-030 AC-8: gives the API\'s fields', function (): void {
     $entry = new FeedEntry(1_800_000_000_123, '7', TelemetryOutcome::WouldBlock, 'POST', 'login', '203.0.113.7', null, str_repeat('a', 64));

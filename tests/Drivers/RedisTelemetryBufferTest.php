@@ -470,3 +470,41 @@ it('SPEC-030 AC-6: writes the feed in a call of its own on a Redis Cluster conne
         ->and($buffer->feed($minute))->toEqual([Telemetry::entry('1')])
         ->and((int) $connection->command('ttl', [$prefix."t:f:{$minute}"]))->toBeGreaterThan(3_650)->toBeLessThanOrEqual(3_660);
 })->with('telemetry clients and services');
+
+it('SPEC-030 AC-4: reads the 60 minutes up to the given one, and not the minute before them', function (string $client, string $host, int $port): void {
+    [$buffer] = redisTelemetry($client, $host, $port);
+    $now = Telemetry::minute(1_800_000_000);
+
+    foreach ([$now + 1, $now, $now - 59, $now - 60] as $minute) {
+        $buffer->record($minute, 1, [Telemetry::blocked('1')], null, [Telemetry::entry('1', time: $minute * 60_000)]);
+    }
+
+    expect(array_map(fn (FeedEntry $entry): int => intdiv($entry->time, 60_000), $buffer->feed($now) ?? []))->toBe([$now, $now - 59]);
+})->with('telemetry clients and services');
+
+it('SPEC-030 AC-4: orders entries by their time, whatever minute a server with a skewed clock filed them in', function (string $client, string $host, int $port): void {
+    [$buffer] = redisTelemetry($client, $host, $port);
+    $now = Telemetry::minute(1_800_000_000);
+    $buffer->record($now, 1, [Telemetry::blocked('1')], null, [Telemetry::entry('1', time: $now * 60_000 + 1)]);
+    // A server whose clock runs ahead filed this one a minute earlier, with a later time.
+    $buffer->record($now - 1, 1, [Telemetry::blocked('1')], null, [Telemetry::entry('1', time: $now * 60_000 + 2)]);
+
+    expect(array_map(fn (FeedEntry $entry): int => $entry->time - $now * 60_000, $buffer->feed($now) ?? []))->toBe([2, 1]);
+})->with('telemetry clients and services');
+
+it('SPEC-030 AC-4 and AC-6: reads the feed in one script call, and one per minute on a Redis Cluster connection', function (string $client, string $host, int $port): void {
+    $commands = [];
+    [$buffer] = redisTelemetry($client, $host, $port, $commands);
+    $clusterCommands = [];
+    [$cluster] = clusterTelemetry($client, $host, $port, $clusterCommands);
+    $minute = Telemetry::minute(1_800_000_000);
+    // Redis may not have the script yet: the first read loads it.
+    $buffer->feed($minute);
+    $cluster->feed($minute);
+    [$commands, $clusterCommands] = [[], []];
+
+    $buffer->feed($minute);
+    $cluster->feed($minute);
+
+    expect($commands)->toBe(['evalsha'])->and($clusterCommands)->toBe(array_fill(0, 60, 'evalsha'));
+})->with('telemetry clients and services');
