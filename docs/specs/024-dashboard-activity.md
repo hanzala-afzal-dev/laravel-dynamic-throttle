@@ -1,6 +1,6 @@
 # SPEC-024: The Activity page
 
-- Status: Approved
+- Status: Done
 - ADRs: ADR-0013, ADR-0024, ADR-0028
 - Roadmap phase: 5
 

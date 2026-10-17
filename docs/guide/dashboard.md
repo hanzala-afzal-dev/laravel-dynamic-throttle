@@ -89,6 +89,18 @@ An exemption lets a client through one rule, or every rule, for a while or with 
 
 A range wider than a /8 for IPv4, or a /32 for IPv6, asks you to confirm first. There is no edit: remove an exemption and add another, so the audit log shows each change. Remove asks first, naming who and which rule.
 
+## The Activity page
+
+Who the rules block right now, from where, and on which route.
+
+**The live feed** lists the last hour's blocks and would-blocks, newest first: when, the outcome, the rule, the method and the route's template, the client's IP and the user. New ones arrive every 5 seconds while the tab is visible. The page holds the newest 500. Pause keeps the rows still while you read, and Resume fetches what came meanwhile. Filter by outcome and by rule.
+
+- It needs Redis or Valkey, and `telemetry.live_feed` on, as it is by default ([Traffic and blocks](telemetry.md)). The page says so when either is missing. When telemetry samples requests, the page says it shows about one block in N.
+- It shows raw IPs and users to viewers too, for an hour. Turn the feed off if your app must not.
+- **Exempt…,** for a manager, opens the Exemptions page's dialog with that IP and rule filled in, so the confirmation and the audit entry are the same as anywhere else.
+
+**Offenders** shows the clients any rule blocked most, this hour or the last, by identity hash, and how many different clients it blocked. A rule's own page shows the same for that rule.
+
 ## The Settings page
 
 Everything on it only reads, for viewers and managers alike:
