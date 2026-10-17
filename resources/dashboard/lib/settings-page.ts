@@ -48,7 +48,25 @@ function isGroup(value: ConfigValue): value is Record<string, ConfigValue> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** A value as the config file would hold it: dt:, true, null, ["web"]. */
+/** A value as the config file would hold it: dt:, true, null, ["web"], and "" for an empty string. */
 function shown(value: ConfigValue): string {
-    return typeof value === 'string' ? value : JSON.stringify(value);
+    return typeof value === 'string' && value !== '' ? value : JSON.stringify(value);
 }
+
+/** What each health check looks for, from the health guide's table (decision 5). */
+export const CHECK_PURPOSES: Record<string, string> = {
+    config: 'A config the counter driver cannot be built from, the kill switch off, a value the package replaces with its default, or a group or middleware that names nothing.',
+    store: 'What the counter store guarantees. The file, apc and octane stores count per server, the database store writes on every limited request, and array and null are for tests.',
+    'cache-clear': 'The Redis driver in the Redis database of a cache store, which php artisan cache:clear flushes, every limit with it.',
+    'app-key': 'No APP_KEY, so identities are hashed without a key.',
+    attached: 'dynamic.throttle on no route, and not global middleware, so no rule applies.',
+    except: 'Horizon, Telescope, Pulse, Nova or Sanctum at a path except does not cover, so a rule can limit them.',
+    'two-limiters': 'Routes that run Laravel\'s throttle too, which writes the same headers.',
+    'middleware-order': 'Routes where authentication runs after dynamic.throttle, so user rules count your users as guests.',
+    manifest: 'No manifest in the cache, so no rule applies. One the scheduled compile has not rewritten for 10 minutes. More than 500 rules or 1,000 exemptions.',
+    emergency: 'Bypass or a scale factor left on with no end time, or with one more than 24 hours away.',
+    metrics: 'Metrics not flushed for more than 10 minutes: the scheduler is not running.',
+    guests: 'A user rule that saw mostly guests in the last hour: authentication the route check cannot see, or a rule on public routes.',
+    'dominant-ip': 'One client IP behind half or more of the recent requests: usually a load balancer\'s, because the trusted proxies are not set. Redis and Valkey only.',
+    ignored: 'Rules ignored in the last hour because more rules of their mode matched a request than matching.max_rules_per_request allows.',
+};
