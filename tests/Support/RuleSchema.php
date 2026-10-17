@@ -20,7 +20,7 @@ final class RuleSchema
     public const string MIGRATIONS = __DIR__.'/../../database/migrations';
 
     /** @var resource|null the lock this process holds on the shared databases, if any */
-    private static $lock = null;
+    private static $lock;
 
     public static function migrate(): void
     {
