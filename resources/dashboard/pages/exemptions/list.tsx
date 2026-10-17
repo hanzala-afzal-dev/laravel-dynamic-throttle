@@ -22,12 +22,11 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useConfirmedChange } from '@/lib/confirmed-change';
-import { type Exemption, type ExemptionFilters, filtersOf, pageQuery, useExemptions, whoOf } from '@/lib/exemptions';
+import { type Exemption, type ExemptionFilters, filtersOf, pageQuery, useExemptions, whoLabel, whoOf } from '@/lib/exemptions';
 import { useCanManage } from '@/lib/queries';
-import { type Rule, useRules } from '@/lib/rules';
+import { useRuleNames, useRules } from '@/lib/rules';
 import { Time } from '@/lib/time';
 import { AddExemptionDialog, EXEMPTION_QUERIES } from '@/pages/exemptions/add-dialog';
-import { RuleName } from '@/pages/exemptions/rule-name';
 
 /** Every rule's first page, in evaluation order: the filter's choices and the rows' names (decision 6). */
 const FIRST_RULES = { search: '', enabled: '', mode: '', page: 1 } as const;
@@ -39,6 +38,11 @@ export function ExemptionsList() {
     const lastPage = exemptions.isPlaceholderData ? undefined : exemptions.data?.last_page;
     // undefined until the rules load, so no row asks for a name the list will give.
     const rules = useRules(FIRST_RULES).data?.data;
+    // The rules beyond the first 100 that the rows or the filter name, asked for together once those load (decision 6).
+    const filteredRule = /^\d+$/.test(filters.rule) ? Number(filters.rule) : null;
+    const far = rules === undefined ? [] : [...(exemptions.data?.data ?? []).map((exemption) => exemption.rule_id), filteredRule].filter((ruleId): ruleId is number => ruleId !== null && !rules.some((rule) => rule.id === ruleId));
+    const farNames = useRuleNames(far).data;
+    const nameOf = (ruleId: number) => rules?.find((rule) => rule.id === ruleId)?.name ?? farNames?.get(ruleId) ?? `Rule #${ruleId}`;
     const canManage = useCanManage();
     const id = useId();
 
@@ -56,7 +60,7 @@ export function ExemptionsList() {
                     <h1 className="text-2xl font-semibold tracking-tight">Exemptions</h1>
                     <p className="mt-1 text-sm text-muted-foreground">Who skips one rule or every rule, and until when.</p>
                 </div>
-                {canManage && <AddExemptionDialog rules={rules} rule={/^\d+$/.test(filters.rule) ? filters.rule : ''} />}
+                {canManage && <AddExemptionDialog rules={rules} rule={filteredRule === null ? '' : filters.rule} nameOf={nameOf} />}
             </div>
 
             <div className="flex flex-wrap items-end gap-3">
@@ -80,7 +84,7 @@ export function ExemptionsList() {
                 <div className="grid gap-1.5">
                     <Label htmlFor={`${id}-rule`}>Rule</Label>
                     <NativeSelect id={`${id}-rule`} className="max-w-64" value={filters.rule} onChange={(event) => setFilters({ ...filters, rule: event.target.value, page: 1 })}>
-                        <option value="">All rules</option>
+                        <option value="">Any rule</option>
                         <option value="none">Every rule</option>
                         {rules?.map((rule) => (
                             <option key={rule.id} value={String(rule.id)}>
@@ -88,9 +92,7 @@ export function ExemptionsList() {
                             </option>
                         ))}
                         {/^\d+$/.test(filters.rule) && rules?.some((rule) => String(rule.id) === filters.rule) !== true && (
-                            <option value={filters.rule}>
-                                <RuleName id={Number(filters.rule)} rules={rules} />
-                            </option>
+                            <option value={filters.rule}>{nameOf(Number(filters.rule))}</option>
                         )}
                     </NativeSelect>
                 </div>
@@ -115,7 +117,7 @@ export function ExemptionsList() {
                             </TableHeader>
                             <TableBody>
                                 {exemptions.data.data.map((exemption) => (
-                                    <ExemptionRow key={exemption.id} exemption={exemption} rules={rules} canManage={canManage} />
+                                    <ExemptionRow key={exemption.id} exemption={exemption} nameOf={nameOf} canManage={canManage} />
                                 ))}
                             </TableBody>
                         </Table>
@@ -142,7 +144,7 @@ export function ExemptionsList() {
 
 export default ExemptionsList;
 
-function ExemptionRow({ exemption, rules, canManage }: { exemption: Exemption; rules: Rule[] | undefined; canManage: boolean }) {
+function ExemptionRow({ exemption, nameOf, canManage }: { exemption: Exemption; nameOf: (id: number) => string; canManage: boolean }) {
     return (
         <TableRow className={exemption.active ? undefined : 'text-muted-foreground'}>
             <TableCell>
@@ -153,7 +155,7 @@ function ExemptionRow({ exemption, rules, canManage }: { exemption: Exemption; r
                     'Every rule'
                 ) : (
                     <Link href={`/rules/${exemption.rule_id}`} className="font-medium underline-offset-4 hover:underline">
-                        <RuleName id={exemption.rule_id} rules={rules} />
+                        {nameOf(exemption.rule_id)}
                     </Link>
                 )}
             </TableCell>
@@ -172,24 +174,24 @@ function ExemptionRow({ exemption, rules, canManage }: { exemption: Exemption; r
             <TableCell>{exemption.created_at === null ? '—' : <Time value={exemption.created_at} />}</TableCell>
             {canManage && (
                 <TableCell className="text-right">
-                    <RemoveExemption exemption={exemption} rules={rules} />
+                    <RemoveExemption exemption={exemption} rule={exemption.rule_id === null ? 'every rule' : nameOf(exemption.rule_id)} />
                 </TableCell>
             )}
         </TableRow>
     );
 }
 
-/** Remove asks first, naming who and which rule (SPEC-023 AC-6, decision 5). */
-function RemoveExemption({ exemption, rules }: { exemption: Exemption; rules: Rule[] | undefined }) {
+/** Remove asks first, naming who, the user's class, and which rule (SPEC-023 AC-6, AC-10, decision 5). */
+function RemoveExemption({ exemption, rule }: { exemption: Exemption; rule: string }) {
     const change = useConfirmedChange(EXEMPTION_QUERIES);
-    const { kind, value } = whoOf(exemption);
-    const who = `${kind} ${value}`;
+    const who = whoLabel(exemption);
+    const { detail } = whoOf(exemption);
 
     return (
         <div className="grid justify-items-end gap-1">
             <AlertDialog>
                 <AlertDialogTrigger asChild>
-                    <Button variant="ghost" size="icon" aria-label={`Remove the exemption for ${who}`} disabled={change.pending}>
+                    <Button variant="ghost" size="icon" aria-label={`Remove the exemption for ${who} on ${rule}`} disabled={change.pending}>
                         <Trash2 aria-hidden />
                     </Button>
                 </AlertDialogTrigger>
@@ -197,7 +199,8 @@ function RemoveExemption({ exemption, rules }: { exemption: Exemption; rules: Ru
                     <AlertDialogHeader>
                         {/* The trailing space keeps the title and the description apart when read as one. */}
                         <AlertDialogTitle>
-                            Remove the exemption for {who} on {exemption.rule_id === null ? 'every rule' : <RuleName id={exemption.rule_id} rules={rules} />}
+                            Remove the exemption for {who}
+                            {detail === null ? '' : ` (${detail})`} on {rule}
                             {'? '}
                         </AlertDialogTitle>
                         <AlertDialogDescription>Its requests are limited again.</AlertDialogDescription>

@@ -1,5 +1,5 @@
 import { Plus } from 'lucide-react';
-import { type ReactNode, useId, useState } from 'react';
+import { type ReactNode, useEffect, useId, useState } from 'react';
 import { ChangeOutcome, ConfirmDialog } from '@/components/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -9,7 +9,6 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { useConfirmedChange } from '@/lib/confirmed-change';
 import type { Exemption } from '@/lib/exemptions';
 import type { Rule } from '@/lib/rules';
-import { RuleName } from '@/pages/exemptions/rule-name';
 
 /** How long an exemption lasts, 1 day by default (decision 3). */
 const LENGTHS = [
@@ -33,32 +32,38 @@ export const EXEMPTION_QUERIES = [['exemptions'], ['rules', 'one'], ['audit']];
  * "Add exemption", for a manager: who, for which rule, for how long and why (SPEC-023
  * AC-4, AC-5). The end time is now plus the length, computed when saving.
  */
-export function AddExemptionDialog({ rules, rule }: { rules: Rule[] | undefined; rule: string }) {
+export function AddExemptionDialog({ rules, rule, nameOf }: { rules: Rule[] | undefined; rule: string; nameOf: (id: number) => string }) {
     const [open, setOpen] = useState(false);
+    // While the exemption is being sent, the dialog stays: closing it would not stop the request (AC-10).
+    const [sending, setSending] = useState(false);
 
     return (
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={(next) => (sending && !next ? undefined : setOpen(next))}>
             <DialogTrigger asChild>
                 <Button>
                     <Plus aria-hidden />
                     Add exemption
                 </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent closeDisabled={sending}>
                 <DialogHeader>
                     <DialogTitle>Add an exemption</DialogTitle>
                     <DialogDescription>Its requests skip the rule, or every rule, until it ends.</DialogDescription>
                 </DialogHeader>
                 {/* Mounted while open, so each opening starts blank. */}
-                <AddForm rules={rules} rule={rule} onAdded={() => setOpen(false)} />
+                <AddForm rules={rules} rule={rule} nameOf={nameOf} onSending={setSending} onAdded={() => setOpen(false)} />
             </DialogContent>
         </Dialog>
     );
 }
 
-function AddForm({ rules, rule, onAdded }: { rules: Rule[] | undefined; rule: string; onAdded: () => void }) {
+type AddFormProps = { rules: Rule[] | undefined; rule: string; nameOf: (id: number) => string; onSending: (sending: boolean) => void; onAdded: () => void };
+
+function AddForm({ rules, rule, nameOf, onSending, onAdded }: AddFormProps) {
     const [values, setValues] = useState({ subject: 'ip' as Exemption['subject'], scope: '', value: '', rule, length: '1d', reason: '' });
     const change = useConfirmedChange(EXEMPTION_QUERIES, { onSuccess: onAdded });
+
+    useEffect(() => onSending(change.pending), [change.pending, onSending]);
     const id = useId();
     const set = (key: keyof typeof values, value: string) => setValues((current) => ({ ...current, [key]: value }));
     const error = (field: string) => change.fields[field]?.[0];
@@ -115,9 +120,7 @@ function AddForm({ rules, rule, onAdded }: { rules: Rule[] | undefined; rule: st
                             </option>
                         ))}
                         {rule !== '' && rules?.some((candidate) => String(candidate.id) === rule) !== true && (
-                            <option value={rule}>
-                                <RuleName id={Number(rule)} rules={rules} />
-                            </option>
+                            <option value={rule}>{nameOf(Number(rule))}</option>
                         )}
                     </NativeSelect>
                 )}
@@ -139,7 +142,7 @@ function AddForm({ rules, rule, onAdded }: { rules: Rule[] | undefined; rule: st
             {Object.keys(change.fields).length === 0 && <ChangeOutcome change={change} />}
             <DialogFooter>
                 <DialogClose asChild>
-                    <Button type="button" variant="outline">
+                    <Button type="button" variant="outline" disabled={change.pending}>
                         Cancel
                     </Button>
                 </DialogClose>

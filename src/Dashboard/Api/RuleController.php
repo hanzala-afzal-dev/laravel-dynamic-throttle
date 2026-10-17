@@ -58,11 +58,14 @@ final readonly class RuleController
                 'search' => ['sometimes', 'nullable', 'string', 'max:100'],
                 'enabled' => ['sometimes', 'in:true,false'],
                 'mode' => ['sometimes', ValidationRule::enum(RuleMode::class)],
-            ])->validate();
+                // Up to 100 ids, for the names of the rules a page shows (SPEC-023 AC-9).
+                'ids' => ['sometimes', 'string', 'regex:/\A[1-9][0-9]{0,17}(,[1-9][0-9]{0,17}){0,99}\z/'],
+            ], ['ids.regex' => 'The ids must be up to 100 rule ids, separated by commas.'])->validate();
             $search = trim(is_string($filters['search'] ?? null) ? $filters['search'] : '');
             $like = $this->like($search);
             $enabled = $filters['enabled'] ?? null;
             $mode = $filters['mode'] ?? null;
+            $ids = is_string($filters['ids'] ?? null) ? array_map(intval(...), explode(',', $filters['ids'])) : null;
 
             $page = Rule::query()
                 ->when($search !== '', fn (Builder $rules) => $rules->where(
@@ -70,6 +73,7 @@ final readonly class RuleController
                 ))
                 ->when(is_string($enabled), fn (Builder $rules) => $rules->where('enabled', $enabled === 'true'))
                 ->when(is_string($mode), fn (Builder $rules) => $rules->where('mode', $mode))
+                ->when($ids !== null, fn (Builder $rules) => $rules->whereIn('id', $ids))
                 ->orderBy('priority')->orderBy('id')
                 ->paginate(self::PER_PAGE)->withQueryString()
                 ->through(fn (Rule $rule): array => Payloads::rule($rule));

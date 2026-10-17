@@ -114,7 +114,7 @@ The dashboard's pages read and change everything through a JSON API under `{path
 | Endpoint | Gate | Does |
 |---|---|---|
 | `GET api/me` | either | What you may do |
-| `GET api/rules`, `GET api/rules/{id}` | either | Rules in evaluation order, 100 a page, narrowed by `search` (name or pattern, ignoring case; `%` and `_` match themselves), `enabled` and `mode`; one rule with its exemptions |
+| `GET api/rules`, `GET api/rules/{id}` | either | Rules in evaluation order, 100 a page, narrowed by `search` (name or pattern, ignoring case; `%` and `_` match themselves), `enabled`, `mode` and `ids` (up to 100, comma-separated); one rule with its exemptions |
 | `GET api/rules/counts` | either | The enabled rules by mode, enforcing or dry-run, and the disabled ones |
 | `POST api/rules`, `PATCH api/rules/{id}`, `DELETE api/rules/{id}` | manage | Create, change or delete a rule |
 | `GET api/exemptions` | either | Exemptions, newest first, 100 a page, narrowed by `state` (`active` or `expired`), `subject` (`ip`, `user` or `custom`) and `rule` (an id, or `none` for those on every rule) |
