@@ -1,11 +1,23 @@
 {
   "main.tsx": {
-    "file": "main-pOXKjxb8.js",
+    "file": "main-CuDjL6Ax.js",
     "name": "main",
     "src": "main.tsx",
     "isEntry": true,
+    "dynamicImports": [
+      "pages/overview/index.tsx"
+    ],
     "css": [
-      "main-B-Ym93HQ.css"
+      "main-D-LbpXaA.css"
+    ]
+  },
+  "pages/overview/index.tsx": {
+    "file": "overview-BGiumCuI.js",
+    "name": "overview",
+    "src": "pages/overview/index.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "main.tsx"
     ]
   }
 }

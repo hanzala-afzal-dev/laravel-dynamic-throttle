@@ -21,7 +21,7 @@ The Overview is the dashboard's first page, at `{path}`. It loads its own code o
 ### The cards along the top
 - **Health,** from `api/health`:
   - "Healthy", "Warnings" or "Errors", from the report's status;
-  - up to 3 checks that are not ok, with their messages;
+  - up to 3 errors and warnings, errors first, with their messages; a skipped check is not a problem;
   - a link to Settings for the whole report, and a "Check again" button.
 - **Rules,** from a new `GET api/rules/counts`: how many are enabled, split into enforcing and dry-run, and how many are disabled. It links to Rules.
 - **Blocks in the last hour:** the 429s every enforcing rule answered, with their share of the rules' checks.
@@ -68,7 +68,7 @@ Numbers use the browser's locale. The last hour's cards read `api/metrics?period
 - **AC-2** The bundle budget counts the Overview's code with the entry's, since it is the first page; CI fails above 300 KB gzipped.
 
 ### Frontend (Vitest)
-- **AC-3** The health card shows "Healthy", "Warnings" or "Errors" from the report's status, lists up to 3 checks that are not ok with their messages, and links to Settings. "Check again" asks `api/health` again.
+- **AC-3** The health card shows "Healthy", "Warnings" or "Errors" from the report's status, lists up to 3 errors and warnings, errors first, with their messages, and no skipped check, and links to Settings. "Check again" asks `api/health` again.
 - **AC-4** The rules card shows the enabled rules with the enforcing and dry-run counts, and the disabled count, and links to Rules.
 - **AC-5** The last hour's cards sum every rule's blocks and would-blocks over the 60 minutes, with the blocks' share of the checks, in the browser's locale.
 - **AC-6** The chart's tabs ask `api/metrics` for `hour`, `day` or `week`. The sentence above the chart gives that period's totals. With no numbers, the card says no rule checked a request in that period.
