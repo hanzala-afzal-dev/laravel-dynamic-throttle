@@ -27,4 +27,5 @@ composer.lock
 Thumbs.db
 
 # The dashboard's toolchain (ADR-0028): dist/ is committed, node_modules never, at any depth (Vitest caches in resources/dashboard/node_modules).
-node_modules/
+# Without the slash, a node_modules symlink is ignored too.
+node_modules
