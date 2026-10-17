@@ -5,7 +5,7 @@ import { formatTime } from '@/lib/time';
 import { Pages } from '@/pages';
 import { ExemptionsList } from '@/pages/exemptions/list';
 import { exemptionOf } from '@/test/exemptions';
-import { type Answers, mockApi, renderAt, type Sent, viewer } from '@/test/render';
+import { type Answers, manager, mockApi, renderAt, type Sent, viewer } from '@/test/render';
 import { pageOf, ruleOf } from '@/test/rules';
 
 /* SPEC-023 AC-2 and AC-3: the list of exemptions and its filters. */
@@ -35,7 +35,7 @@ describe('the exemptions list', () => {
         expect(rows().map((row) => within(row).getAllByRole('cell').map((cell) => cell.textContent))).toEqual([
             ['IP 203.0.113.0/24', 'Every rule', 'The office', 'Never', local('2027-01-15T09:30:00+00:00')],
             ['User 42', 'Login', 'A partner', local('2027-01-22T12:00:00+00:00'), local('2027-01-15T08:00:00+00:00')],
-            ['Tenant acme', 'Orders', '—', `Ended ${local('2027-01-14T12:00:00+00:00')}`, local('2027-01-13T12:00:00+00:00')],
+            ['tenant: acme', 'Orders', '—', `Ended ${local('2027-01-14T12:00:00+00:00')}`, local('2027-01-13T12:00:00+00:00')],
         ]);
         expect(screen.getByRole('link', { name: 'Login' })).toHaveAttribute('href', '/rules/3');
         expect(screen.getByText('42')).toHaveAttribute('title', 'App\\Models\\User:42');
@@ -45,14 +45,14 @@ describe('the exemptions list', () => {
         const exports = ruleOf({ id: 250, name: 'Exports' });
         const sent = mockApi(viewer(answers({
             'GET exemptions?state=active&rule=250': { body: pageOf([exemptionOf({ rule_id: 250 })]) },
-            'GET rules/250': { body: { rule: exports, exemptions: [] } },
+            'GET rules?ids=250': { body: pageOf([exports]) },
         })));
         renderAt(<ExemptionsList />, '/exemptions?rule=250');
 
         expect(await screen.findByRole('link', { name: 'Exports' })).toHaveAttribute('href', '/rules/250');
         expect(screen.getByLabelText('Rule')).toHaveValue('250');
         expect(within(screen.getByLabelText('Rule')).getByRole('option', { name: 'Exports' })).toBeInTheDocument();
-        expect(sent.filter(([, path]) => path === 'rules/250')).toHaveLength(1);
+        expect(sent.filter(([, path]) => path === 'rules?ids=250')).toHaveLength(1);
     });
 
     it('AC-2: says when no exemption is active, or none matches the filters', async () => {
@@ -137,5 +137,88 @@ describe('the exemptions list', () => {
         renderAt(<Pages />, '/exemptions');
 
         expect(await screen.findByRole('combobox', { name: 'State' }, { timeout: 5_000 })).toBeInTheDocument();
+    });
+});
+
+describe('removing an exemption', () => {
+    const removed = { body: { exemption: PARTNER, changed: true, manifest: { compiled: true, version: 5 } } };
+    const changes = (sent: Sent) => sent.filter(([method]) => method !== 'GET').map(([method, path, body]) => [method, path, body]);
+
+    it('AC-6: asks first, naming who and which rule, then removes it', async () => {
+        const sent = mockApi(manager(answers({ 'DELETE exemptions/11': removed })));
+        renderAt(<ExemptionsList />, '/exemptions');
+
+        await screen.findByRole('link', { name: 'Login' });
+        await userEvent.click(screen.getByRole('button', { name: 'Remove the exemption for User 42 on Login' }));
+        const dialog = await screen.findByRole('alertdialog');
+
+        expect(dialog).toHaveTextContent('Remove the exemption for User 42 (App\\Models\\User) on Login? Its requests are limited again.');
+
+        await userEvent.click(within(dialog).getByRole('button', { name: 'Remove' }));
+
+        await waitFor(() => expect(changes(sent)).toEqual([['DELETE', 'exemptions/11', {}]]));
+        await waitFor(() => expect(gets(sent).filter((path) => path === 'exemptions?state=active')).toHaveLength(2));
+    });
+
+    it('AC-6: names every rule, and sends nothing when cancelled', async () => {
+        const sent = mockApi(manager(answers()));
+        renderAt(<ExemptionsList />, '/exemptions');
+
+        await userEvent.click(await screen.findByRole('button', { name: 'Remove the exemption for IP 203.0.113.0/24 on every rule' }));
+        const dialog = await screen.findByRole('alertdialog');
+
+        expect(dialog).toHaveTextContent('Remove the exemption for IP 203.0.113.0/24 on every rule?');
+
+        await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+        expect(changes(sent)).toEqual([]);
+    });
+
+    it('AC-7: shows a viewer no Add exemption and no Remove', async () => {
+        mockApi(viewer(answers()));
+        const { client } = renderAt(<ExemptionsList />, '/exemptions');
+
+        await screen.findByRole('table');
+        await waitFor(() => expect(client.getQueryState(['me'])?.status).toBe('success'));
+
+        expect(screen.queryByRole('button', { name: 'Add exemption' })).not.toBeInTheDocument();
+        expect(screen.queryAllByRole('button', { name: /Remove/ })).toEqual([]);
+    });
+});
+
+describe('the exemptions list, from the review', () => {
+    it('AC-10: names the rules beyond the first 100 in one request, and keeps them after a change', async () => {
+        const far = [ruleOf({ id: 250, name: 'Exports' }), ruleOf({ id: 260, name: 'Imports' })];
+        const sent = mockApi(manager(answers({
+            'GET exemptions?state=active': { body: pageOf([exemptionOf({ id: 31, rule_id: 250 }), exemptionOf({ id: 32, rule_id: 260, value: '198.51.100.9' }), exemptionOf({ id: 33, rule_id: 250, value: '198.51.100.10' })]) },
+            'GET rules?ids=250,260': { body: pageOf(far) },
+            'DELETE exemptions/31': { body: { exemption: null, changed: true, manifest: { compiled: true, version: 5 } } },
+        })));
+        renderAt(<ExemptionsList />, '/exemptions');
+
+        expect(await screen.findByRole('link', { name: 'Imports' })).toHaveAttribute('href', '/rules/260');
+        await userEvent.click(screen.getByRole('button', { name: 'Remove the exemption for IP 203.0.113.10 on Exports' }));
+        await userEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Remove' }));
+        await waitFor(() => expect(gets(sent).filter((path) => path === 'exemptions?state=active')).toHaveLength(2));
+
+        expect(sent.filter(([, path]) => path.startsWith('rules?ids=') || path.startsWith('rules/'))).toEqual([['GET', 'rules?ids=250,260', undefined]]);
+    });
+
+    it('AC-10: shows a user whose id holds a colon whole, and marks a custom subject by its scope', async () => {
+        mockApi(viewer(answers({ 'GET exemptions?state=active': { body: pageOf([exemptionOf({ subject: 'user', value: 'App\\Models\\User:team:5' }), exemptionOf({ id: 2, subject: 'custom', subject_parameter: 'user', value: '42' })]) } })));
+        renderAt(<ExemptionsList />, '/exemptions');
+
+        await screen.findByRole('table');
+
+        expect(rows().map((row) => within(row).getAllByRole('cell')[0]?.textContent)).toEqual(['User team:5', 'user: 42']);
+    });
+
+    it('AC-10: offers "Any rule" and "Every rule" as the rule filter\'s first choices', async () => {
+        mockApi(viewer(answers()));
+        renderAt(<ExemptionsList />, '/exemptions');
+
+        await screen.findByRole('option', { name: 'Login' });
+
+        expect(within(screen.getByLabelText('Rule')).getAllByRole('option').map((option) => option.textContent)).toEqual(['Any rule', 'Every rule', 'Login', 'Orders']);
     });
 });

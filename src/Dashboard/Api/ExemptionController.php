@@ -42,12 +42,13 @@ final readonly class ExemptionController
             $filters = $this->validation->make($request->query(), [
                 'state' => ['sometimes', 'string', 'in:active,expired'],
                 'subject' => ['sometimes', ValidationRule::enum(ExemptionSubject::class)],
-                'rule' => ['sometimes', 'regex:/^(none|[1-9][0-9]{0,17})$/'],
+                'rule' => ['sometimes', 'regex:/\A(none|[1-9][0-9]{0,17})\z/'],
             ], ['rule.regex' => 'The rule filter must be a rule\'s id or none.'])->validate();
             $state = $filters['state'] ?? null;
             $subject = $filters['subject'] ?? null;
             $rule = $filters['rule'] ?? null;
-            $now = Date::now();
+            // The table holds UTC, and a query binding is written as is, in its own zone (AC-8).
+            $now = Date::now('UTC');
 
             $page = Exemption::query()
                 ->when($state === 'active', fn (Builder $exemptions) => $exemptions->where(

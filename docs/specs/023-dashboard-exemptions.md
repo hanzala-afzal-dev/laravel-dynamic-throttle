@@ -1,6 +1,6 @@
 # SPEC-023: The Exemptions page
 
-- Status: Approved
+- Status: Done
 - ADRs: ADR-0015, ADR-0028
 - Roadmap phase: 5
 
@@ -18,7 +18,7 @@ The JSON API already does each change, with its validation, its confirmation for
 
 ### The list, at `{path}/exemptions`
 - **The exemptions, newest first,** 100 a page, from `GET api/exemptions`. Each row shows:
-  - who: "IP 203.0.113.0/24", "User 42", or "Tenant acme" for a custom subject, with its scope's name;
+  - who: "IP 203.0.113.0/24", "User 42", or "tenant: acme" for a custom subject, with its scope's name;
   - which rule: a link to it, or "Every rule";
   - the reason;
   - when it ends: a time in the browser's zone, "Never", or "Ended …" for an expired one;
@@ -32,7 +32,7 @@ The JSON API already does each change, with its validation, its confirmation for
 - **The form, in a dialog:**
   - who: IP or range, user, or custom with the scope's name;
   - the value: an IP or CIDR range, a user's id, or the custom scope's value;
-  - the rule: every rule, or one rule, chosen by name;
+  - the rule: every rule, or one rule, chosen by name; the rule the list shows, by default;
   - how long: 1 hour, 1 day (the default), 7 days, 30 days, or no end;
   - an optional reason.
 - **Saving** sends `POST api/exemptions`. The end time is computed in the browser as now plus the chosen length, in UTC.
@@ -63,11 +63,17 @@ The JSON API already does each change, with its validation, its confirmation for
 - **AC-6** Remove asks first, naming who and which rule, and then sends `DELETE api/exemptions/{id}`. Cancel sends nothing.
 - **AC-7** A viewer sees no "Add exemption" and no Remove.
 
+### From the review
+- **AC-8** The state filter is right in any app time zone, east or west of UTC: it compares with now in UTC, as the table stores times. An exemption ending at this second is expired. The rule filter refuses a trailing newline, even without Laravel's TrimStrings.
+- **AC-9** `GET api/rules?ids=3,250` lists the rules with those ids, up to 100, in evaluation order. Anything but a list of ids answers 422.
+- **AC-10** The page names the rules beyond the first 100 in one request, which an exemption's change does not ask again. A user id may hold a colon. A custom subject reads "tenant: acme", so a scope named `user` never reads as a user. Remove names the rule in its label, and the user's class in its dialog. While an exemption is being added, the dialog stays open, with Cancel and Close off. Confirm sends the end time the 409 answered.
+
 ## Interfaces and files
 
-- `src/Dashboard/Api/ExemptionController.php`: the filters in `index()`.
+- `src/Dashboard/Api/ExemptionController.php`: the filters in `index()`. `RuleController.php`: the `ids` filter (AC-9).
 - `resources/dashboard/pages/exemptions/`: `list.tsx`, `add-dialog.tsx`, and their tests.
-- `resources/dashboard/lib/exemptions.ts`: the types, the query and the labels.
+- `resources/dashboard/lib/exemptions.ts`: the types, the query and the labels. `components/exemption-who.tsx` shows who an exemption lets through, on this page and a rule's.
+- `resources/dashboard/components/ui/dialog.tsx`: shadcn/ui's dialog, for the add form.
 
 ## Out of scope
 
@@ -82,6 +88,7 @@ The JSON API already does each change, with its validation, its confirmation for
 - **1,000 exemptions:** the manifest's health check warns (SPEC-016); the list pages through them all.
 - **A custom scope the app no longer registers:** adding one answers 422 with the API's message.
 - **The browser's clock is wrong:** the end time it computes is off by as much. The API refuses an end in the past.
+- **The app's time zone is not UTC:** the filters still split active from expired at the same instant as the engine (AC-8).
 
 ## End-to-end verification
 
@@ -102,7 +109,7 @@ The maintainer vetoes any of these in the PR (ADR-0027).
 3. **Lengths are choices,** 1 hour to 30 days or no end, as for bypass (SPEC-021 decision 7), and 1 day by default. The end time is computed in the browser at the moment of saving.
 4. **No edit.** Remove and add again, so each change stays one plain entry in the audit log.
 5. **Remove asks first in the page,** as deleting a rule does (SPEC-022 decision 6). The API asks for no confirmation, since removing an exemption only limits more.
-6. **The rules' names come from `api/rules`,** and the exemption's payload stays as SPEC-017 gives it. The first 100 rules, in evaluation order, are the filter's and the form's choices. A rule beyond them, in a row or in the URL, is asked for by its id.
+6. **The rules' names come from `api/rules`,** and the exemption's payload stays as SPEC-017 gives it. The first 100 rules, in evaluation order, are the filter's and the form's choices. The rules beyond them, in the rows or in the URL, are asked for together, with `api/rules?ids=` (AC-9, AC-10).
 
 ## PRs
 
@@ -110,7 +117,7 @@ The maintainer vetoes any of these in the PR (ADR-0027).
 |---|---|---|---|
 | 1 | `phase-5/spec-023-1` | This spec | Decisions |
 | 2 | `phase-5/spec-023-2` | The API's filters, and the list with its filters | AC-1 to AC-3 |
-| 3 | `phase-5/spec-023-3` | Add and remove, the guide, the changelog and the spec's close | AC-4 to AC-7 |
+| 3 | `phase-5/spec-023-3` | Add and remove, the review's fixes, the guide, the changelog and the spec's close | AC-4 to AC-10 |
 
 ## Open questions
 
