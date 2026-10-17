@@ -9,6 +9,7 @@ use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryOutcome;
 use Afzal\DynamicThrottle\Enums\RuleMode;
 use Afzal\DynamicThrottle\Enums\Scope;
 use Afzal\DynamicThrottle\Facades\DynamicThrottle;
+use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Tests\Support\Auth\TestUser;
 use Afzal\DynamicThrottle\Tests\Support\FailingStore;
@@ -16,6 +17,8 @@ use Afzal\DynamicThrottle\Tests\Support\FakeClock;
 use Afzal\DynamicThrottle\Tests\Support\Identities;
 use Afzal\DynamicThrottle\Tests\Support\RecordingTelemetryBuffer;
 use Afzal\DynamicThrottle\Tests\Support\Throttling;
+use Illuminate\Auth\GenericUser;
+use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -170,4 +173,37 @@ it('AC-7: gives an IPv6 client\'s whole address, not its /64', function (): void
     $this->withServerVariables(['REMOTE_ADDR' => '2001:db8::1'])->get('api/x')->assertStatus(429);
 
     expect(array_map(fn (FeedEntry $entry): ?string => $entry->ip, feedEntries($this->buffer)))->toBe(['2001:db8::1']);
+});
+
+/*
+| From the review.
+*/
+
+it('AC-2: keeps a method longer than 16 characters, which a client can send ahead of routing, as OTHER', function (): void {
+    app(HttpKernel::class)->pushMiddleware(DynamicThrottleMiddleware::class);
+    Throttling::rule(['max_attempts' => 1, 'mode' => RuleMode::DryRun]);
+
+    $this->post('api/x', ['_method' => 'PROPFIND']);
+    $this->post('api/x', ['_method' => 'PROPFIND']);
+    $this->post('api/x', ['_method' => str_repeat('A', 10_000)]);
+    $this->post('api/x', ['_method' => 'BASELINECONTROLS']);
+
+    expect(array_map(fn (FeedEntry $entry): string => $entry->method, feedEntries($this->buffer)))->toBe(['PROPFIND', 'OTHER', 'BASELINECONTROLS']);
+});
+
+it('AC-3: still records the request, without a user, when the held user\'s id cannot be read', function (): void {
+    Throttling::rule(['max_attempts' => 1]);
+    Throttling::route('api/x');
+    $user = new GenericUser(['id' => new class implements Stringable
+    {
+        public function __toString(): string
+        {
+            throw new RuntimeException('The id cannot be read.');
+        }
+    }]);
+
+    $this->actingAs($user)->get('api/x')->assertOk();
+    $this->actingAs($user)->get('api/x')->assertStatus(429);
+
+    expect([count($this->buffer->recorded), array_map(fn (FeedEntry $entry): ?string => $entry->user, feedEntries($this->buffer))])->toBe([2, [null]]);
 });
