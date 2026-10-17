@@ -1,14 +1,5 @@
 import { useId, useState } from 'react';
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { ChangeOutcome, ConfirmDialog } from '@/components/confirm-dialog';
 import { QueryError } from '@/components/query-error';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -92,8 +83,8 @@ function Bypass({ state, canManage }: { state: Settings['bypass']; canManage: bo
                         </Button>
                     </div>
                 ))}
-            <Outcome change={change} />
-            <Confirmation change={change} />
+            <ChangeOutcome change={change} />
+            <ConfirmDialog change={change} note="The end time counts from when you confirm." />
         </section>
     );
 }
@@ -158,8 +149,8 @@ function Scaling({ state, canManage }: { state: Settings['scale']; canManage: bo
                         )}
                     </form>
                 ))}
-            {factorError === undefined && <Outcome change={change} />}
-            <Confirmation change={change} />
+            {factorError === undefined && <ChangeOutcome change={change} />}
+            <ConfirmDialog change={change} note="The end time counts from when you confirm." />
         </section>
     );
 }
@@ -173,37 +164,5 @@ function Durations({ id, value, onChange }: { id: string; value: string; onChang
                 </option>
             ))}
         </NativeSelect>
-    );
-}
-
-type Changing = ReturnType<typeof useSettingChange>;
-
-/** Why the change failed, or that it was saved but did not compile. */
-function Outcome({ change }: { change: Changing }) {
-    if (change.error !== null) {
-        return <p className="text-sm text-destructive">{change.error.message}</p>;
-    }
-
-    return change.warning === null ? null : <p className="text-sm font-medium text-amber-700 dark:text-warning">{change.warning}</p>;
-}
-
-function Confirmation({ change }: { change: Changing }) {
-    const confirming = change.confirming;
-
-    return (
-        <AlertDialog open={change.asking} onOpenChange={(open) => !open && change.close()}>
-            <AlertDialogContent>
-                <AlertDialogHeader>
-                    <AlertDialogTitle>Confirm the change</AlertDialogTitle>
-                    <AlertDialogDescription>
-                        {confirming?.message} The end time counts from when you confirm.
-                    </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={change.confirm}>Confirm</AlertDialogAction>
-                </AlertDialogFooter>
-            </AlertDialogContent>
-        </AlertDialog>
     );
 }

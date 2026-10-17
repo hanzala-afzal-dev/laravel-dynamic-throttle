@@ -4,6 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 /* Each page loads its own code when opened (ADR-0028 point 5). */
 const Overview = lazy(() => import('@/pages/overview'));
+const RulesList = lazy(() => import('@/pages/rules/list'));
 
 /** The dashboard's pages, by path under its base (SPEC-020): placeholders until each page's spec. */
 export function Pages() {
@@ -14,7 +15,7 @@ export function Pages() {
                     <Overview />
                 </Route>
                 <Route path="/rules">
-                    <Placeholder title="Rules" spec="SPEC-022" />
+                    <RulesList />
                 </Route>
                 <Route path="/rules/new">
                     <Placeholder title="New rule" spec="SPEC-022" />

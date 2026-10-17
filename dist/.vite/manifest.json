@@ -1,22 +1,41 @@
 {
+  "_table-BoKcbxuC.js": {
+    "file": "table-BoKcbxuC.js",
+    "name": "table",
+    "imports": [
+      "main.tsx"
+    ]
+  },
   "main.tsx": {
-    "file": "main-B_hpY3Xz.js",
+    "file": "main-BldUUjdW.js",
     "name": "main",
     "src": "main.tsx",
     "isEntry": true,
     "dynamicImports": [
-      "pages/overview/index.tsx"
+      "pages/overview/index.tsx",
+      "pages/rules/list.tsx"
     ],
     "css": [
-      "main-B62-w1Ld.css"
+      "main-CGKi8sRF.css"
     ]
   },
   "pages/overview/index.tsx": {
-    "file": "overview-BdVqAi72.js",
+    "file": "overview-BlCWrSkP.js",
     "name": "overview",
     "src": "pages/overview/index.tsx",
     "isDynamicEntry": true,
     "imports": [
+      "_table-BoKcbxuC.js",
+      "main.tsx"
+    ]
+  },
+  "pages/rules/list.tsx": {
+    "file": "list-xlP1w1fL.js",
+    "name": "list",
+    "src": "pages/rules/list.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_table-BoKcbxuC.js",
       "main.tsx"
     ]
   }
