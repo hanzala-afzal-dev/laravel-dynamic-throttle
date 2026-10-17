@@ -111,6 +111,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - `GET api/exemptions` takes `state`, `subject` and `rule=none`.
   - The Settings page: every health check with what it looks for, the configuration servers run with, and the commands for when the dashboard is down.
   - `GET api/config`: the counters' driver, the manifest store, the package's config, the custom scopes and strict mode.
+  - The Explain page: the decision a request gets, in words, its matching rules with their identities and counters, the route's middleware, and the context, without counting it. Its form's values travel in the body, never the URL.
   - The Audit log page: every change, newest first, with what changed in one line and the full before and after on demand, filtered by action, target, actor and time in the page's URL, and 100 more at a time.
   - The Activity page: the live feed of the last hour's blocks, new ones every 5 seconds, with pause and filters, "Exempt…" for a manager, and any rule's offenders this hour or the last.
   - The live feed: on Redis and Valkey, telemetry keeps the last hour's blocks and would-blocks, the newest 500 a minute, with the client's IP and the user the request already held, never its path, a token or a header's value. `GET api/feed` reads them, and `?since=` only the new ones. Config key `telemetry.live_feed` (`DYNAMIC_THROTTLE_LIVE_FEED`, default true) turns it off. It costs no round trip: the entries go in the request's telemetry call.

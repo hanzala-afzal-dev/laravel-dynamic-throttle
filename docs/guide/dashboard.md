@@ -107,6 +107,16 @@ Every change to the rules, the exemptions and the emergency settings, from the d
 
 Filter by action, by target such as `rule:12`, by actor such as `cli:deploy` or `user:App\Models\User:42`, and by time, entered in your browser's zone. The filters stay in the page's URL, so you can share a filtered view; a rule's History links to its own entries. **Load more** fetches the next 100. The page only reads: the log is append-only.
 
+## The Explain page
+
+What the rules would do with a request, and why, as [`dynamic-throttle:explain`](explain.md) prints it. Nothing is counted or changed, and viewers can use it.
+
+Give the method and the path, and optionally the client's IP, a user's id with its guard, and headers, one `Name: value` a line. They travel in the request's body, never in the URL, since a header can hold a token; the answer shows tokens and header values masked to their last 4 characters.
+
+- **The decision** the next such request gets, in words: allowed, blocked with a 429 by a named rule, a 503 or through anyway past a rule that could not be checked, or untouched and why, with the rate-limit headers it would carry.
+- **The matching rules,** in the order they run: each one's limit under the scale factor, its scope, what it does with the request (counts it, exempt, skipped, ignored over the cap, failed, not reached), the identity it counts, and its counter: the count, what remains, and whether the next request goes through.
+- **The route** and its middleware in running order, with whether `dynamic.throttle` runs after authentication, so user rules see the user; and the manifest, bypass, the scale factor and the counters it read.
+
 ## The Settings page
 
 Everything on it only reads, for viewers and managers alike:

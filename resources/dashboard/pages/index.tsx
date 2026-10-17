@@ -11,8 +11,9 @@ const ExemptionsList = lazy(() => import('@/pages/exemptions/list'));
 const SettingsPage = lazy(() => import('@/pages/settings'));
 const ActivityPage = lazy(() => import('@/pages/activity'));
 const AuditLogPage = lazy(() => import('@/pages/audit'));
+const ExplainPage = lazy(() => import('@/pages/explain'));
 
-/** The dashboard's pages, by path under its base (SPEC-020): placeholders until each page's spec. */
+/** The dashboard's pages, by path under its base (SPEC-020). */
 export function Pages() {
     return (
         <Suspense fallback={<Loading />}>
@@ -35,7 +36,7 @@ export function Pages() {
                     <ActivityPage />
                 </Route>
                 <Route path="/explain">
-                    <Placeholder title="Explain" spec="SPEC-026" />
+                    <ExplainPage />
                 </Route>
                 <Route path="/audit">
                     <AuditLogPage />
@@ -48,15 +49,6 @@ export function Pages() {
                 </Route>
             </Switch>
         </Suspense>
-    );
-}
-
-function Placeholder({ title, spec }: { title: string; spec: string }) {
-    return (
-        <section>
-            <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-            <p className="mt-2 text-sm text-muted-foreground">This page comes with {spec}.</p>
-        </section>
     );
 }
 
