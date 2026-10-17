@@ -1,6 +1,6 @@
 # SPEC-030: The live feed of blocks
 
-- Status: Approved
+- Status: Done
 - ADRs: ADR-0013, ADR-0024 (amended here), ADR-0026, ADR-0028
 - Roadmap phase: 5
 
@@ -51,8 +51,8 @@ The maintainer decided at the Phase 3 review that the dashboard keeps the latest
 
 ### Engine and middleware (Pest, the driver suite on Redis and Valkey)
 - **AC-1** A request an enforcing rule blocks, on Redis, leaves an entry with its time, the rule, `blocked`, the method, the route's template, the client IP, and the identity hash. A dry-run rule's would-block leaves one with `would_block`. An allowed request leaves none.
-- **AC-2** Behind an `api_token` rule, a `header` rule and a custom-scope rule, no entry holds the token, the header's value or the scope's value. No entry holds the request's path with its values, or its query string.
-- **AC-3** The user is the one a user rule resolved, as `Class:id`, or the one the default guard already holds. With neither, it is null, and the feed made no database query.
+- **AC-2** Behind an `api_token` rule, a `header` rule and a custom-scope rule, no entry holds the token, the header's value or the scope's value. No entry holds the request's path with its values, or its query string. A method longer than 16 characters, which a client can send as `_method` ahead of routing, is kept as `OTHER` (amended after the review).
+- **AC-3** The user is the one a user rule resolved, as `Class:id`, or the one the default guard already holds. With neither, it is null, and the feed made no database query. A user whose id cannot be read leaves it null, and the request's telemetry is still recorded (amended after the review).
 - **AC-4** A minute's list holds the newest 500 entries, newest first, and expires 61 minutes after it is created, however often it is written. A read gives the last 60 minutes' newest 500, newest first, and with `since`, only the entries after it.
 - **AC-5** The entries go in the request's one telemetry call. A request the sampler skips leaves none, and so does one during the cooldown. With telemetry off, or `telemetry.live_feed` off, nothing is written.
 - **AC-6** On a Redis Cluster, each list is written in its own call, as the telemetry's keys are. The cache buffer keeps no feed and reads none.
@@ -91,6 +91,7 @@ The maintainer decided at the Phase 3 review that the dashboard keeps the latest
 - **A rule is deleted:** its entries stay until they expire, with `rule_name` null.
 - **Clocks differ between servers:** each entry is filed under the minute of the server that wrote it. A read of the last 60 minutes reads by the reading server's clock, so a few seconds of skew can hide or show the oldest minute's entries.
 - **The app's trusted proxies are wrong:** every entry shows the proxy's IP, as the `dominant-ip` health check warns (SPEC-016).
+- **`dynamic.throttle` is global middleware:** its 429 comes before routing, so a blocked request's entry has no route, and a client can send any method as `_method`, which is why a long one is kept as `OTHER`.
 
 ## End-to-end verification
 
