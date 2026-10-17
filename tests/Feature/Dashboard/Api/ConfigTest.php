@@ -41,7 +41,7 @@ it('AC-1: answers a viewer the driver, the manifest store, the config as the app
 });
 
 it('AC-1: gives the default cache store\'s name when the package names none', function (): void {
-    config()->set('dynamic-throttle.store', null);
+    config()->set('dynamic-throttle.store');
     config()->set('cache.default', 'array');
 
     expect(DashboardApi::send($this, 'GET', 'config', user: DashboardApi::viewer())->json('manifest_store'))->toBe('array');
