@@ -1,6 +1,6 @@
 # SPEC-030: The live feed of blocks
 
-- Status: Approved
+- Status: Done
 - ADRs: ADR-0013, ADR-0024 (amended here), ADR-0026, ADR-0028
 - Roadmap phase: 5
 
