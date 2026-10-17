@@ -36,7 +36,10 @@ final readonly class CacheTelemetryBuffer implements TelemetryBuffer
      * The client is left out: a generic cache store has no sorted set to keep the
      * hour's traffic in.
      */
-    public function record(int $minute, int $weight, array $records, ?string $client = null): void
+    /**
+     * A generic cache store keeps no feed, as it keeps no offenders: $feed is ignored (SPEC-030).
+     */
+    public function record(int $minute, int $weight, array $records, ?string $client = null, array $feed = []): void
     {
         if ($weight < 1) {
             throw new InvalidArgumentException("A request stands for at least 1 request, got {$weight}.");
@@ -121,6 +124,14 @@ final readonly class CacheTelemetryBuffer implements TelemetryBuffer
     /**
      * A generic cache store has no sorted set to keep them in.
      */
+    /**
+     * A generic cache store has no list to keep a feed in (SPEC-030 AC-6).
+     */
+    public function feed(int $minute, ?int $since = null): ?array
+    {
+        return null;
+    }
+
     public function offenders(string $ruleId, int $hour, int $limit = self::OFFENDERS): ?array
     {
         return null;

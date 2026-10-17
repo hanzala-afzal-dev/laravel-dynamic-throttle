@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle\Tests\Support;
 
 use Afzal\DynamicThrottle\Engine\Contracts\TelemetryBuffer;
+use Afzal\DynamicThrottle\Engine\Telemetry\FeedEntry;
 use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryRecord;
 use Closure;
 use Throwable;
@@ -20,6 +21,9 @@ final class RecordingTelemetryBuffer implements TelemetryBuffer
 
     /** @var list<?string> each record()'s client, the `ip` scope's identity hash, in order (SPEC-016) */
     public array $clients = [];
+
+    /** @var list<list<FeedEntry>> each record()'s feed entries, in order (SPEC-030) */
+    public array $feeds = [];
 
     /** @var list<int> the minutes counts() was asked for, in order */
     public array $countsAsked = [];
@@ -38,8 +42,9 @@ final class RecordingTelemetryBuffer implements TelemetryBuffer
 
     public function __construct(private readonly ?TelemetryBuffer $inner = null) {}
 
-    public function record(int $minute, int $weight, array $records, ?string $client = null): void
+    public function record(int $minute, int $weight, array $records, ?string $client = null, array $feed = []): void
     {
+        $this->feeds[] = $feed;
         $this->recorded[] = [$minute, $weight, array_map(
             fn (TelemetryRecord $record): array => [$record->ruleId, $record->identityHash, $record->outcome->value],
             $records,
@@ -50,7 +55,7 @@ final class RecordingTelemetryBuffer implements TelemetryBuffer
             throw $this->recordFailure;
         }
 
-        $this->inner?->record($minute, $weight, $records, $client);
+        $this->inner?->record($minute, $weight, $records, $client, $feed);
     }
 
     public function counts(int $minute, array $ruleIds): array
@@ -88,6 +93,11 @@ final class RecordingTelemetryBuffer implements TelemetryBuffer
     public function requests(int $hour): ?int
     {
         return $this->inner?->requests($hour);
+    }
+
+    public function feed(int $minute, ?int $since = null): ?array
+    {
+        return $this->inner?->feed($minute, $since);
     }
 
     public function flushedThrough(): ?int
