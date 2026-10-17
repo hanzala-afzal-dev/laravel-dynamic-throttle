@@ -15,7 +15,7 @@ For viewers and managers alike; only "Exempt…" is a manager's.
 
 - **The live feed,** from `GET api/feed`, newest first:
   - each entry: when (in the browser's zone, UTC on hover), "Blocked" or "Would block", the rule (a link to its page), the method and route, the client IP, and the user when there is one;
-  - new entries arrive every 5 seconds while the tab is visible, asking only for what came after the newest one shown (`since`);
+  - new entries arrive every 5 seconds while the tab is visible, asking only for what came since 2 seconds before the newest one shown (`since`), and adding only those it does not hold already: another worker or server can write a block a moment after a later one;
   - the page holds at most the newest 500;
   - "Pause" stops the polling, so a row stays put while someone reads it, and "Resume" fetches what came meanwhile;
   - filters, in the page: by outcome (all, blocked, would block) and by rule.
@@ -31,7 +31,7 @@ For viewers and managers alike; only "Exempt…" is a manager's.
 
 ### Frontend (Vitest)
 - **AC-1** The feed lists each entry's time, outcome, rule (a link), method and route, IP and user, newest first. A deleted rule shows as "Rule #id (deleted)", without a link.
-- **AC-2** It polls `api/feed?since={newest}` every 5 seconds, adds what is new on top, and keeps at most 500. Pause stops the polling and Resume restarts it.
+- **AC-2** It polls `api/feed?since={newest − 2000}` every 5 seconds, adds on top what it does not hold already, in time order, and keeps at most 500. Pause stops the polling and Resume restarts it.
 - **AC-3** The outcome and rule filters narrow the list without asking the API.
 - **AC-4** A store without a feed, the feed off, a sample below 1, and an hour without a block each show their message.
 - **AC-5** For a manager, "Exempt…" opens `/exemptions` with the add dialog filled with the entry's IP and rule. A viewer sees no "Exempt…".
@@ -56,7 +56,8 @@ For viewers and managers alike; only "Exempt…" is a manager's.
 - **More than 500 blocks between two polls:** the API answers the newest 500, and the older ones between are not shown. The page holds 500 at most anyway.
 - **The counter store fails:** a poll answers 503. The page shows the error above the entries it holds, and keeps polling.
 - **A rule is deleted:** its entries stay, as "Rule #id (deleted)", until they expire.
-- **Clocks differ between servers,** or a block lands in the same millisecond as the newest entry after a poll: polling with `since` can miss it. Reloading the page shows it.
+- **A block is written late,** by a slower worker or a server whose clock is behind: the 2 seconds of overlap catch it. One later than that is missed until the page reloads.
+- **Two identical entries,** the same client blocked by the same rule in the same millisecond: the page counts how many of each it holds, so it adds the second and never a copy of the first.
 
 ## End-to-end verification
 
@@ -68,7 +69,7 @@ For viewers and managers alike; only "Exempt…" is a manager's.
 
 The maintainer vetoes any of these in the PR (ADR-0027).
 
-1. **The page asks only for what is new,** with `since`, and keeps the newest 500 in the browser, so a page left open costs one small request every 5 seconds.
+1. **The page asks only for what is new,** with `since`, and keeps the newest 500 in the browser, so a page left open costs one small request every 5 seconds. Each request overlaps the last by 2 seconds, so a block written a moment late still shows (from SPEC-030's review).
 2. **Filters run in the page,** since it holds at most 500 entries.
 3. **"Exempt…" opens the Exemptions page's dialog,** rather than adding from Activity, so the confirmation for wide ranges and the audit entry stay in one place.
 4. **The offenders stay hashes** (ADR-0024); the feed beside them shows the raw IPs of the last hour.
