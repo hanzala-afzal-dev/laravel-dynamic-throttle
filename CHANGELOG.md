@@ -105,6 +105,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - A sidebar, the app's environment and your role in the header, light and dark themes that follow your system, and a banner on every page while bypass or a scale factor is on, with a button to turn it off.
   - The Overview: health, the rule counts, the last hour's blocks and would-blocks, a traffic chart over an hour, a day or a week, the top rules by blocks, and the controls for bypass and the scale factor, with a confirmation for the dangerous ones.
   - `GET api/rules/counts`: the enabled rules by mode, and the disabled ones.
+  - The Rules pages: the list with search and filters, the form with templates, a rule's page with its traffic, offenders, exemptions and history, and promote, duplicate and delete.
+  - `GET api/rules` takes `search`, `enabled` and `mode`.
   - A strict Content Security Policy, `X-Frame-Options: DENY`, and assets cached for a year.
   - in a dashboard request, explain never takes the admin who sends it for the request it explains.
   - behind `auth:<guard>` in `dashboard.middleware`, a user id alone still means a user of the app's default guard, in exemptions and in explain.

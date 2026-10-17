@@ -113,3 +113,10 @@ it('AC-2: answers 404 for an unknown id, and for one that is not a number', func
 
     expect(DashboardApi::send($this, 'GET', "rules/{$id}", user: DashboardApi::viewer())->status())->toBe(404);
 })->with(['999', 'abc', '1.5']);
+
+it('SPEC-022 AC-13: gives an empty 429 body as an empty object, as the form sent it', function (): void {
+    $rule = Throttling::rule(['response_override' => []]);
+    $response = DashboardApi::send($this, 'GET', "rules/{$rule->id}", user: DashboardApi::viewer());
+
+    expect([$response->status(), str_contains((string) $response->getContent(), '"response_override":{}')])->toBe([200, true]);
+});

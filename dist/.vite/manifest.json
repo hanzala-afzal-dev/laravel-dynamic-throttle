@@ -1,64 +1,55 @@
 {
-  "_card-D-hjHzTM.js": {
-    "file": "card-D-hjHzTM.js",
+  "_card-Dw7UV5gG.js": {
+    "file": "card-Dw7UV5gG.js",
     "name": "card",
     "imports": [
-      "_skeleton-3lattlqy.js"
+      "main.tsx"
     ]
   },
-  "_native-select-Bdj_wPXL.js": {
-    "file": "native-select-Bdj_wPXL.js",
+  "_native-select-COHg-wWA.js": {
+    "file": "native-select-COHg-wWA.js",
     "name": "native-select",
     "imports": [
-      "_skeleton-3lattlqy.js",
-      "_card-D-hjHzTM.js"
+      "main.tsx"
     ]
   },
-  "_rules-XJlxpkdU.js": {
-    "file": "rules-XJlxpkdU.js",
+  "_rules-D1A26G3Y.js": {
+    "file": "rules-D1A26G3Y.js",
     "name": "rules",
     "imports": [
-      "_skeleton-3lattlqy.js",
-      "_table-BE1LyQFt.js"
+      "main.tsx",
+      "_table-CyNNXTDV.js"
     ]
   },
-  "_skeleton-3lattlqy.js": {
-    "file": "skeleton-3lattlqy.js",
-    "name": "skeleton"
-  },
-  "_switch-kI_nVf5Q.js": {
-    "file": "switch-kI_nVf5Q.js",
+  "_switch-GXQsjaRn.js": {
+    "file": "switch-GXQsjaRn.js",
     "name": "switch",
     "imports": [
-      "_skeleton-3lattlqy.js",
-      "_card-D-hjHzTM.js"
+      "_card-Dw7UV5gG.js",
+      "main.tsx"
     ]
   },
-  "_table-BE1LyQFt.js": {
-    "file": "table-BE1LyQFt.js",
+  "_table-CyNNXTDV.js": {
+    "file": "table-CyNNXTDV.js",
     "name": "table",
     "imports": [
-      "_skeleton-3lattlqy.js"
+      "main.tsx"
     ]
   },
-  "_traffic-card-CLBB3qqz.js": {
-    "file": "traffic-card-CLBB3qqz.js",
+  "_traffic-card-BFQX0dxU.js": {
+    "file": "traffic-card-BFQX0dxU.js",
     "name": "traffic-card",
     "imports": [
-      "_skeleton-3lattlqy.js",
-      "_card-D-hjHzTM.js",
+      "_card-Dw7UV5gG.js",
       "main.tsx",
-      "_table-BE1LyQFt.js"
+      "_table-CyNNXTDV.js"
     ]
   },
   "main.tsx": {
-    "file": "main-D2ArEq3j.js",
+    "file": "main-BvJKke99.js",
     "name": "main",
     "src": "main.tsx",
     "isEntry": true,
-    "imports": [
-      "_skeleton-3lattlqy.js"
-    ],
     "dynamicImports": [
       "pages/overview/index.tsx",
       "pages/rules/list.tsx",
@@ -66,63 +57,59 @@
       "pages/rules/rule.tsx"
     ],
     "css": [
-      "main-JGfXYZXX.css"
+      "main-CjmyP-r2.css"
     ]
   },
   "pages/overview/index.tsx": {
-    "file": "overview-DWxm03zM.js",
+    "file": "overview-DFYNY7ct.js",
     "name": "overview",
     "src": "pages/overview/index.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_skeleton-3lattlqy.js",
-      "_native-select-Bdj_wPXL.js",
-      "_card-D-hjHzTM.js",
-      "_traffic-card-CLBB3qqz.js",
+      "_native-select-COHg-wWA.js",
+      "_card-Dw7UV5gG.js",
+      "_traffic-card-BFQX0dxU.js",
       "main.tsx",
-      "_table-BE1LyQFt.js"
+      "_table-CyNNXTDV.js"
     ]
   },
   "pages/rules/form.tsx": {
-    "file": "form-Bwk94b3X.js",
+    "file": "form-BlJZRP0Q.js",
     "name": "form",
     "src": "pages/rules/form.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_skeleton-3lattlqy.js",
-      "_native-select-Bdj_wPXL.js",
-      "_card-D-hjHzTM.js",
-      "_switch-kI_nVf5Q.js",
+      "_native-select-COHg-wWA.js",
+      "_card-Dw7UV5gG.js",
+      "_switch-GXQsjaRn.js",
       "main.tsx"
     ]
   },
   "pages/rules/list.tsx": {
-    "file": "list-tBcgsMPI.js",
+    "file": "list-BuKkcUU3.js",
     "name": "list",
     "src": "pages/rules/list.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_skeleton-3lattlqy.js",
-      "_native-select-Bdj_wPXL.js",
-      "_rules-XJlxpkdU.js",
-      "_card-D-hjHzTM.js",
-      "_switch-kI_nVf5Q.js",
+      "_native-select-COHg-wWA.js",
+      "_rules-D1A26G3Y.js",
+      "_card-Dw7UV5gG.js",
+      "_switch-GXQsjaRn.js",
       "main.tsx",
-      "_table-BE1LyQFt.js"
+      "_table-CyNNXTDV.js"
     ]
   },
   "pages/rules/rule.tsx": {
-    "file": "rule-B6O2y30K.js",
+    "file": "rule-TFAC6iK3.js",
     "name": "rule",
     "src": "pages/rules/rule.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_skeleton-3lattlqy.js",
-      "_rules-XJlxpkdU.js",
-      "_card-D-hjHzTM.js",
-      "_traffic-card-CLBB3qqz.js",
+      "_rules-D1A26G3Y.js",
+      "_card-Dw7UV5gG.js",
+      "_traffic-card-BFQX0dxU.js",
       "main.tsx",
-      "_table-BE1LyQFt.js"
+      "_table-CyNNXTDV.js"
     ]
   }
 }

@@ -30,6 +30,14 @@ final readonly class RuleController
     /** Rules a page (decision 9). */
     public const int PER_PAGE = 100;
 
+    /**
+     * The search, ignoring case on every database, with "!" as the escape: unlike a
+     * backslash, it means the same in MySQL's, PostgreSQL's and SQLite's string literals.
+     */
+    private const string LIKE_NAME = "lower(name) like ? escape '!'";
+
+    private const string LIKE_PATTERN = "lower(pattern) like ? escape '!'";
+
     /** A rule's newest exemptions it shows; api/exemptions?rule= pages through all (AC-26). */
     public const int EXEMPTIONS = 100;
 
@@ -47,17 +55,18 @@ final readonly class RuleController
     {
         return ApiErrors::json(function () use ($request): JsonResponse {
             $filters = $this->validation->make($request->query(), [
-                'search' => ['sometimes', 'string', 'max:100'],
+                'search' => ['sometimes', 'nullable', 'string', 'max:100'],
                 'enabled' => ['sometimes', 'in:true,false'],
                 'mode' => ['sometimes', ValidationRule::enum(RuleMode::class)],
             ])->validate();
-            $search = $filters['search'] ?? null;
+            $search = trim(is_string($filters['search'] ?? null) ? $filters['search'] : '');
+            $like = $this->like($search);
             $enabled = $filters['enabled'] ?? null;
             $mode = $filters['mode'] ?? null;
 
             $page = Rule::query()
-                ->when(is_string($search) && $search !== '', fn (Builder $rules) => $rules->where(
-                    fn (Builder $rules) => $rules->whereLike('name', "%{$search}%")->orWhereLike('pattern', "%{$search}%"),
+                ->when($search !== '', fn (Builder $rules) => $rules->where(
+                    fn (Builder $rules) => $rules->whereRaw(self::LIKE_NAME, [$like])->orWhereRaw(self::LIKE_PATTERN, [$like]),
                 ))
                 ->when(is_string($enabled), fn (Builder $rules) => $rules->where('enabled', $enabled === 'true'))
                 ->when(is_string($mode), fn (Builder $rules) => $rules->where('mode', $mode))
@@ -67,6 +76,15 @@ final readonly class RuleController
 
             return new JsonResponse($page);
         });
+    }
+
+    /**
+     * A LIKE pattern that holds the search anywhere, its %, _ and ! matching themselves
+     * (SPEC-022 AC-16).
+     */
+    private function like(string $search): string
+    {
+        return '%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], mb_strtolower($search)).'%';
     }
 
     /**
