@@ -134,6 +134,17 @@ it('AC-10: answers with the rejecting rule\'s response_override, instead of the 
         ]);
 });
 
+it('AC-22: answers an empty response_override as the empty JSON object it was saved as', function (): void {
+    // {} saved through the array cast reads back as [].
+    Throttling::rule(['max_attempts' => 1, 'response_override' => []]);
+    Throttling::route('api/x');
+
+    $responses = [$this->get('api/x'), $this->get('api/x')];
+
+    expect(responseStatuses($responses))->toBe([200, 429])
+        ->and($responses[1]->getContent())->toBe('{}');
+});
+
 it('AC-11: sets no headers where the only matched rule is dry-run, even once it would block', function (): void {
     Throttling::rule(['max_attempts' => 1, 'mode' => RuleMode::DryRun]);
     Throttling::route('api/x');
