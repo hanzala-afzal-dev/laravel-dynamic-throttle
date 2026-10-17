@@ -8,6 +8,7 @@ use Afzal\DynamicThrottle\Models\Exemption;
 use Afzal\DynamicThrottle\Tests\Support\DashboardApi;
 use Afzal\DynamicThrottle\Tests\Support\Throttling;
 use Afzal\DynamicThrottle\Tests\TestCase;
+use Illuminate\Foundation\Http\Middleware\TrimStrings;
 use Illuminate\Support\Carbon;
 
 /*
@@ -78,3 +79,35 @@ it('AC-1: refuses a filter it does not know the value of', function (string $que
     ['subject=header', 'subject'],
     ['rule=some', 'rule'],
 ]);
+
+it('AC-8: filters by state in any app time zone, east or west of UTC, an exemption ending now being expired', function (string $zone): void {
+    config()->set('app.timezone', $zone);
+    date_default_timezone_set($zone);
+
+    try {
+        $ip = fn (string $reason, string $ends): Exemption => Exemption::query()->create(['subject' => ExemptionSubject::Ip, 'value' => '198.51.100.1', 'reason' => $reason, 'expires_at' => Carbon::parse($ends, 'UTC')]);
+        $ip('ends in an hour', '2027-01-15 13:00:00');
+        $ip('ended an hour ago', '2027-01-15 11:00:00');
+        $ip('ends now', '2027-01-15 12:00:00');
+        $states = [exemptionReasons($this, 'state=active&subject=ip'), exemptionReasons($this, 'state=expired&subject=ip')];
+    } finally {
+        date_default_timezone_set('UTC');
+    }
+
+    expect($states)->toBe([
+        ['ends in an hour', 'office, forever'],
+        ['ends now', 'ended an hour ago', 'load test, on the rule, ended', 'office, ended'],
+    ]);
+})->with(['Asia/Karachi', 'America/Los_Angeles']);
+
+it('AC-8: refuses a rule filter with a trailing newline, even where TrimStrings does not run', function (): void {
+    TrimStrings::skipWhen(fn (): bool => true);
+
+    try {
+        $response = DashboardApi::send($this, 'GET', 'exemptions?rule=none%0A', user: DashboardApi::viewer());
+    } finally {
+        TrimStrings::flushState();
+    }
+
+    expect([$response->status(), array_keys($response->json('errors') ?? [])])->toBe([422, ['rule']]);
+});

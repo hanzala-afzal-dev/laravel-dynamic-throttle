@@ -98,6 +98,49 @@ describe('adding an exemption', () => {
         expect(screen.getByRole('dialog', { name: 'Add an exemption' })).toBeInTheDocument();
     });
 
+    it('AC-5: Confirm sends the end time the 409 answered, even a minute later', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2027-01-15T12:00:00Z'));
+        const sent = mockApi(manager(answers({
+            'POST exemptions': (body) => (typeof body === 'object' && body !== null && 'confirm' in body ? created(body) : { status: 409, body: { message: 'A wide range.' } }),
+        })));
+        renderAt(<ExemptionsList />, '/exemptions');
+
+        const dialog = await openDialog();
+        await userEvent.type(dialog.getByLabelText('Value'), '10.0.0.0/7');
+        await userEvent.selectOptions(dialog.getByLabelText('Length'), '7 days');
+        await userEvent.click(dialog.getByRole('button', { name: 'Add exemption' }));
+        const confirm = await screen.findByRole('alertdialog');
+        vi.setSystemTime(new Date('2027-01-15T12:01:00Z'));
+        await userEvent.click(within(confirm).getByRole('button', { name: 'Confirm' }));
+
+        await waitFor(() => expect(posts(sent).map((body) => (body as { expires_at: string }).expires_at)).toEqual(['2027-01-22T12:00:00.000Z', '2027-01-22T12:00:00.000Z']));
+    });
+
+    it('AC-10: keeps the dialog open, and Cancel off, while the exemption is being added', async () => {
+        const sent = mockApi(manager(answers({ 'POST exemptions': created })));
+        const mocked = globalThis.fetch;
+        let answer: () => void = () => {};
+        vi.stubGlobal('fetch', (input: string, init?: RequestInit) => (init?.method === 'POST' ? new Promise((resolve) => { answer = () => resolve(mocked(input, init)); }) : mocked(input, init)));
+        renderAt(<ExemptionsList />, '/exemptions');
+
+        const dialog = await openDialog();
+        await userEvent.type(dialog.getByLabelText('Value'), '203.0.113.7');
+        await userEvent.click(dialog.getByRole('button', { name: 'Add exemption' }));
+
+        expect(dialog.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+        expect(dialog.getByRole('button', { name: 'Close' })).toBeDisabled();
+
+        await userEvent.keyboard('{Escape}');
+
+        expect(screen.getByRole('dialog', { name: 'Add an exemption' })).toBeInTheDocument();
+
+        answer();
+
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+        expect(posts(sent)).toHaveLength(1);
+    });
+
     it('AC-5: shows a wide range\'s 409 in a dialog, and Confirm sends the same exemption with confirm', async () => {
         const message = 'An exemption for 0.0.0.0/0 lets 4,294,967,296 addresses through every rule.';
         const sent = mockApi(manager(answers({
