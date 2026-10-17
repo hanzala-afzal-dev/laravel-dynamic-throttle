@@ -275,6 +275,11 @@ return [
     | older than "retention_hours". Your scheduler must be running: the
     | counter store keeps the numbers for 2 hours only.
     |
+    | "live_feed" keeps each block and would-be block of the last hour on
+    | Redis, with the client's raw IP and user, for the dashboard's
+    | Activity page (docs/adr/0024). Turn it off if your app must not keep
+    | raw IPs, even for an hour.
+    |
     */
 
     'telemetry' => [
@@ -285,6 +290,7 @@ return [
         ]),
         'schedule' => true,
         'retention_hours' => 720,
+        'live_feed' => filter_var(env('DYNAMIC_THROTTLE_LIVE_FEED', true), FILTER_VALIDATE_BOOL),
     ],
 
     /*

@@ -37,6 +37,17 @@ it('is enabled when DYNAMIC_THROTTLE_ENABLED is not set', function (): void {
     expect(loadPackageConfig()['enabled'])->toBeTrue();
 });
 
+it('SPEC-030 AC-5: keeps the live feed unless DYNAMIC_THROTTLE_LIVE_FEED turns it off', function (): void {
+    $default = loadPackageConfig()['telemetry']['live_feed'];
+    $_SERVER['DYNAMIC_THROTTLE_LIVE_FEED'] = 'off';
+
+    try {
+        expect([$default, loadPackageConfig()['telemetry']['live_feed']])->toBe([true, false]);
+    } finally {
+        unset($_SERVER['DYNAMIC_THROTTLE_LIVE_FEED']);
+    }
+});
+
 /*
 | SPEC-005 AC-7: the database connection for the package's tables.
 */

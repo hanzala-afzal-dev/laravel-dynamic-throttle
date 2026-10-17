@@ -131,6 +131,7 @@ The dashboard's pages read and change everything through a JSON API under `{path
 | `PUT api/settings/bypass`, `PUT api/settings/scale` | manage | What `dynamic-throttle:bypass` and `dynamic-throttle:scale` do |
 | `GET api/metrics?period=hour` | either | Each rule's requests, blocks and would-blocks: per minute for the last hour, or per hour for a `day` or a `week` |
 | `GET api/rules/{id}/offenders` | either | The rule's top clients by identity hash, this hour or `?hour=previous` |
+| `GET api/feed` | either | The live feed: the last hour's newest 500 blocks and would-blocks, newest first, with each one's time, rule and its name, method, route template, client IP and user; `?since=` (Unix milliseconds) keeps only the newer ones. `null` on a store that keeps none, and empty with `telemetry.live_feed` off |
 | `GET api/audit` | either | The audit log, newest first, 100 a page through `next_cursor`; `?action=`, `?target=`, `?actor=`, `?from=` and `?until=` narrow it |
 | `GET api/config` | either | The configuration servers run with: the counters' driver, the manifest store, the package's config, the custom scopes and strict mode |
 | `GET api/health` | either | What `dynamic-throttle:health --json` prints |

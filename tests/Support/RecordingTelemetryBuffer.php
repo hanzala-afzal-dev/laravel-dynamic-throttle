@@ -28,6 +28,18 @@ final class RecordingTelemetryBuffer implements TelemetryBuffer
     /** @var list<int> the minutes counts() was asked for, in order */
     public array $countsAsked = [];
 
+    /** @var list<array{int, ?int}> each feed() call: the minute and since (SPEC-030) */
+    public array $feedAsked = [];
+
+    /** What feed() answers once set, instead of asking the inner buffer. */
+    public bool $answersFeed = false;
+
+    /** @var list<FeedEntry>|null */
+    public ?array $feedAnswer = null;
+
+    /** Thrown by feed(), when set. */
+    public ?Throwable $feedFailure = null;
+
     /** Thrown by record(), when set. */
     public ?Throwable $recordFailure = null;
 
@@ -97,7 +109,13 @@ final class RecordingTelemetryBuffer implements TelemetryBuffer
 
     public function feed(int $minute, ?int $since = null): ?array
     {
-        return $this->inner?->feed($minute, $since);
+        $this->feedAsked[] = [$minute, $since];
+
+        if ($this->feedFailure instanceof Throwable) {
+            throw $this->feedFailure;
+        }
+
+        return $this->answersFeed ? $this->feedAnswer : $this->inner?->feed($minute, $since);
     }
 
     public function flushedThrough(): ?int

@@ -47,6 +47,7 @@ const API_READS = [
     'dynamic-throttle.api.metrics' => ['GET', 'metrics', []],
     'dynamic-throttle.api.health' => ['GET', 'health', []],
     'dynamic-throttle.api.config' => ['GET', 'config', []],
+    'dynamic-throttle.api.feed' => ['GET', 'feed', []],
     'dynamic-throttle.api.audit' => ['GET', 'audit', []],
     'dynamic-throttle.api.explain' => ['POST', 'explain', ['method' => 'GET', 'path' => '/api/orders']],
 ];
