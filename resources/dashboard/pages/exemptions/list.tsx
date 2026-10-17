@@ -1,5 +1,5 @@
 import { Trash2 } from 'lucide-react';
-import { useEffect, useId } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Link, useLocation, useSearch } from 'wouter';
 import { ChangeOutcome } from '@/components/confirm-dialog';
 import { ExemptionWho } from '@/components/exemption-who';
@@ -34,6 +34,9 @@ const FIRST_RULES = { search: '', enabled: '', mode: '', page: 1 } as const;
 /** Who is exempt from which rule, and until when, with the filters in the page's URL (SPEC-023 AC-2, AC-3, AC-6, AC-7). */
 export function ExemptionsList() {
     const [filters, setFilters] = useFilters();
+    const search = useSearch();
+    // An IP from Activity's "Exempt…" (SPEC-024 AC-5), taken once: the dialog opens filled with it.
+    const [exempt] = useState(() => (new URLSearchParams(search).get('exempt') ?? '').trim().slice(0, 100));
     const exemptions = useExemptions(filters);
     const lastPage = exemptions.isPlaceholderData ? undefined : exemptions.data?.last_page;
     // undefined until the rules load, so no row asks for a name the list will give.
@@ -45,6 +48,13 @@ export function ExemptionsList() {
     const nameOf = (ruleId: number) => rules?.find((rule) => rule.id === ruleId)?.name ?? farNames?.get(ruleId) ?? `Rule #${ruleId}`;
     const canManage = useCanManage();
     const id = useId();
+
+    // Out of the URL once taken, so reloading the page does not open the dialog again.
+    useEffect(() => {
+        if (new URLSearchParams(search).has('exempt')) {
+            setFilters(filters);
+        }
+    }, [search, filters, setFilters]);
 
     // A page past the last, from an old link or after exemptions ended, goes to the last (as SPEC-022 AC-17).
     useEffect(() => {
@@ -60,7 +70,7 @@ export function ExemptionsList() {
                     <h1 className="text-2xl font-semibold tracking-tight">Exemptions</h1>
                     <p className="mt-1 text-sm text-muted-foreground">Who skips one rule or every rule, and until when.</p>
                 </div>
-                {canManage && <AddExemptionDialog rules={rules} rule={filteredRule === null ? '' : filters.rule} nameOf={nameOf} />}
+                {canManage && <AddExemptionDialog rules={rules} rule={filteredRule === null ? '' : filters.rule} nameOf={nameOf} start={exempt} />}
             </div>
 
             <div className="flex flex-wrap items-end gap-3">

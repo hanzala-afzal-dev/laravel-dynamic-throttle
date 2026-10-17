@@ -30,15 +30,22 @@ export const EXEMPTION_QUERIES = [['exemptions'], ['rules', 'one'], ['audit']];
 
 /**
  * "Add exemption", for a manager: who, for which rule, for how long and why (SPEC-023
- * AC-4, AC-5). The end time is now plus the length, computed when saving.
+ * AC-4, AC-5). The end time is now plus the length, computed when saving. With a
+ * `start` IP, from Activity's "Exempt…", it opens at once, filled with it, and opens
+ * blank after (SPEC-024 AC-5).
  */
-export function AddExemptionDialog({ rules, rule, nameOf }: { rules: Rule[] | undefined; rule: string; nameOf: (id: number) => string }) {
-    const [open, setOpen] = useState(false);
+export function AddExemptionDialog({ rules, rule, nameOf, start = '' }: { rules: Rule[] | undefined; rule: string; nameOf: (id: number) => string; start?: string }) {
+    const [open, setOpen] = useState(start !== '');
+    const [value, setValue] = useState(start);
+    const close = () => {
+        setOpen(false);
+        setValue('');
+    };
     // While the exemption is being sent, the dialog stays: closing it would not stop the request (AC-10).
     const [sending, setSending] = useState(false);
 
     return (
-        <Dialog open={open} onOpenChange={(next) => (sending && !next ? undefined : setOpen(next))}>
+        <Dialog open={open} onOpenChange={(next) => (sending && !next ? undefined : next ? setOpen(true) : close())}>
             <DialogTrigger asChild>
                 <Button>
                     <Plus aria-hidden />
@@ -51,16 +58,16 @@ export function AddExemptionDialog({ rules, rule, nameOf }: { rules: Rule[] | un
                     <DialogDescription>Its requests skip the rule, or every rule, until it ends.</DialogDescription>
                 </DialogHeader>
                 {/* Mounted while open, so each opening starts blank. */}
-                <AddForm rules={rules} rule={rule} nameOf={nameOf} onSending={setSending} onAdded={() => setOpen(false)} />
+                <AddForm rules={rules} rule={rule} value={value} nameOf={nameOf} onSending={setSending} onAdded={close} />
             </DialogContent>
         </Dialog>
     );
 }
 
-type AddFormProps = { rules: Rule[] | undefined; rule: string; nameOf: (id: number) => string; onSending: (sending: boolean) => void; onAdded: () => void };
+type AddFormProps = { rules: Rule[] | undefined; rule: string; value: string; nameOf: (id: number) => string; onSending: (sending: boolean) => void; onAdded: () => void };
 
-function AddForm({ rules, rule, nameOf, onSending, onAdded }: AddFormProps) {
-    const [values, setValues] = useState({ subject: 'ip' as Exemption['subject'], scope: '', value: '', rule, length: '1d', reason: '' });
+function AddForm({ rules, rule, value, nameOf, onSending, onAdded }: AddFormProps) {
+    const [values, setValues] = useState({ subject: 'ip' as Exemption['subject'], scope: '', value, rule, length: '1d', reason: '' });
     const change = useConfirmedChange(EXEMPTION_QUERIES, { onSuccess: onAdded });
 
     useEffect(() => onSending(change.pending), [change.pending, onSending]);

@@ -3,13 +3,14 @@ import { useId, useState } from 'react';
 import { Link } from 'wouter';
 import { QueryError } from '@/components/query-error';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { type FeedEntry, useLiveFeed } from '@/lib/feed';
+import { useCanManage } from '@/lib/queries';
 import { type ConfigValue, useEffectiveConfig } from '@/lib/settings-page';
 
 type Outcome = '' | FeedEntry['outcome'];
@@ -22,6 +23,7 @@ type Outcome = '' | FeedEntry['outcome'];
 export function FeedCard() {
     const [paused, setPaused] = useState(false);
     const feed = useLiveFeed(paused);
+    const canManage = useCanManage();
     const telemetry = useTelemetry();
     const [outcome, setOutcome] = useState<Outcome>('');
     const [rule, setRule] = useState('');
@@ -103,11 +105,12 @@ export function FeedCard() {
                                         <TableHead>Request</TableHead>
                                         <TableHead>IP</TableHead>
                                         <TableHead>User</TableHead>
+                                        {canManage && <TableHead className="sr-only">Actions</TableHead>}
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
                                     {shown.map((entry, index) => (
-                                        <FeedRow key={`${entry.time}-${entry.rule}-${entry.identity}-${index}`} entry={entry} />
+                                        <FeedRow key={`${entry.time}-${entry.rule}-${entry.identity}-${index}`} entry={entry} canManage={canManage} />
                                     ))}
                                 </TableBody>
                             </Table>
@@ -121,7 +124,7 @@ export function FeedCard() {
 
 export default FeedCard;
 
-function FeedRow({ entry }: { entry: FeedEntry }) {
+function FeedRow({ entry, canManage }: { entry: FeedEntry; canManage: boolean }) {
     return (
         <TableRow>
             <TableCell>
@@ -142,6 +145,20 @@ function FeedRow({ entry }: { entry: FeedEntry }) {
             <TableCell className="max-w-64 truncate font-mono text-xs">{entry.route === null ? entry.method : `${entry.method} ${entry.route}`}</TableCell>
             <TableCell className="font-mono text-xs">{entry.ip ?? '—'}</TableCell>
             <TableCell className="max-w-56 truncate font-mono text-xs">{entry.user ?? '—'}</TableCell>
+            {canManage && (
+                <TableCell className="text-right">
+                    {/* The Exemptions page's dialog adds it, with its confirmation and audit entry (decision 3). */}
+                    {entry.ip !== null && entry.rule_name !== null && (
+                        <Link
+                            href={`/exemptions?rule=${entry.rule}&exempt=${encodeURIComponent(entry.ip)}`}
+                            className={buttonVariants({ variant: 'ghost', size: 'sm' })}
+                            aria-label={`Exempt ${entry.ip} from ${entry.rule_name}`}
+                        >
+                            Exempt…
+                        </Link>
+                    )}
+                </TableCell>
+            )}
         </TableRow>
     );
 }
