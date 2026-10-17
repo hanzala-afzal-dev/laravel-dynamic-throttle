@@ -1,42 +1,72 @@
 {
-  "_table-BoKcbxuC.js": {
-    "file": "table-BoKcbxuC.js",
+  "_native-select-BVf92Oxl.js": {
+    "file": "native-select-BVf92Oxl.js",
+    "name": "native-select",
+    "imports": [
+      "main.tsx"
+    ]
+  },
+  "_switch-CHzj7i_d.js": {
+    "file": "switch-CHzj7i_d.js",
+    "name": "switch",
+    "imports": [
+      "_native-select-BVf92Oxl.js",
+      "main.tsx"
+    ]
+  },
+  "_table-DdJEQJYw.js": {
+    "file": "table-DdJEQJYw.js",
     "name": "table",
     "imports": [
       "main.tsx"
     ]
   },
   "main.tsx": {
-    "file": "main-BldUUjdW.js",
+    "file": "main-CnfvJB3-.js",
     "name": "main",
     "src": "main.tsx",
     "isEntry": true,
     "dynamicImports": [
       "pages/overview/index.tsx",
-      "pages/rules/list.tsx"
+      "pages/rules/list.tsx",
+      "pages/rules/form.tsx"
     ],
     "css": [
-      "main-CGKi8sRF.css"
+      "main-C6U3cnG2.css"
     ]
   },
   "pages/overview/index.tsx": {
-    "file": "overview-BlCWrSkP.js",
+    "file": "overview-BjLe41TG.js",
     "name": "overview",
     "src": "pages/overview/index.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_table-BoKcbxuC.js",
+      "_native-select-BVf92Oxl.js",
+      "main.tsx",
+      "_table-DdJEQJYw.js"
+    ]
+  },
+  "pages/rules/form.tsx": {
+    "file": "form-sgzFz4er.js",
+    "name": "form",
+    "src": "pages/rules/form.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_native-select-BVf92Oxl.js",
+      "_switch-CHzj7i_d.js",
       "main.tsx"
     ]
   },
   "pages/rules/list.tsx": {
-    "file": "list-xlP1w1fL.js",
+    "file": "list-C6jwM9TJ.js",
     "name": "list",
     "src": "pages/rules/list.tsx",
     "isDynamicEntry": true,
     "imports": [
-      "_table-BoKcbxuC.js",
-      "main.tsx"
+      "_native-select-BVf92Oxl.js",
+      "_switch-CHzj7i_d.js",
+      "main.tsx",
+      "_table-DdJEQJYw.js"
     ]
   }
 }

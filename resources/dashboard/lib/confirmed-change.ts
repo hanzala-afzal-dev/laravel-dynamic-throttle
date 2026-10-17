@@ -20,7 +20,7 @@ function asksToConfirm(error: unknown, change: Change | undefined): error is Api
  * once (SPEC-021 decision 8). It reports a change the server could not be reached
  * for, and one that was saved but did not compile.
  */
-export function useConfirmedChange(invalidate: QueryKey[]) {
+export function useConfirmedChange(invalidate: QueryKey[], options: { onSuccess?: (answer: unknown) => void } = {}) {
     const client = useQueryClient();
     // The change waiting for confirmation, read and cleared at once, so two quick clicks send it once.
     const waiting = useRef<Change | null>(null);
@@ -29,7 +29,11 @@ export function useConfirmedChange(invalidate: QueryKey[]) {
     const [asking, setAsking] = useState(false);
     const mutation = useMutation({
         mutationFn: ({ method, path, body }: Change) => api<Answer>(method, path, body),
-        onSuccess: () => Promise.all(invalidate.map((queryKey) => client.invalidateQueries({ queryKey }))),
+        onSuccess: (answer) => {
+            options.onSuccess?.(answer);
+
+            return Promise.all(invalidate.map((queryKey) => client.invalidateQueries({ queryKey })));
+        },
         onError: (error, change) => {
             if (asksToConfirm(error, change)) {
                 waiting.current = change;
