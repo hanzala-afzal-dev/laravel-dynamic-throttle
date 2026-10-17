@@ -1,6 +1,6 @@
 # SPEC-031: The Settings page
 
-- Status: Approved
+- Status: Done
 - ADRs: ADR-0010, ADR-0020, ADR-0028
 - Roadmap phase: 5
 

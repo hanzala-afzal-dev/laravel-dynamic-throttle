@@ -89,6 +89,14 @@ An exemption lets a client through one rule, or every rule, for a while or with 
 
 A range wider than a /8 for IPv4, or a /32 for IPv6, asks you to confirm first. There is no edit: remove an exemption and add another, so the audit log shows each change. Remove asks first, naming who and which rule.
 
+## The Settings page
+
+Everything on it only reads, for viewers and managers alike:
+
+- **Health:** every check of `dynamic-throttle:health`, errors first, with what each looks for and what to do. See [Health checks](health.md).
+- **Configuration:** the counters' driver, as `dynamic-throttle:status` names it, the manifest's cache store, the custom scopes and strict mode, and `config('dynamic-throttle')` as your app resolved it from its files and environment. A key whose name holds `password`, `secret` or `token` shows as `(hidden)`, should you add one. To change a value, change the config or the environment, and deploy.
+- **When the dashboard is down:** the Artisan commands that do what the dashboard does, and a link to the [runbook](../runbook.md).
+
 ## How it protects itself
 
 - **No rule ever applies to the dashboard,** even a `*` rule, and even with `dynamic.throttle` as global middleware: the package skips its routes by name, and before routing, by its path. So a bad rule can never lock you out of the place where you would fix it. An app route that also matches under that path, such as `{locale}/login`, stays limited.
@@ -124,6 +132,7 @@ The dashboard's pages read and change everything through a JSON API under `{path
 | `GET api/metrics?period=hour` | either | Each rule's requests, blocks and would-blocks: per minute for the last hour, or per hour for a `day` or a `week` |
 | `GET api/rules/{id}/offenders` | either | The rule's top clients by identity hash, this hour or `?hour=previous` |
 | `GET api/audit` | either | The audit log, newest first, 100 a page through `next_cursor`; `?action=`, `?target=`, `?actor=`, `?from=` and `?until=` narrow it |
+| `GET api/config` | either | The configuration servers run with: the counters' driver, the manifest store, the package's config, the custom scopes and strict mode |
 | `GET api/health` | either | What `dynamic-throttle:health --json` prints |
 | `POST api/explain` | either | What `dynamic-throttle:explain --json` prints, with tokens and header values masked |
 
