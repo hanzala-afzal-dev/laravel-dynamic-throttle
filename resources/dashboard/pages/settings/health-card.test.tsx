@@ -57,3 +57,15 @@ describe('the Settings page\'s health card', () => {
         await waitFor(() => expect(sent.filter(([, path]) => path === 'health')).toHaveLength(2));
     });
 });
+
+describe('the Settings page\'s health card, from the review', () => {
+    it('AC-9: names its table, announces the overall status, and says which checks need Redis', async () => {
+        mockApi(viewer({ 'GET health': { body: { status: 'ok', checks: [{ check: 'dominant-ip', status: 'ok', message: 'Too few requests to tell.' }] } } }));
+        renderAt(<SettingsHealthCard />, '/settings');
+
+        const table = await screen.findByRole('table', { name: 'Checks' });
+
+        expect(screen.getByRole('status')).toHaveTextContent('Healthy');
+        expect(within(table).getAllByRole('row')[1]).toHaveTextContent('Redis and Valkey only.');
+    });
+});

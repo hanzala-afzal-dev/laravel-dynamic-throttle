@@ -21,7 +21,8 @@ const CONFIG = {
     strict: false,
 };
 
-const rowsOf = (table: HTMLElement) => within(table).getAllByRole('row').map((row) => within(row).getAllByRole('cell').map((cell) => cell.textContent));
+// Each row's header (the key) and its cell (the value).
+const rowsOf = (table: HTMLElement) => within(table).getAllByRole('row').map((row) => Array.from(row.children, (cell) => cell.textContent));
 
 describe('the configuration card', () => {
     it('AC-4: shows the driver, the manifest store, the custom scopes and strict mode', async () => {
@@ -94,5 +95,17 @@ describe('the Settings page', () => {
         expect(screen.queryAllByRole('button').map((button) => button.textContent).filter((name) => name !== 'Check again')).toEqual([]);
         expect(screen.queryAllByRole('textbox')).toEqual([]);
         expect(screen.queryAllByRole('combobox')).toEqual([]);
+    });
+});
+
+describe('the configuration card, from the review', () => {
+    it('AC-9: heads each row with its key, and shows an empty string as ""', async () => {
+        mockApi(viewer({ 'GET config': { body: { ...CONFIG, config: { prefix: '', dashboard: { path: 'dynamic-throttle' } } } } }));
+        renderAt(<ConfigCard />, '/settings');
+
+        const general = await screen.findByRole('table', { name: 'General' });
+
+        expect(within(general).getAllByRole('rowheader').map((header) => header.textContent)).toEqual(['prefix']);
+        expect(rowsOf(general)).toEqual([['prefix', '""']]);
     });
 });
