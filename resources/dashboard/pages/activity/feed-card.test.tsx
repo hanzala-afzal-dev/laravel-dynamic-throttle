@@ -99,13 +99,14 @@ describe('the live feed', () => {
         expect(within(rows()[0]!).queryByRole('link')).not.toBeInTheDocument();
     });
 
-    it('AC-2: asks every 5 seconds for what came after the newest entry, and adds it on top', async () => {
+    it('AC-2: asks every 5 seconds for what came since 2 seconds before the newest entry, and adds what is new on top', async () => {
         vi.useFakeTimers({ shouldAdvanceTime: true });
         const sent = mockApi(viewer({
             ...config(),
             'GET feed': { body: { feed: [entry(500)] } },
-            'GET feed?since=1800000000500': { body: { feed: [entry(900, { ip: '198.51.100.2' })] } },
-            'GET feed?since=1800000000900': { body: { feed: [] } },
+            // The API answers the overlap again, which the page already holds.
+            'GET feed?since=1799999998500': { body: { feed: [entry(900, { ip: '198.51.100.2' }), entry(500)] } },
+            'GET feed?since=1799999998900': { body: { feed: [entry(900, { ip: '198.51.100.2' }), entry(500)] } },
         }));
         renderAt(<FeedCard />, '/activity');
 
@@ -115,7 +116,7 @@ describe('the live feed', () => {
         await act(() => vi.advanceTimersByTimeAsync(5_000));
 
         expect(rows().map((row) => cells(row)[4])).toEqual(['198.51.100.2', '203.0.113.7']);
-        expect(feedReads(sent)).toEqual(['feed', 'feed?since=1800000000500', 'feed?since=1800000000900']);
+        expect(feedReads(sent)).toEqual(['feed', 'feed?since=1799999998500', 'feed?since=1799999998900']);
     });
 
     it('AC-2: keeps the newest 500', async () => {
@@ -124,7 +125,7 @@ describe('the live feed', () => {
         mockApi(viewer({
             ...config(),
             'GET feed': { body: { feed: held } },
-            'GET feed?since=1800000001000': { body: { feed: [entry(1_003), entry(1_002), entry(1_001)] } },
+            'GET feed?since=1799999999000': { body: { feed: [entry(1_003), entry(1_002), entry(1_001), ...held.slice(0, 497)] } },
         }));
         renderAt(<FeedCard />, '/activity');
 
@@ -141,7 +142,7 @@ describe('the live feed', () => {
         const sent = mockApi(viewer({
             ...config(),
             'GET feed': { body: { feed: [entry(500)] } },
-            'GET feed?since=1800000000500': { body: { feed: [entry(900)] } },
+            'GET feed?since=1799999998500': { body: { feed: [entry(900), entry(500)] } },
         }));
         renderAt(<FeedCard />, '/activity');
 
@@ -154,7 +155,7 @@ describe('the live feed', () => {
         await userEvent.click(screen.getByRole('button', { name: 'Resume' }));
 
         await waitFor(() => expect(rows()).toHaveLength(2));
-        expect(feedReads(sent)).toEqual(['feed', 'feed?since=1800000000500']);
+        expect(feedReads(sent)).toEqual(['feed', 'feed?since=1799999998500']);
         expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
     });
 
@@ -163,7 +164,7 @@ describe('the live feed', () => {
         mockApi(viewer({
             ...config(),
             'GET feed': { body: { feed: [entry(500)] } },
-            'GET feed?since=1800000000500': { status: 503, body: { message: 'The Redis telemetry buffer could not read the feed.' } },
+            'GET feed?since=1799999998500': { status: 503, body: { message: 'The Redis telemetry buffer could not read the feed.' } },
         }));
         renderAt(<FeedCard />, '/activity');
 
@@ -172,6 +173,39 @@ describe('the live feed', () => {
 
         expect(await screen.findByText('The Redis telemetry buffer could not read the feed.')).toBeInTheDocument();
         expect(rows()).toHaveLength(1);
+    });
+
+    it('AC-2: adds a block another worker wrote a moment late, in time order', async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        mockApi(viewer({
+            ...config(),
+            'GET feed': { body: { feed: [entry(900), entry(500)] } },
+            'GET feed?since=1799999998900': { body: { feed: [entry(900), entry(700, { ip: '198.51.100.7' }), entry(500)] } },
+        }));
+        renderAt(<FeedCard />, '/activity');
+
+        await screen.findByRole('table', { name: 'Blocks in the last hour' });
+        await act(() => vi.advanceTimersByTimeAsync(5_000));
+        await waitFor(() => expect(rows()).toHaveLength(3));
+
+        expect(rows().map((row) => cells(row)[4])).toEqual(['203.0.113.7', '198.51.100.7', '203.0.113.7']);
+    });
+
+    it('AC-2: adds a second identical block, and never a copy of one it holds', async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        mockApi(viewer({
+            ...config(),
+            'GET feed': { body: { feed: [entry(500), entry(500)] } },
+            'GET feed?since=1799999998500': { body: { feed: [entry(500), entry(500), entry(500)] } },
+        }));
+        renderAt(<FeedCard />, '/activity');
+
+        await screen.findByRole('table', { name: 'Blocks in the last hour' });
+        await act(() => vi.advanceTimersByTimeAsync(5_000));
+        await waitFor(() => expect(rows()).toHaveLength(3));
+        await act(() => vi.advanceTimersByTimeAsync(5_000));
+
+        expect(rows()).toHaveLength(3);
     });
 
     it('AC-3: narrows the list by outcome and by rule, without asking the API', async () => {
