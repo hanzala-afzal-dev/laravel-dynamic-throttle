@@ -96,6 +96,7 @@ Feature tests on real routes through Testbench, with rules saved through the mod
   - It carries `Retry-After: 90`, `X-RateLimit-Reset` (now plus 90, in Unix seconds), `X-RateLimit-Limit: 2` and `X-RateLimit-Remaining: 0` (SPEC-001's retry for 2 requests at the start of a 60-second window).
   - A lenient rule on the same path does not count the rejected request (ADR-0021).
 - **AC-10** A rejecting rule of 1 per minute with `response_override` `{"message": "Slow down"}` answers 429 with exactly that JSON body, and the AC-9 headers: `Retry-After: 120`, `X-RateLimit-Reset`, `X-RateLimit-Limit: 1` and `X-RateLimit-Remaining: 0`.
+- **AC-22** A `response_override` of `{}`, which the array cast reads back as `[]`, answers the body `{}`, not `[]` (found in SPEC-022's review).
 - **AC-11** No headers:
   - on a path where the only matched rule is dry-run, even once it would block;
   - for a client exempt from every matched rule;
