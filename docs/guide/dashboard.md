@@ -101,6 +101,12 @@ Who the rules block right now, from where, and on which route.
 
 **Offenders** shows the clients any rule blocked most, this hour or the last, by identity hash, and how many different clients it blocked. A rule's own page shows the same for that rule.
 
+## The Audit log page
+
+Every change to the rules, the exemptions and the emergency settings, from the dashboard and the CLI alike, newest first: when, who, what, on which target, and what changed, such as `max_attempts: 5 → 10`. **Details** shows the full before and after side by side, with the request's IP and user agent.
+
+Filter by action, by target such as `rule:12`, by actor such as `cli:deploy` or `user:App\Models\User:42`, and by time, entered in your browser's zone. The filters stay in the page's URL, so you can share a filtered view; a rule's History links to its own entries. **Load more** fetches the next 100. The page only reads: the log is append-only.
+
 ## The Settings page
 
 Everything on it only reads, for viewers and managers alike:
