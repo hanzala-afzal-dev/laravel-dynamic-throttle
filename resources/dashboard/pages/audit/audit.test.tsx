@@ -50,10 +50,30 @@ describe('the audit log', () => {
 
         expect(rows().map((row) => cells(row).slice(1, 5))).toEqual([
             ['user:App\\Models\\User:42', 'Rule changed', 'rule:12', 'max_attempts: 5 → 10; window_seconds: 60 → 30'],
-            ['cli:deploy', 'Bypass', 'setting:bypass', 'on: true, until: 2027-01-15T13:00:00+00:00'],
-            ['guest', 'Exemption removed', 'exemption:5', 'subject: ip, value: 203.0.113.0/24'],
+            ['cli:deploy', 'Bypass on', 'setting:bypass', 'on: true, until: 2027-01-15T13:00:00+00:00'],
+            ['guest', 'Exemption removed', 'exemption:5', 'was subject: ip, value: 203.0.113.0/24'],
         ]);
         expect(within(rows()[0]!).getByRole('time')).toHaveAttribute('dateTime', '2027-01-15T12:00:00+00:00');
+    });
+
+    it('AC-1: tells an emergency setting turned off from one turned on, with what it was', async () => {
+        render({
+            'GET audit': {
+                body: pageOf([
+                    entryOf({ id: 5, action: 'settings.bypass', target: 'setting:bypass_all', before: { value: '1', expires_at: null }, after: null }),
+                    entryOf({ id: 4, action: 'settings.scale', target: 'setting:scale_factor', before: null, after: { value: '0.5', expires_at: null } }),
+                    entryOf({ id: 3, action: 'settings.scale', target: 'setting:scale_factor', before: { value: '0.5', expires_at: null }, after: null }),
+                ]),
+            },
+        });
+
+        await screen.findByRole('table', { name: 'Audit log entries' });
+
+        expect(rows().map((row) => cells(row).slice(2, 5))).toEqual([
+            ['Bypass off', 'setting:bypass_all', 'was value: 1, expires_at: none'],
+            ['Scale factor set', 'setting:scale_factor', 'value: 0.5, expires_at: none'],
+            ['Scale factor off', 'setting:scale_factor', 'was value: 0.5, expires_at: none'],
+        ]);
     });
 
     it('AC-1: links a rule\'s target to its page', async () => {
