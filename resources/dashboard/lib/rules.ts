@@ -1,5 +1,6 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, queryOptions, useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { Exemption } from '@/lib/exemptions';
 import { formatCount } from '@/lib/format';
 
 /** A rule, as the API gives it (SPEC-017). */
@@ -99,21 +100,19 @@ export function modeLabel(mode: Rule['mode']): string {
     return mode === 'enforce' ? 'Enforcing' : 'Dry-run';
 }
 
-/** An exemption, as the API gives it (SPEC-017). */
-export type Exemption = {
-    id: number;
-    rule_id: number | null;
-    subject: 'ip' | 'user' | 'custom';
-    subject_parameter: string | null;
-    value: string;
-    reason: string | null;
-    expires_at: string | null;
-    active: boolean;
-    created_at: string | null;
-    updated_at: string | null;
-};
-
 /** One rule, with the newest 100 exemptions that name it. */
 export function useRule(id: number) {
-    return useQuery({ queryKey: ['rules', 'one', id], queryFn: () => api<{ rule: Rule; exemptions: Exemption[] }>('GET', `rules/${id}`) });
+    return useQuery(ruleQuery(id));
+}
+
+/**
+ * The name of a rule beyond the first 100, for a page that names rules by id (SPEC-023
+ * decision 6). Names change rarely, so each row and filter that asks shares one request.
+ */
+export function useRuleName(id: number, enabled: boolean) {
+    return useQuery({ ...ruleQuery(id), enabled, staleTime: 60_000, select: (found) => found.rule.name });
+}
+
+function ruleQuery(id: number) {
+    return queryOptions({ queryKey: ['rules', 'one', id], queryFn: () => api<{ rule: Rule; exemptions: Exemption[] }>('GET', `rules/${id}`) });
 }
