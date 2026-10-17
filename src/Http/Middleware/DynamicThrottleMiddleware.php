@@ -19,6 +19,7 @@ use Afzal\DynamicThrottle\Engine\Stacking\Evaluation;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleAttempt;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleEvaluator;
 use Afzal\DynamicThrottle\Engine\Stacking\RuleFailure;
+use Afzal\DynamicThrottle\Engine\Telemetry\FeedEntry;
 use Afzal\DynamicThrottle\Engine\Telemetry\Sampler;
 use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryOutcome;
 use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryRecord;
@@ -36,6 +37,7 @@ use Afzal\DynamicThrottle\Manifest\InvalidManifest;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Manifest\ManifestUnavailable;
 use Closure;
+use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Events\Dispatcher;
@@ -43,6 +45,8 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Route;
+use Stringable;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
 use Throwable;
@@ -51,8 +55,8 @@ use Throwable;
  * Applies the rules to a request (ADR-0004, ADR-0008, SPEC-010). After the
  * response, it tells the app which dry-run rules would have blocked the request
  * (SPEC-011), which rule rejected it, and whether the counter store failed
- * (SPEC-012, SPEC-015), and records what each rule did with it, and who sent
- * it (ADR-0013, SPEC-016).
+ * (SPEC-012, SPEC-015), and records what each rule did with it, who sent it
+ * (ADR-0013, SPEC-016), and each block for the live feed (SPEC-030).
  * Only the 429 and the 503 of a fail-closed rule leave it: anything else the
  * package throws is reported, at most once per cause and cooldown, and the
  * request goes through (ADR-0020 point 1). Strict mode rethrows programming
@@ -117,7 +121,9 @@ final readonly class DynamicThrottleMiddleware
         try {
             $events = $this->kept($request, 'events');
             $records = $this->kept($request, 'telemetry');
-            $ip = $this->keptIp($request);
+            $ip = $this->keptIp($request, 'ip');
+            $feedIp = $this->keptIp($request, 'feed_ip');
+            $user = $this->keptUser($request);
             // Taken, not read: a middleware the app also lists globally terminates twice.
             $request->attributes->remove(self::AFTER_RESPONSE);
         } catch (Throwable $exception) {
@@ -127,7 +133,7 @@ final readonly class DynamicThrottleMiddleware
         }
 
         $this->dispatchEvents($events);
-        $this->recordTelemetry($request, $records, $ip);
+        $this->recordTelemetry($request, $records, $ip, $feedIp, $user);
     }
 
     /**
@@ -145,16 +151,30 @@ final readonly class DynamicThrottleMiddleware
     }
 
     /**
-     * The client IP the rules counted, grouped, as handle() kept it for the hour's
-     * traffic (SPEC-016): false when it could not be read, and null when no rule or
-     * exemption read it.
+     * The client IP the rules counted, as handle() kept it: `ip` grouped, for the
+     * hour's traffic (SPEC-016), and `feed_ip` whole, for the live feed (SPEC-030).
+     * False when it could not be read, and null when no rule or exemption read it.
+     *
+     * @param  'ip'|'feed_ip'  $key
      */
-    private function keptIp(Request $request): string|false|null
+    private function keptIp(Request $request, string $key): string|false|null
     {
         $kept = $request->attributes->get(self::AFTER_RESPONSE);
-        $ip = is_array($kept) ? $kept['ip'] ?? null : null;
+        $ip = is_array($kept) ? $kept[$key] ?? null : null;
 
         return is_string($ip) || $ip === false ? $ip : null;
+    }
+
+    /**
+     * The user a user rule or exemption resolved, as handle() kept it for the live
+     * feed (SPEC-030), as Class:id.
+     */
+    private function keptUser(Request $request): ?string
+    {
+        $kept = $request->attributes->get(self::AFTER_RESPONSE);
+        $user = is_array($kept) ? $kept['user'] ?? null : null;
+
+        return is_string($user) ? $user : null;
     }
 
     /**
@@ -189,15 +209,18 @@ final readonly class DynamicThrottleMiddleware
 
     /**
      * Writes the records handle() kept to the buffer, in this minute, with the
-     * request's client, when the sampler picks the request (SPEC-015 decision 6,
-     * SPEC-016). Never while the counter store's cooldown runs. A failed write is
-     * reported, at most once per cause and cooldown, and never starts the cooldown,
-     * which changes what requests get (decision 7).
+     * request's client and its live feed entries, in one call, when the sampler picks
+     * the request (SPEC-015 decision 6, SPEC-016, SPEC-030). Never while the counter
+     * store's cooldown runs. A failed write is reported, at most once per cause and
+     * cooldown, and never starts the cooldown, which changes what requests get
+     * (decision 7).
      *
      * @param  array<array-key, mixed>  $records
-     * @param  string|false|null  $ip  the client IP the rules counted, as keptIp() gives it
+     * @param  string|false|null  $ip  the client IP the rules counted, grouped, as keptIp() gives it
+     * @param  string|false|null  $feedIp  the same, whole
+     * @param  ?string  $user  the user a user rule or exemption resolved
      */
-    private function recordTelemetry(Request $request, array $records, string|false|null $ip): void
+    private function recordTelemetry(Request $request, array $records, string|false|null $ip, string|false|null $feedIp, ?string $user): void
     {
         $records = array_values(array_filter($records, fn (mixed $record): bool => $record instanceof TelemetryRecord));
 
@@ -213,7 +236,16 @@ final readonly class DynamicThrottleMiddleware
             $weight = $this->container->make(Sampler::class)->weight();
 
             if ($weight > 0) {
-                $this->container->make(TelemetryBuffer::class)->record(intdiv($this->clock->microseconds(), 60_000_000), $weight, $records, $this->client($request, $ip));
+                if ($ip === null) {
+                    // No rule or exemption read it: read now, through a copy, as the
+                    // resolver reads it, so the app's own read is never touched.
+                    $feedIp = $this->readIp($request);
+                    $ip = $feedIp === false ? false : ClientIp::group($feedIp, $this->container->make(IdentitySettings::class)->ipv6Prefix);
+                }
+
+                $microseconds = $this->clock->microseconds();
+                $feed = $this->feed($request, $records, intdiv($microseconds, 1_000), $feedIp === false ? null : $feedIp, $user);
+                $this->container->make(TelemetryBuffer::class)->record(intdiv($microseconds, 60_000_000), $weight, $records, $this->client($ip), $feed);
             }
         } catch (Throwable $exception) {
             $this->report($exception);
@@ -225,28 +257,73 @@ final readonly class DynamicThrottleMiddleware
      * gives it, IPv6 grouped (SPEC-016 decision 6), or null when its IP cannot be
      * read. It is the IP the rules counted when one read it, so the traffic sees what
      * they saw, even when the app trusts its proxy only after dynamic.throttle (the
-     * review). Otherwise it is read now, through a copy, as the resolver reads it, so
-     * the app's own read is never touched.
+     * review).
      *
-     * @param  string|false|null  $counted  the client IP the rules counted, as keptIp() gives it
+     * @param  string|false  $grouped  the client IP, grouped, or false when it could not be read
      */
-    private function client(Request $request, string|false|null $counted): ?string
+    private function client(string|false $grouped): ?string
     {
-        if ($counted === false) {
+        return $grouped === false ? null : $this->container->make(IdentityHasher::class)->hash(ScopeIdentity::ip($grouped));
+    }
+
+    /**
+     * The client IP, whole: null when the request has none, and false when it cannot
+     * be read.
+     */
+    private function readIp(Request $request): string|false|null
+    {
+        try {
+            return (clone $request)->ip();
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * The live feed's entries (SPEC-030): one for each block and would-block, with
+     * the method, the route's template and never the path, the client IP whole, and
+     * the user a rule resolved or the default guard already holds. None with
+     * telemetry.live_feed off.
+     *
+     * @param  list<TelemetryRecord>  $records
+     * @param  int  $time  Unix milliseconds
+     * @return list<FeedEntry>
+     */
+    private function feed(Request $request, array $records, int $time, ?string $ip, ?string $user): array
+    {
+        $blocks = array_values(array_filter($records, fn (TelemetryRecord $record): bool => in_array($record->outcome, [TelemetryOutcome::Blocked, TelemetryOutcome::WouldBlock], true)));
+
+        if ($blocks === [] || $this->config->get('dynamic-throttle.telemetry.live_feed') === false) {
+            return [];
+        }
+
+        $route = $request->route();
+        $route = $route instanceof Route ? $route->uri() : null;
+        $user ??= $this->heldUser();
+
+        return array_map(
+            fn (TelemetryRecord $record): FeedEntry => new FeedEntry($time, $record->ruleId, $record->outcome, $request->getMethod(), $route, $ip, $user, $record->identityHash),
+            $blocks,
+        );
+    }
+
+    /**
+     * The user the default guard already holds, as Class:id, as the user scope names
+     * it: never a lookup, so the feed adds no query (SPEC-030 decision 4).
+     */
+    private function heldUser(): ?string
+    {
+        try {
+            $guard = $this->container->make(AuthFactory::class)->guard();
+            $user = $guard->hasUser() ? $guard->user() : null;
+            $id = $user?->getAuthIdentifier();
+        } catch (Throwable) {
             return null;
         }
 
-        if ($counted === null) {
-            try {
-                $ip = (clone $request)->ip();
-            } catch (Throwable) {
-                return null;
-            }
+        $id = $id instanceof Stringable ? (string) $id : $id;
 
-            $counted = ClientIp::group($ip, $this->container->make(IdentitySettings::class)->ipv6Prefix);
-        }
-
-        return $this->container->make(IdentityHasher::class)->hash(ScopeIdentity::ip($counted));
+        return $user !== null && ((is_string($id) && $id !== '') || is_int($id)) ? $user::class.':'.$id : null;
     }
 
     /**
@@ -375,7 +452,10 @@ final readonly class DynamicThrottleMiddleware
                     'events' => [...$this->kept($request, 'events'), ...$events],
                     'telemetry' => [...$this->kept($request, 'telemetry'), ...$records],
                     // The client IP the rules counted, for the hour's traffic (SPEC-016).
-                    'ip' => $this->keptIp($request) ?? $identities->countedIp(),
+                    'ip' => $this->keptIp($request, 'ip') ?? $identities->countedIp(),
+                    // The same IP whole, and the user a rule resolved, for the live feed (SPEC-030).
+                    'feed_ip' => $this->keptIp($request, 'feed_ip') ?? $identities->wholeIp(),
+                    'user' => $this->keptUser($request) ?? $identities->resolvedUser(),
                 ]);
             }
         } catch (Throwable $exception) {

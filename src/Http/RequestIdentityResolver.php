@@ -140,6 +140,32 @@ final class RequestIdentityResolver implements ExemptionSubjects, IdentityResolv
     }
 
     /**
+     * The client IP a rule or an exemption read, whole, IPv6 too, for the live feed
+     * (SPEC-030 AC-7). Null when nothing read it, or the request has none, and false
+     * when it could not be read: never a read of its own.
+     *
+     * @internal
+     */
+    public function wholeIp(): string|false|null
+    {
+        return $this->ipFailure instanceof Throwable ? false : $this->ipAddress;
+    }
+
+    /**
+     * The user the user scope resolved, as Class:id, for the live feed (SPEC-030
+     * AC-3). Null when no rule or exemption asked the scope, when it found no user,
+     * or when it failed: never a lookup of its own.
+     *
+     * @internal
+     */
+    public function resolvedUser(): ?string
+    {
+        $value = $this->values[$this->scopeName(Scope::User, null)] ?? null;
+
+        return is_string($value) ? $value : null;
+    }
+
+    /**
      * For exemptions: the whole address, before IPv6 grouping (SPEC-009).
      *
      * @throws IdentityUnavailableException

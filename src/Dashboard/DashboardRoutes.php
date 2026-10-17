@@ -8,6 +8,7 @@ use Afzal\DynamicThrottle\Dashboard\Api\AuditController;
 use Afzal\DynamicThrottle\Dashboard\Api\ConfigController;
 use Afzal\DynamicThrottle\Dashboard\Api\ExemptionController;
 use Afzal\DynamicThrottle\Dashboard\Api\ExplainController;
+use Afzal\DynamicThrottle\Dashboard\Api\FeedController;
 use Afzal\DynamicThrottle\Dashboard\Api\HealthController;
 use Afzal\DynamicThrottle\Dashboard\Api\MetricsController;
 use Afzal\DynamicThrottle\Dashboard\Api\OffendersController;
@@ -76,6 +77,7 @@ final class DashboardRoutes
             $router->name('api.metrics')->middleware(self::middleware('read'))->get('api/metrics', MetricsController::class);
             $router->name('api.health')->middleware(self::middleware('read'))->get('api/health', HealthController::class);
             $router->name('api.config')->middleware(self::middleware('read'))->get('api/config', ConfigController::class);
+            $router->name('api.feed')->middleware(self::middleware('read'))->get('api/feed', FeedController::class);
             $router->name('api.audit')->middleware(self::middleware('read'))->get('api/audit', AuditController::class);
             $router->name('api.explain')->middleware(self::middleware('inspect'))->post('api/explain', ExplainController::class);
 
