@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Tests\Support\DashboardApi;
+use Afzal\DynamicThrottle\Tests\Support\RuleSchema;
 use Afzal\DynamicThrottle\Tests\Support\Throttling;
 use Illuminate\Support\Facades\Schema;
 
@@ -51,6 +52,8 @@ it('SPEC-022 AC-16: searches ignoring case, with %, _ and \\ as themselves', fun
         foreach (['metrics_hourly', 'audit_log', 'settings', 'exemptions', 'rules'] as $table) {
             $schema->dropIfExists("dynamic_throttle_{$table}");
         }
+
+        RuleSchema::unlock();
     }
 
     expect($found)->toBe([['Login'], ['Catalog'], ['100% off'], ['Snakes'], ['Back\\slash'], []]);

@@ -19,14 +19,57 @@ final class RuleSchema
 {
     public const string MIGRATIONS = __DIR__.'/../../database/migrations';
 
+    /** @var resource|null the lock this process holds on the shared databases, if any */
+    private static $lock = null;
+
     public static function migrate(): void
     {
+        self::lockSharedDatabase();
         Artisan::call('migrate', ['--path' => self::MIGRATIONS, '--realpath' => true]);
     }
 
     public static function rollback(): void
     {
-        Artisan::call('migrate:rollback', ['--path' => self::MIGRATIONS, '--realpath' => true]);
+        try {
+            Artisan::call('migrate:rollback', ['--path' => self::MIGRATIONS, '--realpath' => true]);
+        } finally {
+            self::unlock();
+        }
+    }
+
+    /**
+     * Lets another process migrate the shared databases again: rollback() does, and a
+     * test that drops its tables itself calls it.
+     */
+    public static function unlock(): void
+    {
+        if (self::$lock !== null) {
+            flock(self::$lock, LOCK_UN);
+            fclose(self::$lock);
+            self::$lock = null;
+        }
+    }
+
+    /**
+     * The driver tests' MySQL and PostgreSQL are shared, and the migrations name some
+     * constraints without the table prefix, so two processes migrating at once clash
+     * under --parallel (CLAUDE.md). One process at a time holds them, from migrate()
+     * to rollback(); SQLite, which each test has to itself, never waits.
+     */
+    private static function lockSharedDatabase(): void
+    {
+        $connection = config('dynamic-throttle.database.connection') ?? config('database.default');
+        $driver = is_string($connection) ? config("database.connections.{$connection}.driver") : null;
+
+        if (self::$lock !== null || ! in_array($driver, ['mysql', 'pgsql'], true)) {
+            return;
+        }
+
+        $lock = fopen(sys_get_temp_dir().'/dynamic-throttle-shared-schema.lock', 'c');
+
+        if ($lock !== false && flock($lock, LOCK_EX)) {
+            self::$lock = $lock;
+        }
     }
 
     /**
