@@ -22,8 +22,8 @@ const CHART: ChartConfig = {
     wouldBlocks: { label: 'Would-blocks', color: 'var(--warning)' },
 };
 
-/** The blocks and would-blocks over the last hour, day or week (SPEC-021 AC-6). */
-export function TrafficCard({ period, onPeriodChange, className }: { period: Period; onPeriodChange: (period: Period) => void; className?: string }) {
+/** The blocks and would-blocks over the last hour, day or week (SPEC-021 AC-6), of every rule or of one (SPEC-022). */
+export function TrafficCard({ period, onPeriodChange, ruleId, className }: { period: Period; onPeriodChange: (period: Period) => void; ruleId?: number; className?: string }) {
     return (
         <Card className={className}>
             <Tabs value={period} onValueChange={(value) => isPeriod(value) && onPeriodChange(value)} className="gap-6">
@@ -42,7 +42,7 @@ export function TrafficCard({ period, onPeriodChange, className }: { period: Per
                 <CardContent>
                     {PERIODS.map(({ value }) => (
                         <TabsContent key={value} value={value}>
-                            <Traffic period={value} />
+                            <Traffic period={value} ruleId={ruleId} />
                         </TabsContent>
                     ))}
                 </CardContent>
@@ -51,8 +51,10 @@ export function TrafficCard({ period, onPeriodChange, className }: { period: Per
     );
 }
 
-function Traffic({ period }: { period: Period }) {
-    const metrics = useMetrics(period);
+/** Every rule's numbers, or one rule's alone, as a rule's page shows them (SPEC-022). */
+function Traffic({ period, ruleId }: { period: Period; ruleId?: number }) {
+    const all = useMetrics(period);
+    const metrics = ruleId === undefined || all.data === undefined ? all : { ...all, data: { ...all.data, rules: all.data.rules.filter((rule) => rule.id === ruleId) } };
 
     if (metrics.isError) {
         return <QueryError error={metrics.error} />;
@@ -65,7 +67,7 @@ function Traffic({ period }: { period: Period }) {
     const sums = totals(metrics.data);
 
     if (sums.hits === 0) {
-        return <p className="text-sm text-muted-foreground">No rule checked a request in the last {period}.</p>;
+        return <p className="text-sm text-muted-foreground">{ruleId === undefined ? 'No rule' : 'The rule'} checked {ruleId === undefined ? 'a request' : 'no request'} in the last {period}.</p>;
     }
 
     return (

@@ -98,3 +98,22 @@ export function limitLabel(rule: Pick<Rule, 'max_attempts' | 'window_seconds'>):
 export function modeLabel(mode: Rule['mode']): string {
     return mode === 'enforce' ? 'Enforcing' : 'Dry-run';
 }
+
+/** An exemption, as the API gives it (SPEC-017). */
+export type Exemption = {
+    id: number;
+    rule_id: number | null;
+    subject: 'ip' | 'user' | 'custom';
+    subject_parameter: string | null;
+    value: string;
+    reason: string | null;
+    expires_at: string | null;
+    active: boolean;
+    created_at: string | null;
+    updated_at: string | null;
+};
+
+/** One rule, with the newest 100 exemptions that name it. */
+export function useRule(id: number) {
+    return useQuery({ queryKey: ['rules', 'one', id], queryFn: () => api<{ rule: Rule; exemptions: Exemption[] }>('GET', `rules/${id}`) });
+}
