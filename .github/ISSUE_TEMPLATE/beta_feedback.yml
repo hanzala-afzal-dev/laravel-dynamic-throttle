@@ -1,0 +1,55 @@
+name: Beta feedback
+description: You tried a 0.1.0 beta. Tell us how it went, good or bad.
+labels: [beta-feedback]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying the beta. Short answers are fine. Security problems go through private reporting (see SECURITY.md), not here.
+  - type: input
+    id: package-version
+    attributes:
+      label: Package version
+      placeholder: 0.1.0-beta.1
+    validations:
+      required: true
+  - type: input
+    id: laravel-version
+    attributes:
+      label: Laravel and PHP versions, and runtime
+      placeholder: Laravel 13.x, PHP 8.4, PHP-FPM (or Octane with Swoole, Vapor, …)
+    validations:
+      required: true
+  - type: input
+    id: store
+    attributes:
+      label: Cache store for the counters
+      placeholder: Redis 7.4 / Valkey 8 / Memcached / database / …
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Did it install and boot cleanly?
+      options:
+        - "Yes"
+        - "Yes, after a fix (please say what)"
+        - "No"
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What did you try?
+      description: The rules you added, the pages you used, the commands you ran.
+    validations:
+      required: true
+  - type: textarea
+    id: surprised
+    attributes:
+      label: What surprised or confused you?
+      description: Anything that behaved differently from what you expected, or was hard to find in the docs or the dashboard. For a rule, the output of `php artisan dynamic-throttle:explain` helps.
+  - type: textarea
+    id: missing
+    attributes:
+      label: What is missing for you to use it in production?

@@ -205,7 +205,13 @@ A dashboard that ships with the package, as Laravel Horizon's does: served at it
 - CI rebuilds `dist/` and finds it identical, the first page's JavaScript stays under 300 KB gzipped, and `npm audit` finds no high or critical advisory in what ships.
 - Screenshots of both themes are in the README.
 - The dashboard works under the strict CSP in the Workbench app.
-- 0.1.0 is tagged and on Packagist, the repository is public, and the three GitHub settings listed under "Repository" below are on.
+- `0.1.0-beta.1` is tagged and on Packagist, the repository is public, and the three GitHub settings listed under "Repository" below are on.
+
+**Release plan (decided 2026-10-17):** a public beta first, so the community can try it before the API settles:
+- `0.1.0-beta.1` once Phase 5 is done, with GitHub Discussions on and a "Beta feedback" issue template.
+- More betas (`0.1.0-beta.N`) with fixes and changes from feedback, each breaking change with an upgrade note in the changelog.
+- `0.1.0-RC1` with fixes only, then `0.1.0` when no serious bug is reported for a week or two.
+- Then Phase 6 towards 1.0.
 
 **Fallback:** if the phase runs more than 50% over its estimate, release 0.1.0 once Overview, Rules, Exemptions, Settings and the emergency controls are finished, since those manage throttling, and move Activity, Audit log and Explain to a minor release.
 
