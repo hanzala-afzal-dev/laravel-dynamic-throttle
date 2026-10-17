@@ -94,6 +94,10 @@ it('SPEC-015: builds the telemetry keys under the prefix, apart from the counter
     ]);
 });
 
+it('SPEC-030 AC-4: names a minute\'s feed under the telemetry prefix', function (): void {
+    expect((new KeyBuilder('dt:'))->feed(30_000_000))->toBe('dt:t:f:30000000');
+});
+
 it('SPEC-015: rejects a telemetry metric other than hits, blocks and would_blocks', function (): void {
     expect(fn (): string => (new KeyBuilder('dt:'))->telemetryCount(30_000_000, '12', 'misses'))
         ->toThrow(InvalidArgumentException::class, 'Unknown telemetry metric "misses": use hits, blocks, would_blocks, guests, skipped, ignored.');

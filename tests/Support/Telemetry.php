@@ -6,6 +6,7 @@ namespace Afzal\DynamicThrottle\Tests\Support;
 
 use Afzal\DynamicThrottle\Engine\Contracts\TelemetryBuffer;
 use Afzal\DynamicThrottle\Engine\Telemetry\MinuteCounts;
+use Afzal\DynamicThrottle\Engine\Telemetry\FeedEntry;
 use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryOutcome;
 use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryRecord;
 use Illuminate\Support\Facades\DB;
@@ -68,6 +69,14 @@ final class Telemetry
             fn (MinuteCounts $counts): array => [$counts->hits, $counts->blocks, $counts->wouldBlocks, $counts->guests, $counts->skipped, $counts->ignored],
             ($buffer ?? self::buffer())->counts($minute, $ruleIds),
         );
+    }
+
+    /**
+     * A feed entry (SPEC-030): a POST to login, blocked by default, from 203.0.113.7.
+     */
+    public static function entry(string $ruleId, int $time = 1_800_000_000_000, TelemetryOutcome $outcome = TelemetryOutcome::Blocked, ?string $ip = '203.0.113.7', ?string $user = null): FeedEntry
+    {
+        return new FeedEntry($time, $ruleId, $outcome, 'POST', 'login', $ip, $user, hash('sha256', $ip ?? 'A'));
     }
 
     public static function counted(string $ruleId, string $client = 'A'): TelemetryRecord

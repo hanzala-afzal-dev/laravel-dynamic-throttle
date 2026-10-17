@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use Afzal\DynamicThrottle\Engine\Exceptions\StorageUnavailableException;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
+use Afzal\DynamicThrottle\Engine\Telemetry\FeedEntry;
 use Afzal\DynamicThrottle\Engine\Telemetry\RedisTelemetryBuffer;
+use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryOutcome;
 use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryRecord;
 use Afzal\DynamicThrottle\Tests\Support\Telemetry;
 use Illuminate\Container\Container;
@@ -382,3 +384,89 @@ it('SPEC-016 AC-19: reports a Redis it cannot reach as unavailable when reading 
     expect(fn (): int => $buffer->requests(500_000))->toThrow(StorageUnavailableException::class)
         ->and(fn (): array => $buffer->topClients(500_000))->toThrow(StorageUnavailableException::class);
 })->with(['phpredis', 'predis']);
+
+/*
+| SPEC-030: the live feed, one list a minute beside the telemetry.
+*/
+
+it('SPEC-030 AC-4: writes a request\'s feed entries in its one script call', function (string $client, string $host, int $port): void {
+    $commands = [];
+    [$buffer] = redisTelemetry($client, $host, $port, $commands);
+    $minute = Telemetry::minute(1_800_000_000);
+    // Redis may not have the script yet: the first call loads it.
+    $buffer->record($minute, 1, [Telemetry::counted('warm')]);
+    $commands = [];
+
+    $buffer->record($minute, 1, [Telemetry::blocked('1'), Telemetry::wouldBlock('2')], hash('sha256', 'client'), [Telemetry::entry('1'), Telemetry::entry('2', outcome: TelemetryOutcome::WouldBlock)]);
+
+    expect($commands)->toBe(['evalsha'])->and($buffer->feed($minute))->toHaveCount(2);
+})->with('telemetry clients and services');
+
+it('SPEC-030 AC-4: keeps a minute\'s newest 500 entries, newest first', function (string $client, string $host, int $port): void {
+    [$buffer] = redisTelemetry($client, $host, $port);
+    $minute = Telemetry::minute(1_800_000_000);
+
+    foreach (array_chunk(range(1, 520), 40) as $times) {
+        $buffer->record($minute, 1, [Telemetry::blocked('1')], null, array_map(fn (int $time): FeedEntry => Telemetry::entry('1', time: 1_800_000_000_000 + $time), $times));
+    }
+
+    $times = array_map(fn (FeedEntry $entry): int => $entry->time - 1_800_000_000_000, $buffer->feed($minute) ?? []);
+
+    expect($times)->toBe(range(520, 21));
+})->with('telemetry clients and services');
+
+it('SPEC-030 AC-4: lets a minute\'s list expire 3,660 seconds after it is created, however often it is written', function (string $client, string $host, int $port): void {
+    [$buffer, $connection, $prefix] = redisTelemetry($client, $host, $port);
+    $minute = Telemetry::minute(1_800_000_000);
+    $buffer->record($minute, 1, [Telemetry::blocked('1')], null, [Telemetry::entry('1')]);
+    $first = (int) $connection->command('ttl', [$prefix."t:f:{$minute}"]);
+    // A later write never pushes the expiry back.
+    $connection->command('expire', [$prefix."t:f:{$minute}", 3_000]);
+    $buffer->record($minute, 1, [Telemetry::blocked('1')], null, [Telemetry::entry('1', time: 1_800_000_001_000)]);
+
+    expect($first)->toBeGreaterThan(3_650)->toBeLessThanOrEqual(3_660)
+        ->and((int) $connection->command('ttl', [$prefix."t:f:{$minute}"]))->toBeGreaterThan(2_990)->toBeLessThanOrEqual(3_000);
+})->with('telemetry clients and services');
+
+it('SPEC-030 AC-4: reads the last 60 minutes\' newest 500, newest first, and only those after since', function (string $client, string $host, int $port): void {
+    [$buffer] = redisTelemetry($client, $host, $port);
+    $now = Telemetry::minute(1_800_000_000);
+    // 400 entries in each of the current and the previous minute, and one 60 minutes ago.
+    foreach ([$now, $now - 1] as $minute) {
+        foreach (array_chunk(range(0, 399), 100) as $offsets) {
+            $buffer->record($minute, 1, [Telemetry::blocked('1')], null, array_map(fn (int $offset): FeedEntry => Telemetry::entry('1', time: $minute * 60_000 + $offset), $offsets));
+        }
+    }
+    $buffer->record($now - 60, 1, [Telemetry::blocked('1')], null, [Telemetry::entry('1', time: ($now - 60) * 60_000)]);
+
+    $all = array_map(fn (FeedEntry $entry): int => $entry->time, $buffer->feed($now) ?? []);
+    $since = array_map(fn (FeedEntry $entry): int => $entry->time, $buffer->feed($now, $now * 60_000 + 389) ?? []);
+
+    expect([count($all), $all[0], $all[399], $all[400], $all[499]])->toBe([500, $now * 60_000 + 399, $now * 60_000, ($now - 1) * 60_000 + 399, ($now - 1) * 60_000 + 300])
+        ->and($since)->toBe(array_map(fn (int $offset): int => $now * 60_000 + $offset, range(399, 390)));
+})->with('telemetry clients and services');
+
+it('SPEC-030 AC-4: skips an entry it cannot read', function (string $client, string $host, int $port): void {
+    [$buffer, $connection, $prefix] = redisTelemetry($client, $host, $port);
+    $minute = Telemetry::minute(1_800_000_000);
+    $buffer->record($minute, 1, [Telemetry::blocked('1')], null, [Telemetry::entry('1')]);
+    $connection->command('lpush', [$prefix."t:f:{$minute}", 'not an entry']);
+
+    expect($buffer->feed($minute))->toEqual([Telemetry::entry('1')]);
+})->with('telemetry clients and services');
+
+it('SPEC-030 AC-6: writes the feed in a call of its own on a Redis Cluster connection, with the same entries', function (string $client, string $host, int $port): void {
+    $commands = [];
+    [$buffer, $connection, $prefix] = clusterTelemetry($client, $host, $port, $commands);
+    $minute = Telemetry::minute(1_800_000_000);
+    $buffer->record($minute - 1, 1, [Telemetry::counted('warm')]);
+    $commands = [];
+
+    $buffer->record($minute, 1, [Telemetry::blocked('1')], null, [Telemetry::entry('1')]);
+    $sent = $commands;
+
+    // The minute's hash, the rule's offenders and clients, and the feed: four keys, four calls.
+    expect($sent)->toBe(['evalsha', 'evalsha', 'evalsha', 'evalsha'])
+        ->and($buffer->feed($minute))->toEqual([Telemetry::entry('1')])
+        ->and((int) $connection->command('ttl', [$prefix."t:f:{$minute}"]))->toBeGreaterThan(3_650)->toBeLessThanOrEqual(3_660);
+})->with('telemetry clients and services');

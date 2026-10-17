@@ -203,3 +203,13 @@ it('SPEC-016 AC-15: records the same numbers with a client, and the hour\'s traf
     expect(Telemetry::counts(Telemetry::minute($time), ['1'], $buffer))->toEqual(['1' => [2, 0, 0]])
         ->and([$buffer->requests(Telemetry::hour($time)), $buffer->topClients(Telemetry::hour($time))])->toBeIn([[null, null], [2, [$client => 2]]]);
 })->with('telemetry buffers');
+
+it('SPEC-030 AC-4 and AC-6: keeps a request\'s feed entries newest first where the buffer keeps a feed, and gives null where it keeps none', function (TelemetryBuffer $buffer): void {
+    $minute = Telemetry::minute(1_800_000_000);
+    $blocked = Telemetry::entry('1', time: 1_800_000_000_000);
+    $wouldBlock = Telemetry::entry('2', time: 1_800_000_000_500, outcome: TelemetryOutcome::WouldBlock, ip: null, user: 'App\\Models\\User:42');
+
+    $buffer->record($minute, 1, [Telemetry::blocked('1'), Telemetry::wouldBlock('2')], null, [$blocked, $wouldBlock]);
+
+    expect($buffer->feed($minute))->toEqual($buffer instanceof RedisTelemetryBuffer ? [$wouldBlock, $blocked] : null);
+})->with('telemetry buffers');
