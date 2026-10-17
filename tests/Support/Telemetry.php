@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle\Tests\Support;
 
 use Afzal\DynamicThrottle\Engine\Contracts\TelemetryBuffer;
-use Afzal\DynamicThrottle\Engine\Telemetry\MinuteCounts;
 use Afzal\DynamicThrottle\Engine\Telemetry\FeedEntry;
+use Afzal\DynamicThrottle\Engine\Telemetry\MinuteCounts;
 use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryOutcome;
 use Afzal\DynamicThrottle\Engine\Telemetry\TelemetryRecord;
 use Illuminate\Support\Facades\DB;
