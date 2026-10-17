@@ -1,6 +1,6 @@
 # SPEC-025: The Audit log page
 
-- Status: Approved
+- Status: Done
 - ADRs: ADR-0028
 - Roadmap phase: 5
 
@@ -42,7 +42,7 @@ For viewers and managers alike. Nothing on it changes anything.
 ## Interfaces and files
 
 - `resources/dashboard/pages/audit/`: `index.tsx`, and its tests.
-- `resources/dashboard/lib/audit.ts`: the filters, the paged query, the actions' words and the change summary, which the rule page's History shares.
+- `resources/dashboard/lib/audit.ts`: the filters, the paged query, the actions' words and the change summary.
 - `resources/dashboard/pages/index.tsx`: the route.
 
 ## Out of scope
