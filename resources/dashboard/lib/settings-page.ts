@@ -48,9 +48,9 @@ function isGroup(value: ConfigValue): value is Record<string, ConfigValue> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** A value as the config file would hold it: dt:, true, null, ["web"]. */
+/** A value as the config file would hold it: dt:, true, null, ["web"], and "" for an empty string. */
 function shown(value: ConfigValue): string {
-    return typeof value === 'string' ? value : JSON.stringify(value);
+    return typeof value === 'string' && value !== '' ? value : JSON.stringify(value);
 }
 
 /** What each health check looks for, from the health guide's table (decision 5). */
@@ -67,6 +67,6 @@ export const CHECK_PURPOSES: Record<string, string> = {
     emergency: 'Bypass or a scale factor left on with no end time, or with one more than 24 hours away.',
     metrics: 'Metrics not flushed for more than 10 minutes: the scheduler is not running.',
     guests: 'A user rule that saw mostly guests in the last hour: authentication the route check cannot see, or a rule on public routes.',
-    'dominant-ip': 'One client IP behind half or more of the recent requests: usually a load balancer\'s, because the trusted proxies are not set.',
+    'dominant-ip': 'One client IP behind half or more of the recent requests: usually a load balancer\'s, because the trusted proxies are not set. Redis and Valkey only.',
     ignored: 'Rules ignored in the last hour because more rules of their mode matched a request than matching.max_rules_per_request allows.',
 };
