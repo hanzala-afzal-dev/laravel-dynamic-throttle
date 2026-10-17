@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://packagist.org/packages/hanzala-afzal/laravel-dynamic-throttle"><img src="https://img.shields.io/packagist/v/hanzala-afzal/laravel-dynamic-throttle.svg?style=flat-square&label=packagist" alt="Latest version on Packagist"></a>
+  <a href="https://packagist.org/packages/hanzala-afzal/laravel-dynamic-throttle"><img src="https://img.shields.io/packagist/v/hanzala-afzal/laravel-dynamic-throttle.svg?style=flat-square&label=packagist&include_prereleases" alt="Latest version on Packagist"></a>
   <a href="https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/actions/workflows/ci.yml"><img src="https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/actions/workflows/ci.yml/badge.svg" alt="Tests"></a>
   <a href="https://packagist.org/packages/hanzala-afzal/laravel-dynamic-throttle"><img src="https://img.shields.io/packagist/dt/hanzala-afzal/laravel-dynamic-throttle.svg?style=flat-square" alt="Total downloads"></a>
   <img src="https://img.shields.io/badge/php-8.3%20%7C%208.4%20%7C%208.5-777BB4?style=flat-square&logo=php&logoColor=white" alt="PHP 8.3, 8.4 and 8.5">
@@ -11,28 +11,63 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="MIT license"></a>
 </p>
 
-> [!NOTE]
-> **Not released yet.** The first release, 0.1.0, ships with a dashboard for managing rules, exemptions and emergency switches in the browser, as Horizon's does for queues. Until then, you manage them from code and Artisan, as shown below.
+> [!IMPORTANT]
+> **Public beta.** `0.1.0-beta.1` has everything planned for 0.1.0: the rules engine, the Artisan commands and the dashboard. Names and options may still change before 0.1.0, and the [changelog](CHANGELOG.md) will say how to upgrade. Try it in a staging app first, and tell us what breaks or confuses you: see [Beta: how to help](#beta-how-to-help).
 
-**Dynamic Throttle for Laravel** is an open-source package for Laravel 12 and 13, built and maintained by [Hanzala Afzal](https://github.com/hanzala-afzal-dev).
+**Dynamic Throttle for Laravel** lets you change your app's rate limits while it runs: per IP, user, API token, header or tenant, with a dry-run mode, exemptions, emergency switches and a dashboard. It is an open-source package for Laravel 12 and 13, built and maintained by [Hanzala Afzal](https://github.com/hanzala-afzal-dev).
 
-Laravel's `throttle` middleware lives in your code, so changing a limit means a deploy. With this package, **rate limits are data**: you add or change a rule while the app runs, and every server applies it within seconds, without touching a route.
+## Why
 
-## Features
+Laravel's `throttle` middleware and `RateLimiter::for()` work well for limits you know up front. In production, you usually learn the right limits later, and in a hurry:
 
-- **Rules at runtime.** Stored in your database, applied within seconds, never read from the database on a request.
-- **Limit by who the client is.** By IP (IPv6 grouped by /64), user, API token or header, one limit for everyone, or your own resolver for tenants or plans.
-- **Dry-run first.** A dry-run rule counts like a real one but never blocks, and tells you who it would have blocked.
-- **Exemptions.** Exempt an IP range, a user or a tenant from one rule or all of them, until a given time.
-- **Emergency switches.** Lift or scale every limit with one command, and the change ends by itself.
-- **Fast.** On Redis, one round trip per request, however many rules match.
-- **Safe when storage fails.** Requests go through by default, or get a 503 on the rules you choose.
-- **Tooling.** Artisan commands that explain why a request is limited and check your setup.
-- **A dashboard** *(in progress)*. Rules, exemptions and emergency switches in the browser, with live numbers. It ships with the package, at its own path behind a gate, as Horizon's does.
+- a partner's integration starts getting 429s, and you need to give it more room today;
+- a scraper or a credential-stuffing attack hits `/login` at 2 a.m.;
+- you want a stricter limit on an endpoint, but you don't know how many real users it would block.
+
+With Laravel's own tools, each of these is a code change, a review and a deploy, and you still can't see who is being blocked. **Dynamic Throttle makes rate limits data:** rules live in your database, you change them from a dashboard, Artisan or your own code, and every server applies the change within seconds, without touching a route.
+
+## What it adds to Laravel's rate limiting
+
+| You want to | With Laravel's `throttle` | With Dynamic Throttle |
+|---|---|---|
+| Change a limit | Edit code and deploy | Edit the rule; every server applies it within 2 seconds |
+| Try a limit before it blocks anyone | Not possible | Dry-run: the rule counts, never blocks, and reports who it would have blocked |
+| See who is blocked right now | Add your own logging | A live feed with IPs, users and routes, and each rule's top offenders |
+| Let a partner, an office or a user through | A code change | An exemption, with an end date |
+| Lift or loosen every limit during an incident | A deploy | `dynamic-throttle:bypass on --for=30m`, or one click; it ends by itself |
+| Limit per IP and per user on the same route | Stack middleware | Rules stack: on Redis, one round trip however many match |
+| Limit per tenant or plan | A custom limiter closure | A custom scope, then one rule |
+| Know why a request was blocked | Read the code | The Explain page, or `dynamic-throttle:explain` |
+| Know who changed a limit | Your Git history | An append-only audit log of every change |
+| Keep serving when Redis is down | An exception per request | Requests go through by default, or get a 503 on the rules you choose |
+
+Rules are never read from the database on a request: they are compiled into your cache, and on PHP-FPM shared through APCu.
 
 ## What it is not
 
 It is not a web application firewall, bot detection, geo-blocking, or usage metering for billing. It does not replace edge rate limiting (Cloudflare, Nginx, API gateways): keep those for volumetric attacks, and use this package for limits that need to know who the client is.
+
+## The dashboard
+
+It ships with the package, as Horizon's does, at `/dynamic-throttle`, behind your gates. There is nothing to build or install: the package serves its own assets.
+
+<p align="center">
+  <img src="art/dashboard-light.png" width="100%" alt="The Overview in the light theme: health, bypass and the scale factor, the rule counts, the last hour's requests, blocks and would-blocks, a traffic chart and the top rules by blocks.">
+</p>
+
+<p align="center">
+  <img src="art/dashboard-dark.png" width="100%" alt="The Activity page in the dark theme: the live feed of the last hour's blocks, with each one's time, outcome, rule, route, client IP and an Exempt button.">
+</p>
+
+- **Overview:** health, the emergency switches, the last hour in numbers, and a traffic chart over an hour, a day or a week.
+- **Rules:** search and filter, create from templates, edit, dry-run and promote, with each rule's traffic, offenders, exemptions and history.
+- **Exemptions:** who skips which rule, until when.
+- **Activity:** who is being blocked right now, from where and on which route, and each rule's top offenders.
+- **Explain:** what the rules would do with a request, and why, without counting it.
+- **Audit log:** every change, by whom, with the before and after.
+- **Settings:** every health check, the configuration your servers run with, and the commands for when the dashboard itself is down.
+
+Viewers see everything; managers also get the buttons that change things. Light and dark themes follow your system.
 
 ## Requirements
 
@@ -43,23 +78,26 @@ It is not a web application firewall, bot detection, geo-blocking, or usage mete
 | Counter store | Redis 6.2+ or Valkey 7.2+ recommended. Memcached and the database store work too. Not `file` or `apc` in production. |
 | PHP-FPM | Enable the APCu extension, so a server's workers share the rules. |
 
-More in [storage and runtimes](docs/guide/storage-and-runtimes.md).
+The live feed and the offenders need Redis or Valkey. More in [storage and runtimes](docs/guide/storage-and-runtimes.md).
 
 ## Installation
 
-```bash
-composer require hanzala-afzal/laravel-dynamic-throttle
+**1. Install the beta** with Composer:
 
-php artisan vendor:publish --tag=dynamic-throttle-config
+```bash
+composer require hanzala-afzal/laravel-dynamic-throttle:^0.1@beta
+```
+
+**2. Create the tables:**
+
+```bash
 php artisan vendor:publish --tag=dynamic-throttle-migrations
 php artisan migrate
 ```
 
-The package schedules its own upkeep: it recompiles the rules every five minutes and stores traffic numbers every minute. Make sure [Laravel's scheduler](https://laravel.com/docs/scheduling#running-the-scheduler) runs.
+Publishing the config is optional: `php artisan vendor:publish --tag=dynamic-throttle-config`.
 
-## Quick start
-
-**1. Attach the middleware** to the routes rules may limit, in `bootstrap/app.php`:
+**3. Attach the middleware** to the routes rules may limit, in `bootstrap/app.php`:
 
 ```php
 ->withMiddleware(function (Middleware $middleware) {
@@ -67,9 +105,33 @@ The package schedules its own upkeep: it recompiles the rules every five minutes
 })
 ```
 
-It runs after Laravel's `auth` middleware, even in a group that lists it first, so user rules see the user. If users log in through other middleware, such as a JWT package's, list it in the `middleware.after` config key. Routes without `dynamic.throttle` are never limited.
+It runs after Laravel's `auth` middleware, even in a group that lists it first, so user rules see the user. Routes without `dynamic.throttle` are never limited.
 
-**2. Add a rule.** Run this in a seeder, a migration, `php artisan tinker` or your own admin screen:
+**4. Open the dashboard** at `/dynamic-throttle`. Locally, you get straight in. Before you deploy, say who may look and who may change things, in a service provider's `boot()`:
+
+```php
+use App\Models\User;
+use Illuminate\Support\Facades\Gate;
+
+Gate::define('viewDynamicThrottle', fn (User $user) => $user->is_admin);
+Gate::define('manageDynamicThrottle', fn (User $user) => $user->is_admin);
+```
+
+Until you define a gate, only the `local` environment gets in. More in [the dashboard](docs/guide/dashboard.md).
+
+**5. Make sure [Laravel's scheduler](https://laravel.com/docs/scheduling#running-the-scheduler) runs.** The package schedules its own upkeep: it recompiles the rules every five minutes and stores the traffic numbers every minute.
+
+Then check your setup:
+
+```bash
+php artisan dynamic-throttle:health
+```
+
+## Usage
+
+Add your first rule in the dashboard, under **Rules → New rule**: pick a template such as "Login" or "API per user", adjust it, and save. New rules start in dry-run, so you can watch what they would block before they block anything.
+
+You can do the same from code, in a seeder, a migration or `php artisan tinker`:
 
 ```php
 use Afzal\DynamicThrottle\Models\Rule;
@@ -83,9 +145,7 @@ Rule::create([
 ]);
 ```
 
-Saving a rule compiles it, and every server applies it within 2 seconds.
-
-**3. That's it.** Each user now gets 60 requests a minute under `/api`. The 61st gets Laravel's own 429, rendered by your exception handler:
+Saving a rule compiles it, and every server applies it within 2 seconds. Each user now gets 60 requests a minute under `/api`. The 61st gets Laravel's own 429, rendered by your exception handler:
 
 ```http
 HTTP/1.1 429 Too Many Requests
@@ -308,6 +368,24 @@ The [guide](docs/guide/README.md) covers the details:
 - [Traffic and blocks](docs/guide/telemetry.md): what each rule did, per hour
 - [The dashboard](docs/guide/dashboard.md): where it is, who gets in, and what it refuses
 - [Runbook](docs/runbook.md): what to do when Redis is down, the manifest was evicted, a bad rule blocks `/api`, or an emergency change was left on
+
+## Beta: how to help
+
+`0.1.0-beta.1` is the first public release. The plan:
+
+1. **Betas** (`0.1.0-beta.N`): fixes and changes from your feedback. A change that breaks something you rely on comes with an upgrade note in the [changelog](CHANGELOG.md).
+2. **A release candidate** (`0.1.0-RC1`): no new features, fixes only.
+3. **0.1.0**, then **1.0** once it has run in real apps for a while.
+
+Composer only installs a beta when you ask for one, with `@beta`, so nobody gets it by accident.
+
+What helps most:
+
+- **Did it install cleanly** on your Laravel and PHP versions, with your cache store (Redis, Valkey, Memcached, database) and your runtime (PHP-FPM, Octane, Vapor)?
+- **Did a rule behave differently** from what you expected? `php artisan dynamic-throttle:explain` shows what it did; paste its output.
+- **Was anything in the dashboard or the docs unclear?**
+
+Bugs go in [issues](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/new/choose), questions and ideas in [discussions](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/discussions), and security issues privately, as [SECURITY.md](SECURITY.md) explains.
 
 ## Contributing
 

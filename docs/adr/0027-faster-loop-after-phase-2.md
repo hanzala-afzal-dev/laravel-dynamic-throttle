@@ -5,6 +5,7 @@
 - Roadmap phase: 3 onward
 - Amends: [ADR-0003](0003-development-method.md) (the loop for every feature)
 - Amended: 2026-10-07, a spec ships as small stacked PRs, and benchmark results without their raw dumps (see the decision record)
+- Amended: 2026-10-17, every PR targets `main`, its branch still stacked on the one below (see the decision record)
 
 ## Context
 
@@ -76,3 +77,6 @@ Amended on 2026-10-07, after SPEC-014's PR reached about 6,000 added lines, and 
 - Point 3: the PRs open as soon as they are green, stacked, and the next one's base switches to `main` when one merges.
 - Point 4: the checks run per PR, and a benchmark's raw XML stays out of the repository. The dumps already committed stay.
 - `.github/copilot-instructions.md` asks Copilot to read the PR's spec and the ADRs it cites, rather than all of `docs/` and the changelog.
+
+Amended on 2026-10-17, with Phase 5's 29 stacked PRs open: switching each PR's base to `main` after the one below it merged was a chore for every merge. The maintainer asked for every PR to target `main`:
+- Point 3: each PR opens against `main`, on a branch still stacked on the one below. Its diff shows the PRs below it too until they merge, so they merge oldest first, or the top one alone, which carries them all.
