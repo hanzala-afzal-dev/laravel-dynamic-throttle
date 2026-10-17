@@ -111,6 +111,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - `GET api/exemptions` takes `state`, `subject` and `rule=none`.
   - The Settings page: every health check with what it looks for, the configuration servers run with, and the commands for when the dashboard is down.
   - `GET api/config`: the counters' driver, the manifest store, the package's config, the custom scopes and strict mode.
+  - The live feed: on Redis and Valkey, telemetry keeps the last hour's blocks and would-blocks, the newest 500 a minute, with the client's IP and the user the request already held, never its path, a token or a header's value. `GET api/feed` reads them, and `?since=` only the new ones. Config key `telemetry.live_feed` (`DYNAMIC_THROTTLE_LIVE_FEED`, default true) turns it off. It costs no round trip: the entries go in the request's telemetry call.
   - A strict Content Security Policy, `X-Frame-Options: DENY`, and assets cached for a year.
   - in a dashboard request, explain never takes the admin who sends it for the request it explains.
   - behind `auth:<guard>` in `dashboard.middleware`, a user id alone still means a user of the app's default guard, in exemptions and in explain.
