@@ -20,6 +20,23 @@ export const AUDIT_ACTIONS: Record<string, string> = {
     'settings.scale': 'Scale factor',
 };
 
+/**
+ * An entry's action in words. An emergency setting turned off keeps only what it was,
+ * so its words say so: "Bypass off", rather than the filter's "Bypass".
+ */
+export function actionWords(entry: AuditEntry): string {
+    const off = entry.after === null && entry.before !== null;
+
+    switch (entry.action) {
+        case 'settings.bypass':
+            return off ? 'Bypass off' : 'Bypass on';
+        case 'settings.scale':
+            return off ? 'Scale factor off' : 'Scale factor set';
+        default:
+            return AUDIT_ACTIONS[entry.action] ?? entry.action;
+    }
+}
+
 /** A page of the log, as Laravel's cursor paginator gives it. */
 export type AuditPage = { data: AuditEntry[]; next_cursor: string | null };
 
@@ -82,8 +99,8 @@ export function shown(value: unknown): string {
 }
 
 /**
- * What an entry changed, in one line: each field as "before → after" for a change, and the
- * fields that were created or deleted otherwise.
+ * What an entry changed, in one line: each field as "before → after" for a change, the
+ * fields created for a creation, and "was …" for what a deletion or a switch-off removed.
  */
 export function changeSummary(entry: AuditEntry): string {
     const { before, after } = entry;
@@ -95,8 +112,9 @@ export function changeSummary(entry: AuditEntry): string {
     }
 
     const state = after ?? before;
+    const fields = state === null ? '' : Object.entries(state).map(([field, value]) => `${field}: ${shown(value)}`).join(', ');
 
-    return state === null ? '' : Object.entries(state).map(([field, value]) => `${field}: ${shown(value)}`).join(', ');
+    return after === null && before !== null ? `was ${fields}` : fields;
 }
 
 /** A UTC time as a datetime-local input shows it, in the browser's zone: 2027-01-15T10:00. */

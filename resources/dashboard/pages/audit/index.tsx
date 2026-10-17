@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { AUDIT_ACTIONS, type AuditFilters, auditFiltersOf, auditQuery, changeSummary, localInputOf, NO_AUDIT_FILTERS, useAuditLog, utcOf } from '@/lib/audit';
+import { AUDIT_ACTIONS, type AuditFilters, actionWords, auditFiltersOf, auditQuery, changeSummary, localInputOf, NO_AUDIT_FILTERS, useAuditLog, utcOf } from '@/lib/audit';
 import type { AuditEntry } from '@/lib/queries';
 import { Time } from '@/lib/time';
 
@@ -88,7 +88,7 @@ function EntryRows({ entry }: { entry: AuditEntry }) {
                 <TableCell className="max-w-56 truncate">
                     <code className="font-mono text-xs">{entry.actor}</code>
                 </TableCell>
-                <TableCell className="whitespace-nowrap">{AUDIT_ACTIONS[entry.action] ?? entry.action}</TableCell>
+                <TableCell className="whitespace-nowrap">{actionWords(entry)}</TableCell>
                 <TableCell className="whitespace-nowrap">
                     <Target target={entry.target} />
                 </TableCell>
