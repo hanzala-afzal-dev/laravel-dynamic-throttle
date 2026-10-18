@@ -26,13 +26,13 @@ Each case has an id, such as `RUL-07`. The **Covered by** column says where it i
 | INS-04 | `php artisan dynamic-throttle:health`, after the README's steps | No error, and exit code 0. Warnings may show, such as `store` on the database store, `attached` before the middleware is attached, and `metrics` before the scheduler ran | CI (install) |
 | INS-05 | `php artisan schedule:list` | `dynamic-throttle:compile` every five minutes, `dynamic-throttle:flush-metrics` every minute, `dynamic-throttle:prune` daily | CI (install), Manual |
 | INS-06 | A rule, with the middleware attached to no route | No request is limited and none gets `X-RateLimit-*` headers. Health warns `attached` | Pest (SPEC-016) |
-| INS-07 | Open `/dynamic-throttle` in the `local` environment, with no gate defined | The dashboard opens, for a guest too | Pest (SPEC-018), E2E |
+| INS-07 | Open `/dynamic-throttle` in the `local` environment, with no gate defined | The dashboard opens, for a guest too | Pest (SPEC-018) |
 
 ## Limiting requests
 
 | ID | Steps | Expected | Covered by |
 |---|---|---|---|
-| LIM-01 | An enforcing rule, 2 per minute per IP, on a route. Send 3 requests | 200 twice, with `X-RateLimit-Limit: 2` and `X-RateLimit-Remaining` 1, then 0. The 3rd gets 429 with `Retry-After` (at most 60), `X-RateLimit-Reset` (a Unix time), `X-RateLimit-Limit: 2` and `X-RateLimit-Remaining: 0` | E2E, Pest (SPEC-010) |
+| LIM-01 | An enforcing rule, 2 per minute per IP, on a route. Send 3 requests | 200 twice, with `X-RateLimit-Limit: 2` and `X-RateLimit-Remaining` 1, then 0. The 3rd gets 429 with `Retry-After`, `X-RateLimit-Reset` (now plus `Retry-After`, as a Unix time), `X-RateLimit-Limit: 2` and `X-RateLimit-Remaining: 0`. `Retry-After` can be up to two windows, 120 seconds here: the sliding window carries this window's count into the next | E2E, Pest (SPEC-001, SPEC-010) |
 | LIM-02 | The 429's body, with no `response_override` | Laravel's own 429: the "Too Many Requests" page, or `{"message":"Too Many Attempts."}` for a JSON request | Pest (SPEC-010) |
 | LIM-03 | A rule whose `response_override` is `{"message":"Slow down"}` | The 429's body is that JSON, with the same headers, even for an HTML page. By design, as Laravel's `Limit::response()` | E2E, Pest (SPEC-010) |
 | LIM-04 | After a 429, wait `Retry-After` seconds | The next request goes through. Counts fade over up to two windows, as in any sliding window | Pest (SPEC-001) |
@@ -116,7 +116,8 @@ One enforcing rule, `GET` on `posts`, 2 a minute per IP. Check whether each requ
 |---|---|---|---|
 | SHL-01 | Open each page: Overview, Rules, Exemptions, Activity, Explain, Audit log, Settings | Each shows its heading. No console error, page error or Content Security Policy violation | E2E |
 | SHL-02 | The sidebar | Seven links, in that order. The current page's link is marked (`aria-current="page"`), also on its sub-pages: `/rules/1` marks Rules | E2E |
-| SHL-03 | Open `/dynamic-throttle/nope` | "Page not found", with a link back to the overview | E2E |
+| SHL-03 | Open `/dynamic-throttle/nope`, a path the dashboard does not have | The app's 404. The dashboard answers its own pages' paths only, so an app route under its path stays the app's | E2E, Pest (SPEC-018) |
+| SHL-15 | Inside the dashboard, reach a path it does not have | "Page not found", with a link back to the overview | Vitest (SPEC-020) |
 | SHL-04 | The header | The environment, such as `local`, and the role: Manager or Viewer | E2E |
 | SHL-05 | Click the theme button three times | Its label goes "Theme: light", "Theme: dark", "Theme: system". Dark puts the `dark` class on `<html>`. After a reload, the choice stays | E2E |
 | SHL-06 | Reload a deep link, such as `/dynamic-throttle/rules/1/edit` | That page opens directly | E2E |
@@ -174,7 +175,7 @@ One enforcing rule, `GET` on `posts`, 2 a minute per IP. Check whether each requ
 | RUL-18 | Delete, on an enforcing rule | The dialog names the rule and says it stops limiting. Delete returns to the list, without it, and its route is no longer limited | E2E |
 | RUL-19 | A rule's page | Its settings, its traffic, its offenders (or that the store keeps none), its exemptions ("No exemption names this rule."), and its history | E2E |
 | RUL-20 | Open `/dynamic-throttle/rules/999999` | "There is no rule 999999.", with a link to the list | E2E |
-| RUL-21 | Open `/dynamic-throttle/rules/abc/edit` | "Page not found" | E2E |
+| RUL-21 | Open `/dynamic-throttle/rules/abc/edit` | 404, as for any path the dashboard does not have (SHL-03) | E2E |
 | RUL-22 | With 500 enabled rules, create or enable one | "500 rules are enabled, the most the dashboard allows" | Pest (SPEC-018) |
 | RUL-23 | Another admin changes a field this form left alone | Saving never sends it back | Vitest (SPEC-022) |
 | RUL-24 | More than 100 rules | Pages of 100, with Previous and Next. A page past the last goes to the last | Vitest (SPEC-022) |

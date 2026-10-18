@@ -85,7 +85,7 @@ The maintainer vetoes any of these in the PR (ADR-0027).
 | PR | Branch | Adds | Covers |
 |---|---|---|---|
 | 1 | `phase-6/spec-032-1` | This spec, the test case catalog, ADR-0028's note | Decisions |
-| 2 | `phase-6/spec-032-2` | The harness, the CI job, the frame, and the smoke flow: a rule made in the dashboard limits a route | AC-1 to AC-3, AC-5; INS-07, SHL, LIM-01, LIM-08, LIM-10 |
+| 2 | `phase-6/spec-032-2` | The harness, the CI job, the frame, and the smoke flow: a rule made in the dashboard limits a route | AC-1 to AC-3, AC-5; SHL, LIM-01, LIM-08, LIM-10 |
 | 3 | `phase-6/spec-032-3` | Overview, Rules and Exemptions | OVW, RUL, EXM; LIM-03, LIM-05, EMG-01, EMG-02, EMG-04, EMG-06 |
 | 4 | `phase-6/spec-032-4` | Activity, Explain, Audit log, Settings, and access | ACT, EXP, AUD, SET, SEC; EMG-10 |
 | 5 | `phase-6/spec-032-5` | Accessibility, the keyboard, small screens, the fixes they need, the case check, and the spec's close | A11, UXP, MOB; AC-4, AC-6 |
