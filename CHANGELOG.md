@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.0-beta.1] - 2026-10-18
+
+The first public beta.
+
 ### Added
 
 - Package skeleton for Laravel 12.69+ and 13.30+ on PHP 8.3+:
@@ -123,3 +127,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - It prints a line per check, `ok`, `warning`, `error` or `skipped`, with what to do, or `--json`.
   - It exits 1 when a check errs, and with `--strict` when one warns too. It changes nothing.
 - Telemetry also records, per rule and minute, the guests a user rule counted, the requests a rule skipped for want of an identity, and those it was ignored for over the cap. On Redis and Valkey, it also counts each hour's requests per client. The health checks read them, and the hourly table does not change.
+
+[Unreleased]: https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/compare/v0.1.0-beta.1...HEAD
+[0.1.0-beta.1]: https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/releases/tag/v0.1.0-beta.1
