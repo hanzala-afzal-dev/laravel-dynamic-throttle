@@ -19,5 +19,5 @@
       "@/*": ["./resources/dashboard/*"]
     }
   },
-  "include": ["resources/dashboard", "vite.config.ts", "scripts/dashboard-budget.mjs"]
+  "include": ["resources/dashboard", "vite.config.ts", "scripts/dashboard-budget.mjs", "e2e", "playwright.config.ts"]
 }

@@ -32,3 +32,8 @@ node_modules
 
 # PHPBench's raw XML stays out of the repository: benchmarks/results/ keeps the summaries only (ADR-0027).
 benchmarks/results/*.xml
+
+# Playwright's output (SPEC-032).
+/playwright-report
+/test-results
+/blob-report

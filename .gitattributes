@@ -39,6 +39,10 @@
 /vite.config.ts export-ignore
 /tsconfig.json export-ignore
 /eslint.config.js export-ignore
+
+# The dashboard's browser tests (SPEC-032).
+/e2e export-ignore
+/playwright.config.ts export-ignore
 /components.json export-ignore
 /.nvmrc export-ignore
 
