@@ -57,11 +57,12 @@ It ships with the package at `/dynamic-throttle`, behind your gates, with nothin
 composer require hanzala-afzal/laravel-dynamic-throttle:^0.1@beta
 ```
 
-**2. Create the tables:**
+**2. Create the tables, and compile the rules once.** After this, saving a rule compiles them, and so does the scheduler.
 
 ```bash
 php artisan vendor:publish --tag=dynamic-throttle-migrations
 php artisan migrate
+php artisan dynamic-throttle:compile
 ```
 
 **3. Attach the middleware** to the routes rules may limit, in `bootstrap/app.php`. Routes without it are never limited.
