@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - The README's install steps now compile the rules once, with `php artisan dynamic-throttle:compile`. Without it, `dynamic-throttle:health` reported a missing manifest as an error right after install, until the scheduler or a first limited request built it.
+- The dashboard's banner for bypass with no end time no longer has a space before its comma: "no rule limits any request, with no end time".
 
 ## [0.1.0-beta.1] - 2026-10-18
 
