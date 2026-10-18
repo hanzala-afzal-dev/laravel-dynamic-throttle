@@ -222,6 +222,7 @@ A dashboard that ships with the package, as Laravel Horizon's does: served at it
 **Deliverables**
 - Full docs: install, scopes (with SPEC-008's recipes, such as multi-database tenancy), per-driver guarantees table, runbook, comparison page, upgrade guide, `SECURITY.md`.
 - Load test in a realistic setup (k6 or similar) against the Workbench app with Redis.
+- Browser tests of the dashboard, and a catalog of test cases with their expected results (SPEC-032).
 - Dogfood in at least one real app for 4 weeks.
 
 **Exit criteria:** the 1.0 criteria in ADR-0017.

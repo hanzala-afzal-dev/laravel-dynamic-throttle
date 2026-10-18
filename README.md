@@ -136,6 +136,8 @@ What helps most:
 - Did a rule do something you did not expect? Paste the output of `php artisan dynamic-throttle:explain`.
 - Was anything in the dashboard or the docs unclear?
 
+[The test cases](docs/testing/test-cases.md) list what to try, and what should happen.
+
 Report bugs in [issues](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/new/choose), and bring questions and ideas to [discussions](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/discussions). Report security issues privately, as [SECURITY.md](SECURITY.md) explains, never in a public issue.
 
 ## License

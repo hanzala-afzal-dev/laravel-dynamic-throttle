@@ -26,6 +26,8 @@ Thanks for helping. Rate-limiting bugs are quiet: an off-by-one limit or a race 
 
 Tiny changes can skip the spec. Bug fixes always start with a failing regression test.
 
+A change users can see gets a case in [the test cases](docs/testing/test-cases.md), with the steps and the expected result, and says where it is checked.
+
 If a spec would break an ADR, write a new ADR that supersedes the old one first.
 
 ## Local setup
