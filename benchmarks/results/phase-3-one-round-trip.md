@@ -36,7 +36,7 @@ SPEC-027 counts a request's matched rules in one call to the counter store, whic
 - **On the array store,** where no network is involved, p50 moves by −23 to +27 µs, within this machine's noise. Planning the rules in PHP, then deciding after the one call, costs nothing measurable.
 - **The scripts' SHA-1s:** hashing the 2.6 KB batch script cost 4.99 µs per request, measured alone over 100,000 hashes. Rounds 3 and 4 include that saving.
 - **One round trip:** `tests/Drivers/RedisBatchTest.php` counts the commands Laravel's Redis connection sends: one `EVALSHA` per request, with 1, 3 or 10 matched rules (SPEC-027 AC-1).
-- **Raw data:** round 4's runs are in `phase-3-one-round-trip-before.xml` and `phase-3-one-round-trip-after.xml`, next to this file. The other rounds' numbers are from their console output.
+- **Raw data:** PHPBench's XML dump was removed from the repository on 2026-10-18 (ADR-0027). Git history keeps it: `git log --diff-filter=D -- 'benchmarks/results/*.xml'` finds the commit that removed it.
 
 ## Against the restated target
 The Phase 3 exit criteria (`docs/roadmap.md`):

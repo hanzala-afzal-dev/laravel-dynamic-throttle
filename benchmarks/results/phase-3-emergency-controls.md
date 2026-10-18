@@ -28,7 +28,7 @@ SPEC-013 adds two runtime settings to the manifest, bypass and the scale factor.
 - **On the array store,** a request costs 1 to 21 µs more at p50. The added work alone costs about 4 µs (below), so the rest is this machine's noise.
 - **At p95,** the differences go both ways, from −82 to +69 µs on the array store. The added work's own p99 is 12 µs, so they are this shared host's tails, as `phase-3-apcu-manifest.md` saw between runs of the same code.
 - **On local Redis,** both directions again, by up to 135 µs: the round trip to Redis in Docker dominates.
-- **Raw data:** round 2's runs are in `phase-3-emergency-controls-before.xml` and `phase-3-emergency-controls-after.xml`, next to this file. Each run swapped in its code's `src` only, so both dumps name the clone's commit, `5aabf20`: `7023d41` before SPEC-013 was rebased onto main. Round 1's numbers are from its console output.
+- **Raw data:** PHPBench's XML dump was removed from the repository on 2026-10-18 (ADR-0027). Git history keeps it: `git log --diff-filter=D -- 'benchmarks/results/*.xml'` finds the commit that removed it.
 
 ### The added work alone
 20,000 samples in one process, of what SPEC-013 adds to a request with no setting on: reading the clock, `bypasses()`, `scalePercent()`, and `Scale::limit()` for three rules. PHP 8.4.19 without OPcache.

@@ -27,7 +27,7 @@ SPEC-014 moves the middleware's early exits into `Untouched`, which `dynamic-thr
 
 - **On the array store,** the differences at p50 go both ways, from −8 to +9 µs, and at p95 from −37 to +29 µs. That is this shared host's noise, as `phase-3-emergency-controls.md` saw between runs: the cost did not move.
 - **On local Redis,** both directions again, by up to 92 µs at p50: the round trip to Redis in Docker dominates.
-- **Raw data:** round 2's runs are in `phase-3-explain-before.xml` and `phase-3-explain-after.xml`, next to this file. Each run swapped in its code's `src` only, in a clone on a detached `474d2f3`, so the dumps name no commit: `474d2f3` is `c4681f9` before SPEC-014 was rebased onto main, with the same tree. Round 1's numbers are from its console output.
+- **Raw data:** PHPBench's XML dump was removed from the repository on 2026-10-18 (ADR-0027). Git history keeps it: `git log --diff-filter=D -- 'benchmarks/results/*.xml'` finds the commit that removed it.
 
 ### Against the target
 The Phase 3 exit criteria (`docs/roadmap.md`): the package's own time, on the array store, under 0.5 ms at p95 on Octane and on PHP-FPM with APCu.

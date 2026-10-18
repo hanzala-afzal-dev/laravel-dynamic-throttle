@@ -8,7 +8,7 @@ SPEC-009 AC-23 asks what exemptions add to every manifest load, and what checkin
   - `benchDecode` is a whole manifest load: `json_decode`, every rule's and every exemption's checks, the rule index and the exemption set. Each iteration is 100 loads, 10 iterations after one warm-up.
   - `benchCheck` is one rule's check for a request that no exemption frees, so every subject is asked and every prefix length looked up: the most a check costs. The request's user and custom values arrive hashed, as the resolver gives them. Each iteration is 1,000 checks.
   - The manifests hold 100 rules, and none, 100 or 1,000 exemptions. Half are IPv4 ranges of four prefix lengths (`/32` and `/16` global, `/24` and `/8` of the checked rule), a third are the checked rule's users, and the rest are global custom values.
-- Raw data: `phase-2-exemptions.xml`, next to this file, holds run 2. Run 1's numbers are from its console output. `vendor/bin/phpbench report --file=benchmarks/results/phase-2-exemptions.xml --report=engine` prints the table.
+- Raw data: PHPBench's XML dump was removed from the repository on 2026-10-18 (ADR-0027). Git history keeps it: `git log --diff-filter=D -- 'benchmarks/results/*.xml'` finds the commit that removed it.
 
 ## Machine
 - A Claude Code cloud container: a KVM guest with 4 vCPUs of an Intel Xeon at 2.80 GHz and 15 GiB of RAM. The hardware is shared with other tenants.
