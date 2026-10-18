@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- The README's install steps now compile the rules once, with `php artisan dynamic-throttle:compile`. Without it, `dynamic-throttle:health` reported a missing manifest as an error right after install, until the scheduler or a first limited request built it.
+
 ## [0.1.0-beta.1] - 2026-10-18
 
 The first public beta.
