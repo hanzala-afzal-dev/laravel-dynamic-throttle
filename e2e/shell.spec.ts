@@ -1,16 +1,6 @@
-import { artisan, expect, test } from './fixtures';
+import { artisan, emergencyBanner, expect, PAGES, test } from './fixtures';
 
-// The dashboard's frame: its pages, the sidebar, the header, the theme and its headers (SPEC-032).
-
-const PAGES = [
-    { label: 'Overview', path: '/dynamic-throttle', heading: 'Overview' },
-    { label: 'Rules', path: '/dynamic-throttle/rules', heading: 'Rules' },
-    { label: 'Exemptions', path: '/dynamic-throttle/exemptions', heading: 'Exemptions' },
-    { label: 'Activity', path: '/dynamic-throttle/activity', heading: 'Activity' },
-    { label: 'Explain', path: '/dynamic-throttle/explain', heading: 'Explain' },
-    { label: 'Audit log', path: '/dynamic-throttle/audit', heading: 'Audit log' },
-    { label: 'Settings', path: '/dynamic-throttle/settings', heading: 'Settings' },
-];
+// The dashboard's frame: its pages, the sidebar, the header, the theme and its headers.
 
 test('SHL-01: every page opens, with its heading, and no error or CSP violation', async ({ page }) => {
     for (const { path, heading } of PAGES) {
@@ -113,12 +103,12 @@ test('SHL-09: without JavaScript, the page says the dashboard needs it', async (
 test('SHL-10: a change made from the CLI shows on an open page, without a reload', async ({ page }) => {
     await page.goto('/dynamic-throttle');
     await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible();
-    await expect(page.getByText('An emergency setting is on')).toHaveCount(0);
+    await expect(emergencyBanner(page)).toHaveCount(0);
 
     artisan('dynamic-throttle:bypass', 'on', '--for=5m');
 
     // The settings poll every 5 seconds.
-    await expect(page.getByText('An emergency setting is on')).toBeVisible({ timeout: 12_000 });
+    await expect(emergencyBanner(page)).toBeVisible({ timeout: 12_000 });
 });
 
 test('LIM-10: a rule on every path limits the app, but never the dashboard', async ({ page, rules, traffic }) => {

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { test as base, expect, type APIRequestContext, type APIResponse } from '@playwright/test';
+import { test as base, expect, type APIRequestContext, type APIResponse, type Locator, type Page } from '@playwright/test';
 import { dashboard, root, serverEnvironment } from './support/environment';
 
 export { expect };
@@ -19,8 +19,25 @@ export type Rule = {
     enabled: boolean;
 };
 
-/** A rule made for one test, and the path it limits there. */
-export type TestRule = Rule & { path: string };
+/** A rule made for one test, its slug, and the path it limits there. */
+export type TestRule = Rule & { slug: string; path: string };
+
+/** Bypass and the scale factor, as GET api/settings answers them. */
+export type Settings = {
+    bypass: { on: boolean; until: string | null };
+    scale: { factor: string | null; until: string | null };
+};
+
+/** The dashboard's pages: the sidebar's label, the path and the heading. */
+export const PAGES = [
+    { label: 'Overview', path: '/dynamic-throttle', heading: 'Overview' },
+    { label: 'Rules', path: '/dynamic-throttle/rules', heading: 'Rules' },
+    { label: 'Exemptions', path: '/dynamic-throttle/exemptions', heading: 'Exemptions' },
+    { label: 'Activity', path: '/dynamic-throttle/activity', heading: 'Activity' },
+    { label: 'Explain', path: '/dynamic-throttle/explain', heading: 'Explain' },
+    { label: 'Audit log', path: '/dynamic-throttle/audit', heading: 'Audit log' },
+    { label: 'Settings', path: '/dynamic-throttle/settings', heading: 'Settings' },
+];
 
 /**
  * The dashboard's JSON API, as a guest, who manages in the Workbench app. It reads the
@@ -62,7 +79,7 @@ export class DashboardApi {
     }
 }
 
-/** Rules a test makes, each on a path of its own, deleted when the test ends (decision 4). */
+/** Rules a test makes, each on a path of its own, deleted when the test ends. */
 export class TestRules {
     private readonly made: number[] = [];
 
@@ -85,7 +102,7 @@ export class TestRules {
         });
         this.made.push(rule.id);
 
-        return { ...rule, path: `/e2e/${slug}` };
+        return { ...rule, slug, path: `/e2e/${slug}` };
     }
 
     /** A rule the test made through the dashboard, deleted with the others. */
@@ -97,6 +114,53 @@ export class TestRules {
         for (const id of this.made) {
             // A rule the test deleted itself answers 404, which is fine.
             await this.api.send('DELETE', `rules/${id}`, { confirm: true });
+        }
+    }
+}
+
+/** An exemption as the dashboard's JSON API answers it. */
+export type Exemption = {
+    id: number;
+    rule_id: number | null;
+    subject: string;
+    value: string;
+    reason: string | null;
+    expires_at: string | null;
+    active: boolean;
+};
+
+/**
+ * Exemptions a test makes, deleted when it ends. Those it adds through the dashboard are
+ * found by its case id, which their reason starts with: one left on every rule would
+ * free the client of every later test.
+ */
+export class TestExemptions {
+    private readonly made: number[] = [];
+
+    constructor(
+        private readonly api: DashboardApi,
+        private readonly caseId: string,
+    ) {}
+
+    async create(attributes: { subject?: string; value: string; rule_id?: number | null; reason?: string; expires_at?: string | null; confirm?: boolean }): Promise<Exemption> {
+        const { exemption } = await this.api.json<{ exemption: Exemption }>('POST', 'exemptions', {
+            subject: 'ip',
+            rule_id: null,
+            expires_at: null,
+            ...attributes,
+            reason: `${this.caseId} ${attributes.reason ?? 'test'}`,
+        });
+        this.made.push(exemption.id);
+
+        return exemption;
+    }
+
+    async deleteAll(): Promise<void> {
+        // Without a state, the list holds the active and the ended ones.
+        const listed = await this.api.json<{ data: Exemption[] }>('GET', 'exemptions');
+        const ids = new Set([...this.made, ...listed.data.filter((exemption) => exemption.reason?.startsWith(`${this.caseId} `)).map((exemption) => exemption.id)]);
+        for (const id of ids) {
+            await this.api.send('DELETE', `exemptions/${id}`);
         }
     }
 }
@@ -129,9 +193,35 @@ export function artisan(...args: string[]): string {
     });
 }
 
+/** A test's case id, the start of its title: `RUL-07` for `RUL-07: …`. */
+export function caseIdOf(title: string): string {
+    return title.split(':')[0] ?? title;
+}
+
+/** A card of the dashboard, found by its heading. */
+export function card(page: Page, title: string): Locator {
+    return page.locator('[data-slot="card"]').filter({ has: page.getByRole('heading', { name: title, exact: true }) });
+}
+
+/** The banner every page shows while bypass or a scale factor is on. */
+export function emergencyBanner(page: Page): Locator {
+    return page.getByRole('alert').filter({ hasText: 'An emergency setting is on' });
+}
+
+/** A number as the dashboard writes it in en-US, such as 12,345. */
+export function numberIn(text: string | null): number {
+    const match = /-?[\d,]+(\.\d+)?/.exec(text ?? '');
+    if (match === null) {
+        throw new Error(`No number in "${text}".`);
+    }
+
+    return Number(match[0].replaceAll(',', ''));
+}
+
 type Fixtures = {
     api: DashboardApi;
     rules: TestRules;
+    exemptions: TestExemptions;
     traffic: Traffic;
     guard: void;
     calm: void;
@@ -148,20 +238,27 @@ export const test = base.extend<Fixtures>({
         await rules.deleteAll();
     },
 
+    exemptions: async ({ api }, use, testInfo) => {
+        const exemptions = new TestExemptions(api, caseIdOf(testInfo.title));
+        await use(exemptions);
+        await exemptions.deleteAll();
+    },
+
     traffic: async ({ request }, use) => {
         await use(new Traffic(request));
     },
 
     /**
      * Fails the test when its page logs a console error, throws, breaks the Content
-     * Security Policy, or gets a server error from the dashboard (AC-2, decision 5).
+     * Security Policy, or gets a server error from the dashboard.
      */
     guard: [
         async ({ page }, use) => {
             const problems: string[] = [];
             page.on('console', (message) => {
-                // A 4xx a test expects, such as a 409 or a 422, is the browser's log of a response, not an error.
-                if (message.type() === 'error' && !/^Failed to load resource: the server responded with a status of 4\d\d/.test(message.text())) {
+                // The browser's own log of a response or a failed request, such as a 409 a test expects or a
+                // request it aborts, is no error of the page. Server errors are caught by their status below.
+                if (message.type() === 'error' && !message.text().startsWith('Failed to load resource:')) {
                     problems.push(`console error: ${message.text()}`);
                 }
             });
@@ -182,7 +279,7 @@ export const test = base.extend<Fixtures>({
         { auto: true },
     ],
 
-    /** Leaves bypass and scaling off after every test, even one that failed half-way (AC-5). */
+    /** Leaves bypass and scaling off after every test, even one that failed half-way. */
     calm: [
         async ({ api }, use) => {
             await use();
