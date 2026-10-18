@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 #
 # Phase 0 exit criterion (docs/roadmap.md): the package installs through a path
-# repository into a fresh Laravel application, and the application boots.
+# repository into a fresh Laravel application, and the application boots. Then a
+# new user's first steps: the README's install commands, after which
+# dynamic-throttle:health must report no error.
 #
 #   scripts/verify-install.sh <laravel-major> [work-dir]
 #   docker compose run --rm php scripts/verify-install.sh 13
@@ -46,12 +48,26 @@ php artisan vendor:publish --tag=dynamic-throttle-config --ansi
 test -f config/dynamic-throttle.php
 php artisan config:show dynamic-throttle
 
-step "Publishing and running the migrations (SPEC-005)"
-php artisan vendor:publish --tag=dynamic-throttle-migrations --ansi
+step "Running the php artisan commands of the README's installation steps, in order"
+# A new user runs exactly these, so the check reads them from the README rather
+# than keeping its own copy that could drift from it.
+readme_commands="$(awk '/^## Installation/ { inside = 1; next } /^## / { inside = 0 } inside && /^php artisan /' "${PACKAGE_DIR}/README.md")"
+test -n "${readme_commands}"
+while IFS= read -r line; do
+    read -ra command <<< "${line}"
+    printf '$ %s\n' "${line}"
+    "${command[@]}" --no-interaction
+done <<< "${readme_commands}"
+
+step "Checking the migrations ran (SPEC-005)"
 ls database/migrations/*_create_dynamic_throttle_rules_table.php
-php artisan migrate --force --no-interaction
 php artisan migrate:status | grep -q 'create_dynamic_throttle_rules_table.*Ran'
 php artisan db:table dynamic_throttle_rules
+
+step "Checking the setup as the README says: no health check may err (SPEC-016)"
+# Warnings are expected in a fresh app, such as no route running the middleware
+# yet. An error, which makes the command exit 1, is not.
+php artisan dynamic-throttle:health
 
 step "Compiling the rules manifest (SPEC-006)"
 php artisan dynamic-throttle:compile
