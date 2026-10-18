@@ -511,6 +511,60 @@ jobs:
       - name: Known vulnerabilities in what ships
         run: npm audit --omit=dev --audit-level=high
 
+  # SPEC-032: the dashboard in Chromium, against the Workbench app on Redis.
+  browser:
+    name: Browser tests
+    needs: matrix
+    if: needs.matrix.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.4'
+          extensions: bcmath, intl, pcntl, redis
+          coverage: none
+          tools: composer:v2
+
+      - name: Install PHP dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install npm dependencies
+        # Without install scripts, as in the frontend job (SPEC-020 AC-19).
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Install Chromium
+        # The browser the pinned Playwright expects, with its system libraries (SPEC-032 decision 10).
+        run: npx playwright install --with-deps chromium
+
+      - name: Run the browser tests
+        run: npm run e2e
+
+      - name: Keep the report, screenshots and traces of a failure (SPEC-032 AC-3)
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
   install:
     name: Install into fresh Laravel ${{ matrix.laravel }}
     needs: matrix
@@ -576,7 +630,7 @@ jobs:
   ci-passed:
     name: CI passed
     if: always()
-    needs: [matrix, tests, drivers, mutation-stores, mutation-engine, mutation-changed, static-analysis, code-style, frontend, install, security]
+    needs: [matrix, tests, drivers, mutation-stores, mutation-engine, mutation-changed, static-analysis, code-style, frontend, browser, install, security]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any job failed or was cancelled
