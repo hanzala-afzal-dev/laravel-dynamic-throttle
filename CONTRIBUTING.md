@@ -84,6 +84,18 @@ npm run budget      # the first page stays under 300 KB gzipped
 
 `npm run dev` rebuilds on every change. CI fails when `dist/` is not what the sources build, so never edit it by hand. Add shadcn/ui components by copying them into `components/ui/`.
 
+### Browser tests
+
+The dashboard's browser tests ([SPEC-032](docs/specs/032-browser-tests.md)) run it in Chromium with Playwright, against the Workbench app on Redis:
+
+```bash
+docker compose up -d redis
+npx playwright install chromium   # once
+npm run e2e
+```
+
+Each run builds a fresh Workbench database and starts its own server on port 8123 (`E2E_PORT` picks another). Each test's name starts with its case's id in [the test cases](docs/testing/test-cases.md). A failed test keeps a screenshot and a trace in `test-results/`, which `npx playwright show-trace <file>` replays.
+
 ### Trying the dashboard
 
 The Workbench app is a demo of the dashboard. It has four rules, an exemption, a week of made-up hourly numbers, and routes for the rules to limit. Node is not needed: `dist/` is committed.

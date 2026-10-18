@@ -21,6 +21,7 @@ Decisions live in docs/adr/ (index: docs/adr/README.md). Feature specs live in d
 - `docker compose up -d`: Redis, Valkey, Memcached, MySQL, PostgreSQL for driver tests (`composer test:drivers`)
 - Dashboard (ADR-0028): `npm ci` once, then `npm run build` (writes `dist/`, commit it with the sources), `npm run test` (Vitest), `npm run typecheck`, `npm run lint`. Node 22.
 - `scripts/verify-install.sh 12|13`: installs the package into a fresh Laravel app and boots it
+- `npm run e2e`: the dashboard's browser tests (SPEC-032), Playwright in Chromium against the Workbench app. Needs `docker compose up -d redis`. Cloud sessions cannot download Playwright's browser: set `E2E_CHROMIUM=/opt/pw-browsers/chromium`. Test names start with their case's id in `docs/testing/test-cases.md`, and a change users can see gets a case there.
 
 ## Workflow (IMPORTANT, see ADR-0003 and ADR-0027)
 - Features: spec → plan → failing tests → implementation → review. Do not skip the failing-tests step.
@@ -30,7 +31,7 @@ Decisions live in docs/adr/ (index: docs/adr/README.md). Feature specs live in d
 - If a spec conflicts with an ADR, stop and ask. Do not silently pick one.
 - A spec's open questions: record your recommendation as the decision and carry on; the maintainer vetoes in the PR. Ask first only when a question conflicts with an ADR, fixes a public API that would be hard to change after a release, or has no clearly best option.
 - Small PRs (ADR-0027): a spec ships as stacked PRs of about 300–600 `src` lines each plus their tests, each green on its own and naming the ACs it covers. The first carries the spec and lists its decisions; the last closes it. Open each once it is green, on `phase-N/spec-NNN-M` branched from the one below, and always against `main`: its diff then shows the PRs below it too, until they merge (main merges with merge commits, so no rebase). Merge review fixes up the stack; never rebase or force-push a branch with an open PR without asking.
-- Right-size the checks: `composer test:mutate` when src/Engine changes, `composer test:drivers` when the stores or their use change, benchmarks when the request path's cost can move, and the review subagent for src/Engine, security-relevant code and the public API.
+- Right-size the checks: `composer test:mutate` when src/Engine changes, `composer test:drivers` when the stores or their use change, `npm run e2e` when the dashboard, its API or the Workbench app changes, benchmarks when the request path's cost can move, and the review subagent for src/Engine, security-relevant code and the public API.
 - Pace: stop for the maintainer's review at the end of each roadmap phase.
 - Commit failing tests (`test: …`) before the implementation, and check they fail for the right reason.
 - A Stop hook (`.claude/hooks/verify.sh`) runs `composer test` and `composer analyse` when code changed, and blocks the turn while they fail. At the Red step (only tests/ changed since the last green run) it warns instead of blocking.
