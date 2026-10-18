@@ -511,7 +511,7 @@ jobs:
       - name: Known vulnerabilities in what ships
         run: npm audit --omit=dev --audit-level=high
 
-  # SPEC-032: the dashboard in Chromium, against the Workbench app on Redis.
+  # The dashboard in Chromium, against the Workbench app on Redis.
   browser:
     name: Browser tests
     needs: matrix
@@ -549,13 +549,13 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Install Chromium
-        # The browser the pinned Playwright expects, with its system libraries (SPEC-032 decision 10).
+        # The browser the pinned Playwright expects, with its system libraries.
         run: npx playwright install --with-deps chromium
 
       - name: Run the browser tests
         run: npm run e2e
 
-      - name: Keep the report, screenshots and traces of a failure (SPEC-032 AC-3)
+      - name: Keep the report, screenshots and traces of a failure
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

@@ -21,7 +21,7 @@ Decisions live in docs/adr/ (index: docs/adr/README.md). Feature specs live in d
 - `docker compose up -d`: Redis, Valkey, Memcached, MySQL, PostgreSQL for driver tests (`composer test:drivers`)
 - Dashboard (ADR-0028): `npm ci` once, then `npm run build` (writes `dist/`, commit it with the sources), `npm run test` (Vitest), `npm run typecheck`, `npm run lint`. Node 22.
 - `scripts/verify-install.sh 12|13`: installs the package into a fresh Laravel app and boots it
-- `npm run e2e`: the dashboard's browser tests (SPEC-032), Playwright in Chromium against the Workbench app. Needs `docker compose up -d redis`. Cloud sessions cannot download Playwright's browser: set `E2E_CHROMIUM=/opt/pw-browsers/chromium`. Test names start with their case's id in `docs/testing/test-cases.md`, and a change users can see gets a case there.
+- `npm run e2e`: the dashboard's browser tests, Playwright in Chromium against the Workbench app. Needs `docker compose up -d redis`. Cloud sessions cannot download Playwright's browser: set `E2E_CHROMIUM=/opt/pw-browsers/chromium`. Test case lists live in the maintainer's sheet, not in the repository; a test's name starts with its case's id.
 
 ## Workflow (IMPORTANT, see ADR-0003 and ADR-0027)
 - Features: spec → plan → failing tests → implementation → review. Do not skip the failing-tests step.

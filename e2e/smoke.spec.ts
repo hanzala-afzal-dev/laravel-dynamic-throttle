@@ -1,6 +1,6 @@
 import { expect, test } from './fixtures';
 
-// The smoke flow ADR-0028 planned: a rule made in the dashboard limits its route (SPEC-032).
+// The smoke flow ADR-0028 planned: a rule made in the dashboard limits its route.
 
 test('LIM-01: a rule made in the dashboard limits its route, with the rate-limit headers', async ({ page, rules, traffic }) => {
     const slug = `lim-01-${Math.random().toString(36).slice(2, 8)}`;

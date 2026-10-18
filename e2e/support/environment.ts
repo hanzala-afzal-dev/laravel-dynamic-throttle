@@ -12,7 +12,7 @@ export const baseURL = `http://127.0.0.1:${port}`;
 export const dashboard = `${baseURL}/dynamic-throttle`;
 
 /**
- * One key prefix per run (SPEC-032). Each run builds a fresh database, so rule ids start
+ * One key prefix per run. Each run builds a fresh database, so rule ids start
  * again at 1, and an earlier run's counters in Redis would count against the new rules.
  * The runner sets it once, and its workers inherit it.
  */

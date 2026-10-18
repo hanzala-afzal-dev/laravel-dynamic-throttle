@@ -1,5 +1,5 @@
-// Stops the browser tests before they start, saying what to do, when Redis is not running
-// (SPEC-032). Without it, the Workbench app's build fails with a connection error instead.
+// Stops the browser tests before they start, saying what to do, when Redis is not running.
+// Without it, the Workbench app's build fails with a connection error instead.
 import net from 'node:net';
 
 const host = process.env.REDIS_HOST ?? '127.0.0.1';

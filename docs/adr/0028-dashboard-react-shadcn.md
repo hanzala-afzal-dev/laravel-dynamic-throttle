@@ -73,7 +73,3 @@ Accepted ADRs are not rewritten. Read these lines as follows:
 ## Decision record
 
 Decided by the maintainer on 2026-10-15, when Phase 5 started. With it, they chose: light and dark themes that follow the system, with a toggle; polling every 5 seconds, paused while the tab is hidden; times in the browser's time zone, with UTC on hover; ready-made rule templates; raw IPs and user ids in the live feed visible to viewers, as the audit log is; emergency controls on the Overview and a banner on every page while one is on; and a Settings page with the health checks and the effective configuration, read-only. Bulk actions, CSV export and importing or exporting rules wait for a later minor release.
-
-## Amendment, 2026-10-18 (SPEC-032)
-
-The one Playwright smoke test grows into a browser suite, in `e2e/`, as the maintainer asked once the beta was out: the dashboard's flows, its accessibility (axe-core) and small screens, in Chromium, against the Workbench app on Redis. A CI job runs it. Pest still covers the shell and the routes, and Vitest the components. The test layers row above reads: Pest for the shell and routes, Vitest for components, and the Playwright suite for the dashboard in a real browser.

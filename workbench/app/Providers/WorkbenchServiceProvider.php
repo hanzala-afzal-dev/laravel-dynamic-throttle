@@ -33,7 +33,7 @@ class WorkbenchServiceProvider extends ServiceProvider
             ]);
         }
 
-        // The browser tests (SPEC-032) send more than the dashboard's 120 requests a minute from
+        // The browser tests (npm run e2e) send more than the dashboard's 120 requests a minute from
         // one IP. Pest checks that limit (SEC-07), so their server turns it off.
         if (($_ENV['WORKBENCH_E2E'] ?? $_SERVER['WORKBENCH_E2E'] ?? null) === '1') {
             config(['dynamic-throttle.dashboard.rate_limit' => 0]);
@@ -55,7 +55,7 @@ class WorkbenchServiceProvider extends ServiceProvider
             Route::get('api/search', fn (): array => ['results' => []]);
             Route::get('api/export', fn (): array => ['export' => 'queued']);
 
-            // The browser tests' own paths (SPEC-032): each test limits one of its own.
+            // The browser tests' own paths: each test limits one of its own.
             Route::any('e2e/{path}', fn (): array => ['ok' => true])->where('path', '.*');
         });
 

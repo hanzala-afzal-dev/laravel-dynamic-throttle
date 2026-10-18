@@ -26,8 +26,6 @@ Thanks for helping. Rate-limiting bugs are quiet: an off-by-one limit or a race 
 
 Tiny changes can skip the spec. Bug fixes always start with a failing regression test.
 
-A change users can see gets a case in [the test cases](docs/testing/test-cases.md), with the steps and the expected result, and says where it is checked.
-
 If a spec would break an ADR, write a new ADR that supersedes the old one first.
 
 ## Local setup
@@ -86,7 +84,7 @@ npm run budget      # the first page stays under 300 KB gzipped
 
 ### Browser tests
 
-The dashboard's browser tests ([SPEC-032](docs/specs/032-browser-tests.md)) run it in Chromium with Playwright, against the Workbench app on Redis:
+The dashboard's browser tests run it in Chromium with Playwright, against the Workbench app on Redis:
 
 ```bash
 docker compose up -d redis
@@ -94,7 +92,7 @@ npx playwright install chromium   # once
 npm run e2e
 ```
 
-Each run builds a fresh Workbench database and starts its own server on port 8123 (`E2E_PORT` picks another). Each test's name starts with its case's id in [the test cases](docs/testing/test-cases.md). A failed test keeps a screenshot and a trace in `test-results/`, which `npx playwright show-trace <file>` replays.
+Each run builds a fresh Workbench database and starts its own server on port 8123 (`E2E_PORT` picks another). A failed test keeps a screenshot and a trace in `test-results/`, which `npx playwright show-trace <file>` replays.
 
 ### Trying the dashboard
 
