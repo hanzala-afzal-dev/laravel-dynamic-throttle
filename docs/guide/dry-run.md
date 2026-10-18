@@ -20,3 +20,5 @@ Event::listen(function (RateLimitWouldBlock $event) {
 - **What.** Plain values, so a queued listener works too: the rule's `ruleId`, `ruleName`, `limit`, `windowSeconds` and `scope`, the client's `identityHash`, the `retryAfter` it would have got, and the request's `method` and `path`. The client appears only as the hash its counter uses. A listener that needs the IP or the user reads them from the request.
 - **Failures.** A listener that throws is reported to your exception handler, and the other events are still dispatched.
 - **Tests.** `Event::fake()` records it like any other event.
+
+Once the numbers look right, enforce the rule: **Promote** on its page in the dashboard, or `$rule->update(['mode' => 'enforce'])`.
