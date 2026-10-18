@@ -5,7 +5,7 @@ The counter engine alone: no rules, no HTTP. Recorded for the Phase 1 exit crite
 - Date: 2026-09-24
 - Commit: `5a06303` (branch `phase-1/core-engine`)
 - Command: `composer bench`. Each subject runs 10 iterations after one warm-up iteration. An iteration is 500 calls for store subjects and 10,000 for pure PHP.
-- Raw data: `phase-1-baseline.xml`, next to this file. `vendor/bin/phpbench report --file=benchmarks/results/phase-1-baseline.xml --report=engine` prints the table below.
+- Raw data: PHPBench's XML dump was removed from the repository on 2026-10-18 (ADR-0027). Git history keeps it: `git log --diff-filter=D -- 'benchmarks/results/*.xml'` finds the commit that removed it.
 
 ## Machine
 - A Claude Code cloud container: a KVM guest with 4 vCPUs of an Intel Xeon at 2.10 GHz (one thread per core, as the guest reports it) and 15 GiB of RAM. The hardware is shared with other tenants.

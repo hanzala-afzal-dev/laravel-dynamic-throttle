@@ -29,3 +29,6 @@ Thumbs.db
 # The dashboard's toolchain (ADR-0028): dist/ is committed, node_modules never, at any depth (Vitest caches in resources/dashboard/node_modules).
 # Without the slash, a node_modules symlink is ignored too.
 node_modules
+
+# PHPBench's raw XML stays out of the repository: benchmarks/results/ keeps the summaries only (ADR-0027).
+benchmarks/results/*.xml

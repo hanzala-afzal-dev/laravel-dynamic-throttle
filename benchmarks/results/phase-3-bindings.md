@@ -35,7 +35,7 @@ That is about 36 µs less per request.
 
 - **On the array store,** where no network is involved, the package's own time drops by about 30 µs at p50 with the manifest in memory, and by about 75 µs with it read per request. The manifest read path also builds the manifest repository, so it gains the most.
 - **On local Redis** the gain is the same, but it is buried in the network's noise: that shared Docker network's round trips vary by more than the saving.
-- **Raw data:** round 2's runs are in `phase-3-bindings-before.xml` and `phase-3-bindings-after.xml`, next to this file. Round 1's numbers are from its console output.
+- **Raw data:** PHPBench's XML dump was removed from the repository on 2026-10-18 (ADR-0027). Git history keeps it: `git log --diff-filter=D -- 'benchmarks/results/*.xml'` finds the commit that removed it.
 
 ## Against the restated target
 The Phase 3 target is under 0.5 ms of the package's own time at p95, measured on the array store, with one store round trip per request (`docs/roadmap.md`):

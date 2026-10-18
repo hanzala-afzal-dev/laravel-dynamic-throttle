@@ -5,7 +5,7 @@ On PHP-FPM without ADR-0007's L1 cache (APCu), every request decodes the manifes
 - Date: 2026-09-25
 - Code: before is `5e57b63`, after is the `perf:` commit that adds this file (branch `phase-2/rules-and-middleware`). The after runs ran on that change before it was committed, so both XML files record `5e57b63` as their version. A reviewer's later runs of the committed code gave the same numbers.
 - Command: `vendor/bin/phpbench run benchmarks/Engine/RuleMatcherBench.php --filter=benchDecode --report=engine --retry-threshold=5`. `benchDecode` is a whole load: `json_decode`, every rule's checks, then the index (ADR-0023). Each iteration is 100 loads, 10 iterations after one warm-up.
-- Raw data: `phase-2-manifest-decoding-before.xml` and `phase-2-manifest-decoding-after.xml`, next to this file. `vendor/bin/phpbench report --file=<file> --report=engine` prints each table.
+- Raw data: PHPBench's XML dump was removed from the repository on 2026-10-18 (ADR-0027). Git history keeps it: `git log --diff-filter=D -- 'benchmarks/results/*.xml'` finds the commit that removed it.
 
 ## Machine
 - A Claude Code cloud container: a KVM guest with 4 vCPUs of an Intel Xeon at 2.80 GHz and 15 GiB of RAM. The hardware is shared with other tenants.

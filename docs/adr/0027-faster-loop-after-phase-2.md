@@ -76,6 +76,8 @@ Amended on 2026-10-07, after SPEC-014's PR reached about 6,000 added lines, and 
 - Point 2: a spec ships as small PRs of about 300 to 600 lines of `src` each, with their tests. SPEC-015 is re-cut into three PRs and SPEC-016 into five. SPEC-014's PR stays as it is.
 - Point 3: the PRs open as soon as they are green, stacked, and the next one's base switches to `main` when one merges.
 - Point 4: the checks run per PR, and a benchmark's raw XML stays out of the repository. The dumps already committed stay.
+
+Amended on 2026-10-18, when the repository went public: the dumps committed before 2026-10-07 are removed too, as the maintainer accepted. They added 16 files that nothing reads to the public tree, and git history keeps them. Each summary in `benchmarks/results/` says how to find its dump, and `.gitignore` keeps new ones out.
 - `.github/copilot-instructions.md` asks Copilot to read the PR's spec and the ADRs it cites, rather than all of `docs/` and the changelog.
 
 Amended on 2026-10-17, with Phase 5's 29 stacked PRs open: switching each PR's base to `main` after the one below it merged was a chore for every merge. The maintainer asked for every PR to target `main`:

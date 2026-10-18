@@ -10,7 +10,7 @@ SPEC-010 AC-20 and the Phase 2 exit criterion ask what the middleware adds to a 
   - "Manifest in memory" is Octane or a queue worker within `manifest.refresh_seconds`. "Manifest read per request" is PHP-FPM, which starts every request with nothing in memory: it reads the 24.8 KB manifest from the cache store and decodes it.
   - On the Redis store, the counters and the manifest both live in local Redis, through Laravel's `redis` cache driver and phpredis. The connection is reused, as it is when the app already talked to Redis in the request, or uses persistent connections.
   - Each iteration is one request, in a process of its own, after 20 warm-up requests in that process: 200 iterations per case. So the iterations are the distribution of single requests.
-- Raw data: `phase-2-middleware.xml`, next to this file, holds run 2. Run 1's numbers are from its console output.
+- Raw data: PHPBench's XML dump was removed from the repository on 2026-10-18 (ADR-0027). Git history keeps it: `git log --diff-filter=D -- 'benchmarks/results/*.xml'` finds the commit that removed it.
 
 ## Machine
 - A Claude Code cloud container: a KVM guest with 4 vCPUs of an Intel Xeon at 2.80 GHz and 15 GiB of RAM. The hardware is shared with other tenants.

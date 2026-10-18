@@ -8,7 +8,7 @@ The Phase 2 exit review, on 2026-09-28, re-ran SPEC-010's middleware benchmark (
   - One request is `handle()` on the middleware, with a `$next` that returns at once.
   - It matches 3 of 100 rules, and each counts it by IP and allows it.
   - Each iteration is one request in a process of its own, after 20 warm-up requests: 200 iterations per case.
-- Raw data: `phase-2-exit.xml`, next to this file.
+- Raw data: PHPBench's XML dump was removed from the repository on 2026-10-18 (ADR-0027). Git history keeps it: `git log --diff-filter=D -- 'benchmarks/results/*.xml'` finds the commit that removed it.
 
 ## Machine
 - A Claude Code cloud container: a KVM guest with 4 vCPUs of an Intel Xeon at 2.10 GHz and 15 GiB of RAM, shared with other tenants. SPEC-010's run had a Xeon at 2.80 GHz.
