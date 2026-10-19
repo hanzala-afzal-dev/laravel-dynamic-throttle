@@ -141,8 +141,11 @@ return [
     |--------------------------------------------------------------------------
     |
     | The Redis connection the Redis driver uses. null means the cache store's
-    | own connection when it is a redis store, and "default" otherwise. A
-    | dedicated connection with short timeouts is recommended (docs/adr/0010).
+    | own connection when it is a redis store, and "default" otherwise. Give
+    | the package a connection of its own, with "timeout" and "read_timeout"
+    | ("read_write_timeout" with Predis) of about 0.25 seconds: without them,
+    | a Redis that hangs holds each request up to PHP's default_socket_timeout,
+    | 60 seconds (docs/guide/storage-and-runtimes.md#timeouts).
     |
     */
 

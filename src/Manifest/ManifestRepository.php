@@ -17,7 +17,7 @@ use Throwable;
  * The request path's view of the rules (ADR-0007, SPEC-006). It never touches
  * the database and never throws: a missing, corrupt or unreadable manifest
  * falls back to the last one this process or server read, or to no rules at
- * all, and one request rebuilds it after the response.
+ * all, and one request rebuilds a missing or corrupt one after the response.
  *
  * It reads L0, the process's memory, then L1, which the server's processes
  * share (SPEC-028), then L2, the cache store.
@@ -99,7 +99,13 @@ final readonly class ManifestRepository
         }
 
         $this->report($read, $now);
-        $this->scheduleRebuild();
+
+        // A store that threw would only fail the lock too, after as long a wait when it
+        // hangs (issue #99), and could not take the rebuilt manifest: the scheduled
+        // compile heals it instead.
+        if (! $this->unreachable($read)) {
+            $this->scheduleRebuild();
+        }
 
         // Without a last known manifest, nothing is kept, so the next call looks for the rebuilt one at once.
         return $last ?? Manifest::missing();
@@ -132,6 +138,15 @@ final readonly class ManifestRepository
         } catch (Throwable $exception) {
             return new ManifestUnavailable('The manifest could not be read: '.$exception->getMessage(), previous: $exception);
         }
+    }
+
+    /**
+     * Whether the store threw, as one that is down or hangs does, rather than holding
+     * no manifest or a corrupt one.
+     */
+    private function unreachable(Throwable $read): bool
+    {
+        return $read instanceof ManifestUnavailable && $read->getPrevious() instanceof Throwable;
     }
 
     /**

@@ -12,6 +12,7 @@ Each scenario links the test that follows its steps, so the steps stay true as t
 | Scenario | In short |
 |---|---|
 | [Redis is down](#redis-is-down) | Limits are off, fail-closed routes answer 503, and both recover by themselves. |
+| [Redis hangs](#redis-hangs) | Requests wait for the connection's timeout, then fail open. Short timeouts keep that wait small. |
 | [The manifest was evicted](#the-manifest-was-evicted) | Usually heals itself after one request. Run `dynamic-throttle:compile` if it does not. |
 | [A bad rule blocks /api](#a-bad-rule-blocks-api) | Find it with `explain`, switch it off with `disable-rule`, or bypass every rule. |
 | [An emergency change was left on](#an-emergency-change-was-left-on) | `health --strict` warns about it. End it with `bypass off` or `scale off`. |
@@ -19,7 +20,7 @@ Each scenario links the test that follows its steps, so the steps stay true as t
 ## Before you need it
 
 - **On PHP-FPM, enable APCu.** A server then keeps the rules it last read through an outage, and its workers share the cooldown and the error reports ([storage and runtimes](guide/storage-and-runtimes.md)).
-- **Give the counters a Redis connection of their own, with timeouts of a few hundred milliseconds** (`DYNAMIC_THROTTLE_REDIS_CONNECTION`). A Redis that hangs, instead of refusing, holds the first request of each cooldown for as long as the connection waits, and every request on PHP-FPM without APCu ([ADR-0010](adr/0010-failure-policy.md)).
+- **Give the counters a Redis connection of their own, with timeouts of about 0.25 seconds** (`DYNAMIC_THROTTLE_REDIS_CONNECTION`, [timeouts](guide/storage-and-runtimes.md#timeouts)). A Redis that hangs, instead of refusing, holds the first request of each cooldown for as long as the connection waits, and every request on PHP-FPM without APCu. Without timeouts, that is up to 60 seconds. `dynamic-throttle:health` warns about it (the `redis-timeouts` check).
 - **Alert on `StorageUnavailable`** ([events](guide/events.md)). During an outage it is dispatched about once per cooldown, not once per request.
 - **In production, the commands that loosen limits ask first.** The steps below pass `--force`, for a terminal that cannot answer.
 
@@ -68,6 +69,46 @@ It still exits 0, and prints the driver, such as `redis, connection default`. Wh
 - **If Redis came back empty,** every client starts a fresh window, and the manifest is gone: see [the manifest was evicted](#the-manifest-was-evicted).
 - **Undo what you changed:** `php artisan dynamic-throttle:bypass off`, or set `DYNAMIC_THROTTLE_ENABLED` back and reload the config. A bypass that was saved while the manifest could not be written applies at the next compile, such as the scheduled one, until its end time, so turn it off if you no longer want it.
 - **Check:** `php artisan dynamic-throttle:status` shows the manifest's version, and `Bypass` off.
+
+## Redis hangs
+
+A Redis that is overloaded, swapping or failing over can accept connections and then not answer. Unlike one that is down, it does not fail at once: each call waits for the connection's timeout first, and the request waits with it.
+
+Tested by [RedisHangsTest](../tests/Drivers/RedisHangsTest.php).
+
+### Symptoms
+
+- **Requests on limited routes are slow, then go through,** without `X-RateLimit-*` headers. Routes with a fail-closed rule answer 503 after the same wait. Each waits the connection's timeout, or a few times that while the client reconnects and retries ([timeouts](guide/storage-and-runtimes.md#timeouts)): 60 seconds or more without one, PHP's `default_socket_timeout`, so a busy server runs out of PHP workers and the whole app stops answering.
+- **How many requests wait:** the first of each cooldown, and the ones already waiting, per process, or per server on PHP-FPM with APCu. The others skip Redis until the cooldown ends. On PHP-FPM without APCu, every request waits.
+- **When the manifest is in that Redis too,** a request that reads it waits as well: one per `manifest.refresh_seconds` per server with APCu or on Octane, and every request without APCu, or in a process or server that has not read the manifest yet. With phpredis, Laravel retries that read once, so it waits twice the timeout.
+- **Your error tracker** shows `StorageUnavailableException`, as when [Redis is down](#redis-is-down), with a timeout as the previous exception: phpredis's `RedisException` "read error on connection", Predis 3's `TimeoutException` "Operation has timed out", or Predis 2's `ConnectionException` "Error while reading line from the server".
+
+### Check
+
+```bash
+php artisan dynamic-throttle:health
+```
+
+The `redis-timeouts` line gives the timeouts of each Redis connection requests use, and warns about one above a second, or none. Then check Redis itself: `redis-cli -h <host> --latency`, or your provider's CPU, memory and failover metrics.
+
+### Act
+
+1. **Shorten the wait.** If the check warns, give the connections timeouts of about 0.25 seconds ([timeouts](guide/storage-and-runtimes.md#timeouts)), then reload the config: `php artisan config:cache`, then reload PHP-FPM, or run `php artisan octane:reload`. Each call then waits about that long, or a few times that while the client reconnects and retries, before the request fails open.
+2. **Stop calling Redis, if you need every request fast:**
+   - **If the manifest is in another store that still answers,** turn bypass on. Requests then skip the counters, and so the hung Redis:
+
+     ```bash
+     php artisan dynamic-throttle:bypass on --for=30m --force
+     ```
+
+   - **If the manifest is in that Redis too,** set `DYNAMIC_THROTTLE_ENABLED=false` and reload the config, as for [Redis is down](#redis-is-down). The middleware then does nothing.
+3. **Fix Redis,** or fail over to a replica.
+
+### After
+
+- **Counting resumes by itself** once Redis answers: each process, or each server with APCu, tries it again when its cooldown ends.
+- **Keep the short timeouts.** The next hang then costs a fraction of a second per request, not a minute.
+- **Undo what you changed:** `php artisan dynamic-throttle:bypass off`, or set `DYNAMIC_THROTTLE_ENABLED` back and reload the config.
 
 ## The manifest was evicted
 
