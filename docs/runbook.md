@@ -78,10 +78,10 @@ Tested by [RedisHangsTest](../tests/Drivers/RedisHangsTest.php).
 
 ### Symptoms
 
-- **Requests on limited routes are slow, then go through,** without `X-RateLimit-*` headers. Routes with a fail-closed rule answer 503 after the same wait. Each waits up to the connection's timeout: up to 60 seconds without one, PHP's `default_socket_timeout`, so a busy server runs out of PHP workers and the whole app stops answering.
+- **Requests on limited routes are slow, then go through,** without `X-RateLimit-*` headers. Routes with a fail-closed rule answer 503 after the same wait. Each waits the connection's timeout, or a few times that while the client reconnects and retries ([timeouts](guide/storage-and-runtimes.md#timeouts)): 60 seconds or more without one, PHP's `default_socket_timeout`, so a busy server runs out of PHP workers and the whole app stops answering.
 - **How many requests wait:** the first of each cooldown, and the ones already waiting, per process, or per server on PHP-FPM with APCu. The others skip Redis until the cooldown ends. On PHP-FPM without APCu, every request waits.
-- **When the manifest is in that Redis too,** a request that reads it waits as well: one per `manifest.refresh_seconds` per server with APCu or on Octane, and every request without APCu. With phpredis, Laravel retries that read once, so it waits twice the timeout.
-- **Your error tracker** shows `StorageUnavailableException`, as when [Redis is down](#redis-is-down), with a timeout as the previous exception: phpredis's `RedisException` "read error on connection", or Predis's `ConnectionException` "Error while reading line from the server".
+- **When the manifest is in that Redis too,** a request that reads it waits as well: one per `manifest.refresh_seconds` per server with APCu or on Octane, and every request without APCu, or in a process or server that has not read the manifest yet. With phpredis, Laravel retries that read once, so it waits twice the timeout.
+- **Your error tracker** shows `StorageUnavailableException`, as when [Redis is down](#redis-is-down), with a timeout as the previous exception: phpredis's `RedisException` "read error on connection", Predis 3's `TimeoutException` "Operation has timed out", or Predis 2's `ConnectionException` "Error while reading line from the server".
 
 ### Check
 
@@ -89,11 +89,11 @@ Tested by [RedisHangsTest](../tests/Drivers/RedisHangsTest.php).
 php artisan dynamic-throttle:health
 ```
 
-The `redis-timeouts` line says how long a call can wait on each Redis connection requests use, and warns above one second. Then check Redis itself: `redis-cli -h <host> --latency`, or your provider's CPU, memory and failover metrics.
+The `redis-timeouts` line gives the timeouts of each Redis connection requests use, and warns about one above a second, or none. Then check Redis itself: `redis-cli -h <host> --latency`, or your provider's CPU, memory and failover metrics.
 
 ### Act
 
-1. **Shorten the wait.** If the check warns, give the connections timeouts of about 0.25 seconds ([timeouts](guide/storage-and-runtimes.md#timeouts)), then reload the config: `php artisan config:cache`, then reload PHP-FPM, or run `php artisan octane:reload`. Each call then waits at most that long before the request fails open.
+1. **Shorten the wait.** If the check warns, give the connections timeouts of about 0.25 seconds ([timeouts](guide/storage-and-runtimes.md#timeouts)), then reload the config: `php artisan config:cache`, then reload PHP-FPM, or run `php artisan octane:reload`. Each call then waits about that long, or a few times that while the client reconnects and retries, before the request fails open.
 2. **Stop calling Redis, if you need every request fast:**
    - **If the manifest is in another store that still answers,** turn bypass on. Requests then skip the counters, and so the hung Redis:
 

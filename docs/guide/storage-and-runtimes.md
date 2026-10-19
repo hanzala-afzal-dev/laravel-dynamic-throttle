@@ -38,10 +38,11 @@ Give the package a Redis connection of its own, with timeouts of a fraction of a
 DYNAMIC_THROTTLE_REDIS_CONNECTION=throttle
 ```
 
-- **The counters** then hold a request at most 0.25 seconds when Redis hangs. The request goes through, or gets a 503 on a fail-closed rule, and the [cooldown](failures.md) skips Redis for the next 10 seconds: in the process, or with APCu, in every PHP-FPM worker of the server.
+- **The counters** then hold a request about 0.25 seconds when Redis hangs. The request goes through, or gets a 503 on a fail-closed rule, and the [cooldown](failures.md) skips Redis for the next 10 seconds: in the process, or with APCu, in every PHP-FPM worker of the server.
+- **Reconnects and retries repeat the wait.** After a failed call, Laravel's phpredis connection reconnects, and on a connection that selects a `database` or authenticates, that waits the read timeout too: twice the timeout in all, as on an Octane worker whose connection was open when Redis hung. A cluster client also tries each seed node as it reconnects, and Predis's cluster client retries a timed-out command up to 5 times, so give clusters the shortest timeouts you can. Predis on a single connection waits once.
 - **A database of its own** also keeps `php artisan cache:clear` from wiping the counters (the `cache-clear` check).
-- **The manifest** stays in your cache store, so a request that reads it waits on that store's connection: once per `manifest.refresh_seconds` per server with APCu or on Octane, and on every request without APCu. Give that connection timeouts too, since your app's own cache calls hang with it. With phpredis, Laravel retries a read once after a lost connection, so reading the manifest can wait twice the timeout.
-- **`php artisan dynamic-throttle:health`** shows how long a call can wait on each connection requests use, and warns above one second (the `redis-timeouts` check).
+- **The manifest** stays in your cache store, so a request that reads it waits on that store's connection: once per `manifest.refresh_seconds` per server with APCu or on Octane, and on every request without APCu. Give that connection timeouts too, since your app's own cache calls hang with it. With phpredis, Laravel retries a read once after a lost connection, so reading the manifest can wait twice the timeout. A process, or with APCu a server, that has not read the manifest yet, such as one started during the hang, tries it on every request.
+- **`php artisan dynamic-throttle:health`** shows the timeouts of each connection requests use, and warns about one above a second, or none (the `redis-timeouts` check).
 
 The package does not shorten your connections' timeouts itself: the right value depends on your network, and the connection may be one your app uses too.
 

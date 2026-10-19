@@ -15,7 +15,7 @@ Each check is `ok`, `warning`, `error` or `skipped`, with what it found and what
 | `config` | A config the counter driver cannot be built from, as `status` reports it. The kill switch off. A value the package replaces with its default, such as a `sample_rate` written as a string. An `auto_attach` group or a `middleware.after` entry that names nothing. |
 | `store` | What the counter store guarantees. The `file`, `apc` and `octane` stores count per server, so limits multiply by your servers, and `file` and `apc` lose counts under load. The `database` store writes to your database on every limited request. `array` is for tests, and `null` counts nothing. |
 | `cache-clear` | The Redis driver in the Redis database of a cache store, which `php artisan cache:clear` flushes, every limit with it. |
-| `redis-timeouts` | A Redis connection requests use, for the counters or the manifest, that waits more than a second, or forever, for a Redis that hangs. Without timeouts, phpredis waits PHP's `default_socket_timeout`, 60 seconds by default ([timeouts](storage-and-runtimes.md#timeouts)). |
+| `redis-timeouts` | A Redis connection requests use, for the counters or the manifest, without a timeout, or with one above a second, so a Redis that hangs holds requests that long or more. Without timeouts, phpredis waits PHP's `default_socket_timeout`, 60 seconds by default ([timeouts](storage-and-runtimes.md#timeouts)). |
 | `app-key` | No `APP_KEY`, so identities are hashed without a key. |
 | `attached` | `dynamic.throttle` on no route, and not global middleware, so no rule applies. |
 | `except` | Horizon, Telescope, Pulse, Nova or Sanctum at a path `except` does not cover, so a rule can limit them. |

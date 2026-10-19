@@ -64,6 +64,6 @@
 
 Amended on 2026-10-19, for issue #99. Measured with phpredis and Laravel's default Redis options: a Redis that accepts the connection and never answers holds a call for PHP's `default_socket_timeout`, 60 seconds by default, because Laravel's connections set no timeout. Point 5 named this case, but the docs gave no values. Recommended in the PR, for the maintainer to veto:
 - Point 5: the docs give a dedicated connection with `timeout` and `read_timeout` (`read_write_timeout` with Predis) of 0.25 seconds and `max_retries` 0, and the runbook has a "Redis hangs" scenario.
-- Point 5: the `redis-timeouts` health check warns when a Redis connection requests use, the counters' or the manifest's, can wait more than a second, or forever.
+- Point 5: the `redis-timeouts` health check warns when a Redis connection requests use, the counters' or the manifest's, has no timeout, or one above a second. It reports the timeouts, not a bound per call: Laravel's phpredis connection reconnects after a failed call, cluster clients try each seed, and Predis's cluster client retries, so a call can wait a few timeouts.
 - Point 3: a manifest read that throws takes no rebuild lock, which waited on the same store as long again. The scheduled compile heals the manifest instead.
 - Not done: the Redis driver does not shorten the connection's timeouts itself. The right value depends on the network, the connection may be one the app uses too, and the check makes the gap visible. Revisit if users hit a hang despite the warning.
