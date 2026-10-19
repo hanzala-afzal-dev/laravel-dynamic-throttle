@@ -94,7 +94,7 @@ Times use Laravel's clock (`travelTo`) for the compiler, and the package `Clock`
   - Across three calls, exactly one rebuild is scheduled, and it runs only when the app terminates (after the response).
   - After it runs, `current()` returns the rebuilt manifest.
 - **AC-16** A corrupt manifest counts as missing, and is reported. Corrupt means any of: not JSON, another `format`, a wrong shape, or an unknown enum value.
-- **AC-17** A store that throws while reading also counts as missing. It is reported, and `current()` does not throw.
+- **AC-17** A store that throws while reading also counts as missing. It is reported, and `current()` does not throw. It schedules no rebuild: the lock would wait on the same store, as long again when the store hangs, and the rebuild could not write. The scheduled compile heals it (issue #99).
 - **AC-18** No query runs before the response:
   - With a warm L2 and an empty L0, `current()` runs zero database queries.
   - With the manifest missing, it also runs zero before the app terminates. The rebuild's queries run after.
