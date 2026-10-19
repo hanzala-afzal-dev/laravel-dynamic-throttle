@@ -130,8 +130,9 @@ it('waits twice the timeout with phpredis when the connection selects a database
     app()->forgetScopedInstances();
 
     [$response, $took] = timedGet('api/orders');
-    // phpredis reconnects after the failed call, and its SELECT waits too.
-    $waits = $client === 'phpredis' && method_exists(PhpRedisConnection::class, 'rebuildClient') ? 2 : 1;
+    // Laravel's phpredis connection reconnects after a lost connection, in every version
+    // the package supports, and the reconnect's SELECT waits too.
+    $waits = $client === 'phpredis' ? 2 : 1;
 
     expect($response->status())->toBe(200)
         ->and($took)->toBeGreaterThanOrEqual($waits * HUNG_TIMEOUT)->toBeLessThan(($waits + 1) * HUNG_TIMEOUT);
