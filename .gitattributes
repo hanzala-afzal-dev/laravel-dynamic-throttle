@@ -3,6 +3,7 @@
 * text=auto eol=lf
 
 *.png binary
+*.gif binary
 *.jpg binary
 *.ico binary
 *.zip binary
