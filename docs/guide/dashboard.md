@@ -121,7 +121,7 @@ Give the method and the path, and optionally the client's IP, a user's id with i
 
 Everything on it only reads, for viewers and managers alike:
 
-- **Health:** every check of `dynamic-throttle:health`, errors first, with what each looks for and what to do. See [Health checks](health.md).
+- **Health:** every check of `dynamic-throttle:health`, errors first, with what each looks for and what to do. They run in the web server, so the `apcu` check describes the PHP that serves your requests. See [Health checks](health.md).
 - **Configuration:** the counters' driver, as `dynamic-throttle:status` names it, the manifest's cache store, the custom scopes and strict mode, and `config('dynamic-throttle')` as your app resolved it from its files and environment. A key you add that the package does not define shows as `(not used by the package)`, never its value. To change a value, change the config or the environment, and deploy.
 - **When the dashboard is down:** the Artisan commands that do what the dashboard does, and a link to the [runbook](../runbook.md).
 
