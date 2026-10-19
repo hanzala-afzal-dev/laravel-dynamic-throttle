@@ -123,6 +123,7 @@ Each user now gets 60 requests a minute under `/api`. The 61st gets Laravel's ow
 The [guide](docs/guide/README.md) has the details:
 
 - [Rules](docs/guide/rules.md): every attribute, examples, your own scope, and exemptions
+- [An endpoint that costs money](docs/guide/rules.md#an-endpoint-that-costs-money), such as one that calls an AI model: a limit per user or per plan, tried in dry-run first
 - [Dry-run rules](docs/guide/dry-run.md), [events](docs/guide/events.md) and [testing your app](docs/guide/testing.md) with `DynamicThrottle::fake()`
 - [Configuration](docs/guide/configuration.md), [attaching the middleware](docs/guide/middleware.md), and [storage and runtimes](docs/guide/storage-and-runtimes.md)
 - [The dashboard](docs/guide/dashboard.md), [health checks](docs/guide/health.md) and [during an incident](docs/guide/incidents.md)
