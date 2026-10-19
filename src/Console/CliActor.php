@@ -17,7 +17,17 @@ final class CliActor
     public static function name(): string
     {
         $entry = function_exists('posix_getpwuid') && function_exists('posix_geteuid') ? posix_getpwuid(posix_geteuid()) : false;
-        $user = is_array($entry) ? $entry['name'] : getenv('USER');
+
+        return self::named(is_array($entry) ? $entry['name'] : null);
+    }
+
+    /**
+     * The actor for the system user the posix extension names, or null when it can't:
+     * without the extension, as on Windows, or for a user it has no entry for.
+     */
+    public static function named(?string $systemUser): string
+    {
+        $user = $systemUser ?? getenv('USER');
         $user = is_string($user) && $user !== '' ? $user : 'unknown';
         $sudo = getenv('SUDO_USER');
 
