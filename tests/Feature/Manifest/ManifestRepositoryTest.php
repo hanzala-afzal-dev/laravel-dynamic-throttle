@@ -291,3 +291,16 @@ it('AC-22: reads only its own format\'s key, so the manifest of another format c
     expect($manifest->state)->toBe(ManifestState::Missing)
         ->and(array_filter(Exceptions::reported(), fn (Throwable $exception): bool => $exception instanceof InvalidManifest))->toBe([]);
 });
+
+it('calls a store that throws once, without taking the rebuild lock, so a Redis that hangs holds a request up for one timeout, not two (issue #99)', function (): void {
+    Exceptions::fake();
+    $store = manifestStore();
+    $store->failing = true;
+    $rebuilder = fakeRebuilder();
+
+    $manifest = manifestRepository(new Repository($store), new FakeClock, $rebuilder)->current();
+    app()->terminate();
+
+    // The lock's add() is a get() and a put() on this store, so a second read would be the lock.
+    expect([$manifest->state, $store->reads, $rebuilder->calls])->toBe([ManifestState::Missing, 1, 0]);
+});

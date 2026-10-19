@@ -33,14 +33,14 @@ Dynamic Throttle makes limits data. Rules live in your database, you change them
 | Know why a request was blocked | Read the code | The Explain page, or `dynamic-throttle:explain` |
 | Keep serving when Redis is down | An exception per request | Requests go through, or get a 503 on the rules you choose |
 
-Requests never read the rules from the database: they are compiled into your cache. It is not a firewall or bot detection, and it does not replace edge rate limiting such as Cloudflare or Nginx. Use it for limits that need to know who the client is.
+Requests never read the rules from the database: they are compiled into your cache. On local Redis, the middleware adds about 0.8 ms per request at p50 with APCu, against 1.0 ms for Laravel's `throttle` and 0.6 ms for its `throttleWithRedis()` ([performance](docs/guide/performance.md)). It is not a firewall or bot detection, and it does not replace edge rate limiting such as Cloudflare or Nginx. Use it for limits that need to know who the client is.
 
 ## The dashboard
 
 It ships with the package at `/dynamic-throttle`, behind your gates, with nothing to build: Overview, Rules, Exemptions, Activity (a live feed of blocks), Explain, Audit log and Settings, in light and dark themes.
 
 <p align="center">
-  <img src="art/dashboard-light.png" width="100%" alt="The Overview: health, bypass and the scale factor, the rule counts, the last hour's requests, blocks and would-blocks, a traffic chart and the top rules by blocks.">
+  <img src="art/limit-change.gif" width="100%" alt="A limit changing while the app runs. On the left, a terminal loops curl against /api/orders, and every response is 200. On the right, the dashboard edits the Orders API rule: its limit goes from 100 to 2 requests a minute, and it is saved. Within two seconds, the terminal's responses turn to 429 Too Many Requests, with no deploy.">
 </p>
 
 ## Requirements
@@ -123,6 +123,7 @@ Each user now gets 60 requests a minute under `/api`. The 61st gets Laravel's ow
 The [guide](docs/guide/README.md) has the details:
 
 - [Rules](docs/guide/rules.md): every attribute, examples, your own scope, and exemptions
+- [An endpoint that costs money](docs/guide/rules.md#an-endpoint-that-costs-money), such as one that calls an AI model: a limit per user or per plan, tried in dry-run first
 - [Dry-run rules](docs/guide/dry-run.md), [events](docs/guide/events.md) and [testing your app](docs/guide/testing.md) with `DynamicThrottle::fake()`
 - [Configuration](docs/guide/configuration.md), [attaching the middleware](docs/guide/middleware.md), and [storage and runtimes](docs/guide/storage-and-runtimes.md)
 - [The dashboard](docs/guide/dashboard.md), [health checks](docs/guide/health.md) and [during an incident](docs/guide/incidents.md)

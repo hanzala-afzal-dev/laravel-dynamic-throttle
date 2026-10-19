@@ -8,10 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- The `redis-timeouts` health check warns when a Redis connection that requests use, for the counters or the manifest, has no timeout, or one above a second, so a Redis that hangs holds requests that long or more. Without timeouts, phpredis waits PHP's `default_socket_timeout`, 60 seconds by default, before the limits fail open. The docs now show a dedicated connection with 0.25-second timeouts ([timeouts](docs/guide/storage-and-runtimes.md#timeouts)), and the runbook has a "Redis hangs" scenario ([#99](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/99)).
 - The `apcu` health check warns when the web server's PHP, such as PHP-FPM, runs without APCu: every request then reads the rules from the cache first, and an outage costs every request a try. The dashboard's Settings page runs it in the web server; `dynamic-throttle:health` in the command line says it cannot tell ([#100](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/100)).
 
 ### Fixed
 
+- On Windows, the audit log names the user who ran an Artisan command, such as `cli:Hanzala`, instead of `cli:unknown`. Without the `posix` extension, the actor now falls back to the `USERNAME` environment variable after `USER` ([#96](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/96)).
+- A request that cannot read the manifest no longer calls the cache again for the rebuild's lock, so a Redis that hangs no longer holds it for a second timeout ([#99](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/99)).
 - The README's install steps now compile the rules once, with `php artisan dynamic-throttle:compile`. Without it, `dynamic-throttle:health` reported a missing manifest as an error right after install, until the scheduler or a first limited request built it.
 
 ## [0.1.0-beta.1] - 2026-10-18

@@ -10,10 +10,11 @@ The [README](../../README.md) gets you started. These pages go into the details.
 
 ## Pages
 
-- [Rules](rules.md): the attributes, examples, your own scope, and exemptions
+- [Rules](rules.md): the attributes, examples, your own scope, an endpoint that costs money, and exemptions
 - [Configuration](configuration.md): the environment variables
 - [Attaching the middleware](middleware.md): where it runs, excluded paths, responses and headers
 - [Storage and runtimes](storage-and-runtimes.md): which counter store to use, and APCu on PHP-FPM
+- [Performance](performance.md): what a request costs, against no limiter and Laravel's `throttle`
 - [Dry-run rules](dry-run.md): try a limit on real traffic first
 - [When something fails](failures.md): fail open or closed, the cooldown, strict mode
 - [Why a request is limited](explain.md): `dynamic-throttle:explain`

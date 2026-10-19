@@ -33,7 +33,7 @@ const APCU_WARNING = 'PHP-FPM runs without APCu, so every request reads the rule
 
 it('is listed after app-key', function (): void {
     expect(array_keys(Health::checks()))->toBe(Health::CHECKS)
-        ->and(array_slice(Health::CHECKS, 3, 2))->toBe(['app-key', 'apcu']);
+        ->and(array_slice(Health::CHECKS, 4, 2))->toBe(['app-key', 'apcu']);
 });
 
 it('warns on PHP-FPM without APCu, and says what it costs', function (): void {

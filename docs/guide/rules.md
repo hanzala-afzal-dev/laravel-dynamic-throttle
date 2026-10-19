@@ -16,7 +16,7 @@ A rule says which requests to count, who to count them by, and how many to allow
 | `mode` | `enforce`, or `dry_run` to count without blocking | `enforce` |
 | `on_failure` | When storage fails: `open` lets the request through, `closed` answers 503 | `open` |
 | `on_missing_identity` | When the scope finds no one, such as a guest under a `user` rule: `ip` counts by IP, `skip` ignores the rule | `ip` |
-| `response_override` | A JSON body for the 429 | `null` |
+| `response_override` | A JSON body for the 429, sent as JSON to every client, browsers included | `null` |
 | `enabled` | `false` switches the rule off | `true` |
 
 When several rules match a request, each counts it, and the first enforcing rule over its limit rejects it. The request gets Laravel's own 429, rendered by your exception handler:
@@ -88,6 +88,57 @@ Rule::create([
 ```
 
 A resolver that returns `null` finds no one, and the rule's `on_missing_identity` decides. A class that implements `ScopeResolver` works too.
+
+## An endpoint that costs money
+
+Some endpoints cost money on every call, such as one that calls an AI model. A loop in a client, or one user, can run up a large bill within an hour, and a limit in your code takes a deploy to change. A rule's limit changes in the dashboard, and servers apply it within `manifest.refresh_seconds`.
+
+**1. A limit per user, tried in dry-run first.** Run it for a day, read its would-blocks on the rule's page in the dashboard, or from `RateLimitWouldBlock` ([dry-run rules](dry-run.md)), then promote it: **Promote** on its page, or `$rule->update(['mode' => 'enforce'])`.
+
+```php
+Rule::create([
+    'name' => 'AI per user',
+    'method' => 'POST',
+    'pattern' => 'api/ai/*',
+    'scope' => 'user',
+    'max_attempts' => 20,
+    'window_seconds' => 3600,
+    'mode' => 'dry_run',
+    'response_override' => ['message' => "You have used this hour's AI requests."],
+]);
+```
+
+If guests can reach the route, the default `on_missing_identity`, `ip`, counts each of them by IP. The `response_override` is always sent as JSON, which suits an API. On a route that serves web pages, leave it out: your exception handler then renders the 429 as it renders `abort(429)`, a page for a browser and JSON for an API client.
+
+**2. A limit per plan,** in place of the per-user rule. Give each plan a rule with a custom scope that finds only that plan's users. The resolver returns `null` for the others, and `on_missing_identity` `skip` makes the rule ignore them ([ADR-0022](../adr/0022-skip-rules-without-identity.md)):
+
+```php
+// In a service provider's boot()
+foreach (['free', 'pro'] as $plan) {
+    DynamicThrottle::scope("{$plan}-user", fn (Request $request) => $request->user()?->plan === $plan ? $request->user()->getAuthIdentifier() : null);
+}
+```
+
+```php
+foreach (['free' => 20, 'pro' => 200] as $plan => $perHour) {
+    Rule::create([
+        'name' => "AI, {$plan} plan",
+        'method' => 'POST',
+        'pattern' => 'api/ai/*',
+        'scope' => 'custom',
+        'scope_parameter' => "{$plan}-user",
+        'on_missing_identity' => 'skip',
+        'max_attempts' => $perHour,
+        'window_seconds' => 3600,
+    ]);
+}
+```
+
+**3. A ceiling for everyone.** A `global` rule on the same route caps the total, whoever calls, such as 2,000 an hour: a budget that holds even when many users stay under their own limits.
+
+**4. During an incident.** Lower the rule's limit on its page in the dashboard. No Artisan command edits a limit: `php artisan dynamic-throttle:disable-rule` switches a rule off, which lifts its limit, and `dynamic-throttle:scale 0.5` halves every rule's limit at once ([during an incident](incidents.md)).
+
+No switch stops a route outright: disabling a rule lifts its limit, `bypass` lifts every limit, and `scale` goes down to a tenth of each limit. The nearest is a `global` rule on the route that allows 1 request a day (`max_attempts` 1, `window_seconds` 86400).
 
 ## Exemptions
 

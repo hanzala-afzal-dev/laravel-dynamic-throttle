@@ -130,7 +130,7 @@ Feature tests run on SQLite with the array cache store and Laravel's time travel
 - **A rolling deploy** (found by the review): servers of format 2 and of format 3 share the cache store, and each reads the other's manifest as corrupt and rebuilds it. Putting the format in the manifest's key would keep them apart, and is proposed for before 0.1.0 (the roadmap).
 - **A stale manifest** (ADR-0010) keeps its settings until their end time, so a bypass set before an outage keeps working through it.
 - **The kill switch** is unchanged. It is the last resort when both the database and the cache are down (ADR-0011 point 4).
-- **The system user cannot be read,** without the `posix` extension: the actor falls back to the `USER` environment variable, then to `cli:unknown`. Through sudo, it also names the user who ran sudo: `cli:root (sudo by alice)`.
+- **The system user cannot be read,** without the `posix` extension: the actor falls back to the `USER` environment variable, then to `USERNAME`, which Windows sets instead (issue #96), then to `cli:unknown`. Through sudo, it also names the user who ran sudo: `cli:root (sudo by alice)`.
 
 ## End-to-end verification
 - `composer test -- --filter=SPEC-013` and the files below, `composer test:apcu` for AC-10, and `composer analyse`, `format:check` and `refactor:check`

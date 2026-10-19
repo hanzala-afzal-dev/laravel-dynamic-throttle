@@ -58,6 +58,7 @@ export const CHECK_PURPOSES: Record<string, string> = {
     config: 'A config the counter driver cannot be built from, the kill switch off, a value the package replaces with its default, or a group or middleware that names nothing.',
     store: 'What the counter store guarantees. The file, apc and octane stores count per server, the database store writes on every limited request, and array and null are for tests.',
     'cache-clear': 'The Redis driver in the Redis database of a cache store, which php artisan cache:clear flushes, every limit with it.',
+    'redis-timeouts': 'A Redis connection requests use, for the counters or the manifest, without a timeout or with one above a second, so a Redis that hangs holds requests that long or more.',
     'app-key': 'No APP_KEY, so identities are hashed without a key.',
     apcu: 'PHP-FPM without APCu, so every request reads the rules from the cache first, and an outage costs every request a try.',
     attached: 'dynamic.throttle on no route, and not global middleware, so no rule applies.',

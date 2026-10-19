@@ -18,6 +18,7 @@ use Afzal\DynamicThrottle\Support\Health\Checks\IgnoredCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\ManifestCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\MetricsCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\MiddlewareOrderCheck;
+use Afzal\DynamicThrottle\Support\Health\Checks\RedisTimeoutsCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\StoreCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\TwoLimitersCheck;
 use Illuminate\Contracts\Container\Container;
@@ -65,6 +66,7 @@ final readonly class HealthChecks
             new ConfigCheck,
             new StoreCheck,
             new CacheClearCheck,
+            new RedisTimeoutsCheck,
             new AppKeyCheck,
             new ApcuCheck,
             new AttachedCheck,
