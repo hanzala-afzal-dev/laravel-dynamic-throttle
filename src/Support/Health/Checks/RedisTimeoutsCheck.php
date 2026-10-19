@@ -58,16 +58,16 @@ final readonly class RedisTimeoutsCheck implements Check
 
             $name = "\"{$connection}\", for ".implode(' and ', $uses);
             $named[] = $name;
-            $longest = self::longer($longest, ...array_values($waits));
+            $longest = $this->longer($longest, ...array_values($waits));
             $long = array_filter($waits, fn (?float $seconds): bool => $seconds === null || $seconds > self::LONGEST);
 
             if ($long !== []) {
                 $slow[] = "{$name}, waits ".implode(' and ', array_map(
-                    fn (string $what, ?float $seconds): string => ($seconds === null ? 'forever' : 'up to '.self::seconds($seconds)).($what === 'connect' ? ' to connect' : ' for each reply'),
+                    fn (string $what, ?float $seconds): string => ($seconds === null ? 'forever' : 'up to '.$this->seconds($seconds)).($what === 'connect' ? ' to connect' : ' for each reply'),
                     array_keys($long),
                     $long,
                 ));
-                $slowest = self::longer($slowest, ...array_values($long));
+                $slowest = $this->longer($slowest, ...array_values($long));
             }
         }
 
@@ -76,10 +76,10 @@ final readonly class RedisTimeoutsCheck implements Check
         }
 
         if ($slow === []) {
-            return CheckResult::ok($this->id(), 'A Redis that hangs holds a request at most '.self::seconds((float) $longest).' per call: '.implode('; ', $named).'.');
+            return CheckResult::ok($this->id(), 'A Redis that hangs holds a request at most '.$this->seconds((float) $longest).' per call: '.implode('; ', $named).'.');
         }
 
-        $holds = $slowest === null ? 'forever' : 'up to '.self::seconds($slowest).' per call';
+        $holds = $slowest === null ? 'forever' : 'up to '.$this->seconds($slowest).' per call';
 
         return CheckResult::warning($this->id(), "A Redis that hangs holds a request {$holds} before its limits fail open: ".implode('; ', $slow).'. '.self::ADVICE);
     }
@@ -164,7 +164,7 @@ final readonly class RedisTimeoutsCheck implements Check
         foreach ($cluster as $key => $node) {
             if (is_int($key) && is_array($node)) {
                 $node = $this->predis($this->parsed($node) + $defaults);
-                $waits = ['connect' => self::longer($waits['connect'], $node['connect']), 'read' => self::longer($waits['read'], $node['read'])];
+                $waits = ['connect' => $this->longer($waits['connect'], $node['connect']), 'read' => $this->longer($waits['read'], $node['read'])];
             }
         }
 
@@ -181,8 +181,8 @@ final readonly class RedisTimeoutsCheck implements Check
     private function phpredis(array $settings): array
     {
         return [
-            'connect' => $this->positive($settings['timeout'] ?? null) ?? self::socketTimeout(),
-            'read' => $this->positive($settings['read_timeout'] ?? null) ?? self::socketTimeout(),
+            'connect' => $this->positive($settings['timeout'] ?? null) ?? $this->socketTimeout(),
+            'read' => $this->positive($settings['read_timeout'] ?? null) ?? $this->socketTimeout(),
         ];
     }
 
@@ -200,7 +200,7 @@ final readonly class RedisTimeoutsCheck implements Check
 
         return [
             'connect' => is_numeric($connect) ? (float) $connect : self::PREDIS_CONNECT,
-            'read' => is_numeric($read) ? $this->positive($read) : self::socketTimeout(),
+            'read' => is_numeric($read) ? $this->positive($read) : $this->socketTimeout(),
         ];
     }
 
@@ -246,7 +246,7 @@ final readonly class RedisTimeoutsCheck implements Check
     /**
      * PHP's default_socket_timeout, null for forever, as a negative value means.
      */
-    private static function socketTimeout(): ?float
+    private function socketTimeout(): ?float
     {
         $seconds = (float) ini_get('default_socket_timeout');
 
@@ -256,12 +256,12 @@ final readonly class RedisTimeoutsCheck implements Check
     /**
      * The longer wait, where null is forever.
      */
-    private static function longer(?float ...$waits): ?float
+    private function longer(?float ...$waits): ?float
     {
         return in_array(null, $waits, true) ? null : max([0.0, ...$waits]);
     }
 
-    private static function seconds(float $seconds): string
+    private function seconds(float $seconds): string
     {
         $shown = rtrim(rtrim(number_format($seconds, 3, '.', ''), '0'), '.');
 
