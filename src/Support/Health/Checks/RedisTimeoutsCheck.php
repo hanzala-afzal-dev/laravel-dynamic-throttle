@@ -18,7 +18,10 @@ use InvalidArgumentException;
  * #99, ADR-0010 point 5). Without a timeout, phpredis waits PHP's
  * default_socket_timeout, 60 seconds by default, Predis 5 seconds to connect, and a
  * Predis read_write_timeout of 0 or less never gives up. It reads the config the way
- * Laravel's Redis connectors read it.
+ * Laravel's Redis connectors read it. It reports the timeouts, not a bound per call:
+ * a client that reconnects or retries waits them again, such as Laravel's phpredis
+ * connection, a cluster client trying each seed, or Predis's cluster client (the
+ * review).
  *
  * @internal
  */
@@ -63,7 +66,7 @@ final readonly class RedisTimeoutsCheck implements Check
 
             if ($long !== []) {
                 $slow[] = "{$name}, waits ".implode(' and ', array_map(
-                    fn (string $what, ?float $seconds): string => ($seconds === null ? 'forever' : 'up to '.$this->seconds($seconds)).($what === 'connect' ? ' to connect' : ' for each reply'),
+                    fn (string $what, ?float $seconds): string => ($seconds === null ? 'forever' : $this->seconds($seconds)).($what === 'connect' ? ' to connect' : ' for each reply'),
                     array_keys($long),
                     $long,
                 ));
@@ -76,10 +79,10 @@ final readonly class RedisTimeoutsCheck implements Check
         }
 
         if ($slow === []) {
-            return CheckResult::ok($this->id(), 'A Redis that hangs holds a request at most '.$this->seconds((float) $longest).' per call: '.implode('; ', $named).'.');
+            return CheckResult::ok($this->id(), 'The Redis connections requests use time out within '.$this->seconds((float) $longest).': '.implode('; ', $named).'. A call can wait a few times that while the client reconnects and retries (docs/guide/storage-and-runtimes.md#timeouts).');
         }
 
-        $holds = $slowest === null ? 'forever' : 'up to '.$this->seconds($slowest).' per call';
+        $holds = $slowest === null ? 'forever' : $this->seconds($slowest).' or more';
 
         return CheckResult::warning($this->id(), "A Redis that hangs holds a request {$holds} before its limits fail open: ".implode('; ', $slow).'. '.self::ADVICE);
     }
@@ -113,11 +116,21 @@ final readonly class RedisTimeoutsCheck implements Check
     }
 
     /**
-     * The connection of a redis cache store, as Laravel's RedisStore picks it.
+     * The connection of a redis cache store, as Laravel's RedisStore picks it, or of a
+     * failover store's first store, which every call tries first.
      */
-    private function storeConnection(Config $config, ?string $store): ?string
+    private function storeConnection(Config $config, ?string $store, int $depth = 0): ?string
     {
-        if ($store === null || $config->get("cache.stores.{$store}.driver") !== 'redis') {
+        $driver = $store === null ? null : $config->get("cache.stores.{$store}.driver");
+
+        if ($driver === 'failover' && $depth < 5) {
+            $stores = $config->get("cache.stores.{$store}.stores");
+            $first = is_array($stores) ? reset($stores) : null;
+
+            return is_string($first) ? $this->storeConnection($config, $first, $depth + 1) : null;
+        }
+
+        if ($driver !== 'redis') {
             return null;
         }
 
@@ -139,9 +152,15 @@ final readonly class RedisTimeoutsCheck implements Check
             $settings = $this->parsed($single);
             $own = $this->settings($single['options'] ?? null);
 
+            // Predis's "parameters" option gives a connection the settings it lacks. Laravel
+            // takes the connections' option's entry named after the connection, whole, else
+            // the option itself, and the connection's own option replaces it.
+            $parameters = $this->settings($options['parameters'] ?? null);
+            $parameters = is_array($parameters[$name] ?? null) ? $this->settings($parameters[$name]) : $parameters;
+            $parameters = array_key_exists('parameters', $own) ? $this->settings($own['parameters']) : $parameters;
+
             return $predis
-                // The client's "parameters" option gives a connection the settings it lacks.
-                ? $this->predis($settings + $this->settings(([...$options, ...$own])['parameters'] ?? null))
+                ? $this->predis($settings + $parameters)
                 // Laravel merges the connections' options over a connection's settings, then its own.
                 : $this->phpredis([...$settings, ...$options, ...$own]);
         }
