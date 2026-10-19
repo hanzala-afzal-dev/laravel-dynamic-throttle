@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle\Support\Health;
 
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
+use Afzal\DynamicThrottle\Support\Health\Checks\ApcuCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\AppKeyCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\AttachedCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\CacheClearCheck;
@@ -65,6 +66,7 @@ final readonly class HealthChecks
             new StoreCheck,
             new CacheClearCheck,
             new AppKeyCheck,
+            new ApcuCheck,
             new AttachedCheck,
             new ExceptCheck,
             new TwoLimitersCheck,
