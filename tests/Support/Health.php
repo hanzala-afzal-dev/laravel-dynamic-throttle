@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle\Tests\Support;
 
+use Afzal\DynamicThrottle\Support\Health\Runtime;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository;
 use Illuminate\Support\Facades\Artisan;
@@ -18,20 +19,21 @@ final class Health
 {
     /** The check ids, in the order the report lists them (SPEC-016). */
     public const array CHECKS = [
-        'config', 'store', 'cache-clear', 'redis-timeouts', 'app-key',
+        'config', 'store', 'cache-clear', 'redis-timeouts', 'app-key', 'apcu',
         'attached', 'except', 'two-limiters', 'middleware-order',
         'manifest', 'emergency', 'metrics',
         'guests', 'dominant-ip', 'ignored',
     ];
 
     /**
-     * An app where every check passes: a `dynamodb` store, which the test keeps in
-     * memory, a rule, a route that runs dynamic.throttle, unless $attached is false,
-     * and the metrics flushed through the last complete minute. The clock must be
-     * frozen.
+     * An app where every check passes: PHP-FPM with APCu, a `dynamodb` store, which
+     * the test keeps in memory, a rule, a route that runs dynamic.throttle, unless
+     * $attached is false, and the metrics flushed through the last complete minute.
+     * The clock must be frozen.
      */
     public static function passing(bool $attached = true): void
     {
+        self::runtime('fpm-fcgi', apcu: true);
         self::inMemory('dynamodb');
         config()->set('cache.stores.health', ['driver' => 'dynamodb']);
         config()->set('dynamic-throttle.store', 'health');
@@ -42,6 +44,14 @@ final class Health
         }
 
         Telemetry::buffer()->markFlushed(intdiv(Date::now()->getTimestamp(), 60) - 2);
+    }
+
+    /**
+     * The PHP the checks see, in place of the test's own command line (issue #100).
+     */
+    public static function runtime(string $sapi, bool $apcu, bool $octane = false): void
+    {
+        app()->instance(Runtime::class, new Runtime($sapi, $apcu, $octane));
     }
 
     /**

@@ -50,7 +50,7 @@ The package does not shorten your connections' timeouts itself: the right value 
 
 The package runs on PHP-FPM and on Laravel Octane (Swoole, RoadRunner, FrankenPHP).
 
-- **On PHP-FPM, enable the APCu extension** (the extension, not the `apc` cache store). A server's workers then share the rules, instead of each request reading them from the cache, and they share the counter store's cooldown. With 100 rules, that saves about 0.6 ms per request at p95.
+- **On PHP-FPM, enable the APCu extension** (the extension, not the `apc` cache store). A server's workers then share the rules, instead of each request reading them from the cache, and they share the counter store's cooldown. With 100 rules, that saves about 0.6 ms per request at p95. The dashboard's Settings page warns when the web server's PHP runs without it (the `apcu` check); `dynamic-throttle:health` in the command line cannot tell, since APCu is usually off there.
 - **The apps under one PHP-FPM master share APCu.** Give each app its own `prefix`, even when two are served from one directory, and run apps that do not trust each other under separate masters.
 
 See [ADR-0002](../adr/0002-supported-platforms.md) for the support policy.

@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - The `redis-timeouts` health check warns when a Redis connection that requests use, for the counters or the manifest, has no timeout, or one above a second, so a Redis that hangs holds requests that long or more. Without timeouts, phpredis waits PHP's `default_socket_timeout`, 60 seconds by default, before the limits fail open. The docs now show a dedicated connection with 0.25-second timeouts ([timeouts](docs/guide/storage-and-runtimes.md#timeouts)), and the runbook has a "Redis hangs" scenario ([#99](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/99)).
+- The `apcu` health check warns when the web server's PHP, such as PHP-FPM, runs without APCu: every request then reads the rules from the cache first, and an outage costs every request a try. The dashboard's Settings page runs it in the web server; `dynamic-throttle:health` in the command line says it cannot tell ([#100](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/100)).
 
 ### Fixed
 
