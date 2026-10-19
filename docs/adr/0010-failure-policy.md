@@ -4,6 +4,7 @@
 - Date: 2026-09-23
 - Roadmap phase: 2
 - Amended by: [ADR-0020](0020-laravel-ecosystem-coexistence.md) (every exception from the package, not only storage; `report()` and strict mode), [ADR-0021](0021-compensation-dry-run-and-failed-release.md) (a failed release keeps the rejection)
+- Amended: 2026-10-19, timeouts for a Redis that hangs: values, a health check, and the manifest's read (issue #99, see the decision record)
 - Related: ADR-0005, ADR-0007, ADR-0011
 
 ## Context
@@ -57,3 +58,12 @@
   - The event is dispatched and logging is rate-limited.
 - A test proving the cooldown skips the store until it expires (fake clock).
 - A runbook scenario "Redis down" in `docs/runbook.md`, with the matching test.
+- A test against a port that accepts connections and never answers: each request waits one timeout, then fails open, or answers 503 on a fail-closed rule (`RedisHangsTest`, the runbook's "Redis hangs").
+
+## Decision record
+
+Amended on 2026-10-19, for issue #99. Measured with phpredis and Laravel's default Redis options: a Redis that accepts the connection and never answers holds a call for PHP's `default_socket_timeout`, 60 seconds by default, because Laravel's connections set no timeout. Point 5 named this case, but the docs gave no values. Recommended in the PR, for the maintainer to veto:
+- Point 5: the docs give a dedicated connection with `timeout` and `read_timeout` (`read_write_timeout` with Predis) of 0.25 seconds and `max_retries` 0, and the runbook has a "Redis hangs" scenario.
+- Point 5: the `redis-timeouts` health check warns when a Redis connection requests use, the counters' or the manifest's, can wait more than a second, or forever.
+- Point 3: a manifest read that throws takes no rebuild lock, which waited on the same store as long again. The scheduled compile heals the manifest instead.
+- Not done: the Redis driver does not shorten the connection's timeouts itself. The right value depends on the network, the connection may be one the app uses too, and the check makes the gap visible. Revisit if users hit a hang despite the warning.

@@ -7,7 +7,7 @@ The defaults suit most apps. The settings you are most likely to change have env
 | `DYNAMIC_THROTTLE_ENABLED` | `true` | The kill switch |
 | `DYNAMIC_THROTTLE_STORE` | your default cache store | The cache store that holds the counters |
 | `DYNAMIC_THROTTLE_DRIVER` | `auto` | `redis` or `cache`. `auto` picks Redis on a Redis store |
-| `DYNAMIC_THROTTLE_REDIS_CONNECTION` | the store's connection | A dedicated connection with short timeouts is best |
+| `DYNAMIC_THROTTLE_REDIS_CONNECTION` | the store's connection | A dedicated connection with short [timeouts](storage-and-runtimes.md#timeouts) is best |
 | `DYNAMIC_THROTTLE_PREFIX` | `dt:` | Apps that share one Redis need different prefixes |
 | `DYNAMIC_THROTTLE_DB_CONNECTION` | your default connection | Where the package's tables live |
 | `DYNAMIC_THROTTLE_MANIFEST_REFRESH` | `2` | Seconds before a server picks up a rule change |
