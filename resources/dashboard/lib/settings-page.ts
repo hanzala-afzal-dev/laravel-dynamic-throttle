@@ -59,6 +59,7 @@ export const CHECK_PURPOSES: Record<string, string> = {
     store: 'What the counter store guarantees. The file, apc and octane stores count per server, the database store writes on every limited request, and array and null are for tests.',
     'cache-clear': 'The Redis driver in the Redis database of a cache store, which php artisan cache:clear flushes, every limit with it.',
     'app-key': 'No APP_KEY, so identities are hashed without a key.',
+    apcu: 'PHP-FPM without APCu, so every request reads the rules from the cache first, and an outage costs every request a try.',
     attached: 'dynamic.throttle on no route, and not global middleware, so no rule applies.',
     except: 'Horizon, Telescope, Pulse, Nova or Sanctum at a path except does not cover, so a rule can limit them.',
     'two-limiters': 'Routes that run Laravel\'s throttle too, which writes the same headers.',
