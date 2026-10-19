@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle\Support\Health;
 
 use Afzal\DynamicThrottle\Engine\Contracts\Clock;
+use Afzal\DynamicThrottle\Support\Health\Checks\ApcuCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\AppKeyCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\AttachedCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\CacheClearCheck;
@@ -17,6 +18,7 @@ use Afzal\DynamicThrottle\Support\Health\Checks\IgnoredCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\ManifestCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\MetricsCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\MiddlewareOrderCheck;
+use Afzal\DynamicThrottle\Support\Health\Checks\RedisTimeoutsCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\StoreCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\TwoLimitersCheck;
 use Illuminate\Contracts\Container\Container;
@@ -64,7 +66,9 @@ final readonly class HealthChecks
             new ConfigCheck,
             new StoreCheck,
             new CacheClearCheck,
+            new RedisTimeoutsCheck,
             new AppKeyCheck,
+            new ApcuCheck,
             new AttachedCheck,
             new ExceptCheck,
             new TwoLimitersCheck,

@@ -67,12 +67,14 @@ function runbookSections(): array
 it('AC-6: links, from each scenario, the test that follows its steps', function (): void {
     $tests = array_map(fn (string $body): array => array_values(array_filter(
         markdownLinks('docs/runbook.md', $body)[0],
-        fn (string $path): bool => str_starts_with($path, 'tests/Feature/Runbook/'),
+        // A scenario that needs a Redis client follows its steps with the drivers' tests.
+        fn (string $path): bool => str_starts_with($path, 'tests/Feature/Runbook/') || str_starts_with($path, 'tests/Drivers/'),
     )), runbookSections());
 
     expect($tests)->toBe([
         'Before you need it' => [],
         'Redis is down' => ['tests/Feature/Runbook/RedisDownTest.php'],
+        'Redis hangs' => ['tests/Drivers/RedisHangsTest.php'],
         'The manifest was evicted' => ['tests/Feature/Runbook/ManifestEvictedTest.php'],
         'A bad rule blocks /api' => ['tests/Feature/Runbook/BadRuleTest.php'],
         'An emergency change was left on' => ['tests/Feature/Runbook/EmergencyLeftOnTest.php'],
