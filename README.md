@@ -33,7 +33,7 @@ Dynamic Throttle makes limits data. Rules live in your database, you change them
 | Know why a request was blocked | Read the code | The Explain page, or `dynamic-throttle:explain` |
 | Keep serving when Redis is down | An exception per request | Requests go through, or get a 503 on the rules you choose |
 
-Requests never read the rules from the database: they are compiled into your cache. It is not a firewall or bot detection, and it does not replace edge rate limiting such as Cloudflare or Nginx. Use it for limits that need to know who the client is.
+Requests never read the rules from the database: they are compiled into your cache. On local Redis, the middleware adds about 0.8 ms per request at p50 with APCu, against 1.0 ms for Laravel's `throttle` and 0.6 ms for its `throttleWithRedis()` ([performance](docs/guide/performance.md)). It is not a firewall or bot detection, and it does not replace edge rate limiting such as Cloudflare or Nginx. Use it for limits that need to know who the client is.
 
 ## The dashboard
 
