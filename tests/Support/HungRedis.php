@@ -14,12 +14,13 @@ use RuntimeException;
  */
 final class HungRedis
 {
-    /** @var resource */
-    private $server;
+    /**
+     * @param  resource|null  $server
+     * @param  resource|null  $process
+     */
+    private function __construct(private $server, private $process, public readonly int $port) {}
 
-    public readonly int $port;
-
-    private function __construct()
+    public static function listen(): self
     {
         $server = stream_socket_server('tcp://127.0.0.1:0', $code, $message);
 
@@ -27,14 +28,37 @@ final class HungRedis
             throw new RuntimeException("Cannot listen: {$message}");
         }
 
-        $this->server = $server;
         $address = (string) stream_socket_get_name($server, false);
-        $this->port = (int) substr($address, (int) strrpos($address, ':') + 1);
+
+        return new self($server, null, (int) substr($address, (int) strrpos($address, ':') + 1));
     }
 
-    public static function listen(): self
+    /**
+     * One that answers the first command of the first connection, such as the SELECT
+     * a client sends as it connects, then hangs: a connection that was open before
+     * Redis stopped answering. It runs in a process of its own, since this one waits
+     * on it.
+     */
+    public static function afterFirstReply(): self
     {
-        return new self;
+        $code = <<<'PHP'
+            $server = stream_socket_server('tcp://127.0.0.1:0');
+            $address = stream_socket_get_name($server, false);
+            fwrite(STDOUT, substr($address, strrpos($address, ':') + 1)."\n");
+            $client = stream_socket_accept($server, 60);
+            fread($client, 65536);
+            fwrite($client, "+OK\r\n");
+            fgets(STDIN);
+            PHP;
+        $process = proc_open([PHP_BINARY, '-r', $code], [['pipe', 'r'], ['pipe', 'w'], ['file', '/dev/null', 'w']], $pipes);
+
+        if (! is_resource($process)) {
+            throw new RuntimeException('Cannot start the fake Redis.');
+        }
+
+        $port = (int) fgets($pipes[1]);
+
+        return new self(null, $process, $port);
     }
 
     /**
@@ -57,6 +81,13 @@ final class HungRedis
 
     public function close(): void
     {
-        fclose($this->server);
+        if (is_resource($this->server)) {
+            fclose($this->server);
+        }
+
+        if (is_resource($this->process)) {
+            proc_terminate($this->process);
+            proc_close($this->process);
+        }
     }
 }

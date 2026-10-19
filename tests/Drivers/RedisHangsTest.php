@@ -14,9 +14,10 @@ use Symfony\Component\HttpFoundation\Response;
 /*
 | Issue #99 and the runbook's "Redis hangs" (docs/runbook.md#redis-hangs): a
 | Redis that accepts connections and never answers costs a request one timeout
-| of the connection, then fails open, or 503 on a fail-closed rule. Each Redis
-| call waits at most the timeout, and a failed one is not followed by another,
-| except where Laravel retries a phpredis read itself (cacheReadWaits()). The
+| of the connection, then fails open, or 503 on a fail-closed rule. A failed
+| call is not followed by another, except where the client reconnects or
+| retries: Laravel's phpredis connection retries a read once (cacheReadWaits()),
+| and reconnects after a failed call, which selects the database again. The
 | connection has the timeouts the docs recommend, 0.3 seconds here. It needs no
 | service, but runs with the drivers, which have both clients.
 */
@@ -116,6 +117,22 @@ it('lets a request through after one read of the manifest when it is on the hung
 
     // No manifest, so no rule is known, not even the fail-closed one (ADR-0010 point 3).
     // Without the rebuild's lock after the failed read, which waited as long again.
+    expect($response->status())->toBe(200)
+        ->and($took)->toBeGreaterThanOrEqual($waits * HUNG_TIMEOUT)->toBeLessThan(($waits + 1) * HUNG_TIMEOUT);
+})->with('clients');
+
+it('waits twice the timeout with phpredis when the connection selects a database and Redis hangs once it is open, once with Predis', function (string $client): void {
+    $this->hung->close();
+    $this->hung = HungRedis::afterFirstReply();
+    hungClient($client);
+    config()->set('database.redis.hung.database', 2);
+    config()->set(['dynamic-throttle.driver' => 'redis', 'dynamic-throttle.redis_connection' => 'hung']);
+    app()->forgetScopedInstances();
+
+    [$response, $took] = timedGet('api/orders');
+    // phpredis reconnects after the failed call, and its SELECT waits too.
+    $waits = $client === 'phpredis' && method_exists(PhpRedisConnection::class, 'rebuildClient') ? 2 : 1;
+
     expect($response->status())->toBe(200)
         ->and($took)->toBeGreaterThanOrEqual($waits * HUNG_TIMEOUT)->toBeLessThan(($waits + 1) * HUNG_TIMEOUT);
 })->with('clients');

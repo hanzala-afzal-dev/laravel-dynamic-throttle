@@ -9,11 +9,11 @@ use Illuminate\Support\Carbon;
 
 /*
 | Issue #99: the redis-timeouts check. A Redis that hangs holds each call for
-| the connection's timeout before the limits fail open, and without one set,
-| phpredis waits PHP's default_socket_timeout, 60 seconds by default, and
-| Predis 5 seconds to connect. The check reads the config only. Every check
-| passes before each test changes one thing (Health::passing()), and
-| default_socket_timeout is 60.
+| the connection's timeout before the limits fail open, or a few times that
+| while the client reconnects and retries. Without a timeout, phpredis waits
+| PHP's default_socket_timeout, 60 seconds by default, and Predis 5 seconds to
+| connect. The check reads the config only. Every check passes before each
+| test changes one thing (Health::passing()), and default_socket_timeout is 60.
 */
 
 beforeEach(function (): void {
@@ -72,14 +72,14 @@ it('warns about a phpredis connection without timeouts, which waits default_sock
     [$status, $message] = Health::check('redis-timeouts');
 
     expect($status)->toBe('warning')
-        ->and($message)->toBe('A Redis that hangs holds a request up to 60 seconds per call before its limits fail open: "counters", for the counters, waits up to 60 seconds to connect and up to 60 seconds for each reply. '
+        ->and($message)->toBe('A Redis that hangs holds a request 60 seconds or more before its limits fail open: "counters", for the counters, waits 60 seconds to connect and 60 seconds for each reply. '
             .'Set "timeout" and "read_timeout" ("read_write_timeout" with Predis) to about 0.25 seconds on a connection for the package, with "max_retries" 0: see docs/guide/storage-and-runtimes.md#timeouts.');
 });
 
-it('is ok with short timeouts, and names the longest wait', function (array $connection): void {
+it('is ok with short timeouts, names the longest, and says retries can repeat it', function (array $connection): void {
     countersOn($connection);
 
-    expect(Health::check('redis-timeouts'))->toBe(['ok', 'A Redis that hangs holds a request at most 0.5 seconds per call: "counters", for the counters.']);
+    expect(Health::check('redis-timeouts'))->toBe(['ok', 'The Redis connections requests use time out within 0.5 seconds: "counters", for the counters. A call can wait a few times that while the client reconnects and retries (docs/guide/storage-and-runtimes.md#timeouts).']);
 })->with([
     'as numbers' => [['timeout' => 0.5, 'read_timeout' => 0.25]],
     'as strings, from the environment' => [['timeout' => '0.5', 'read_timeout' => '0.25']],
@@ -92,13 +92,13 @@ it('warns about a timeout above one second, and only about that one', function (
     [$status, $message] = Health::check('redis-timeouts');
 
     expect($status)->toBe('warning')
-        ->and($message)->toStartWith('A Redis that hangs holds a request up to 5 seconds per call before its limits fail open: "counters", for the counters, waits up to 5 seconds for each reply. ');
+        ->and($message)->toStartWith('A Redis that hangs holds a request 5 seconds or more before its limits fail open: "counters", for the counters, waits 5 seconds for each reply. ');
 });
 
 it('warns about Predis\'s defaults: 5 seconds to connect, and default_socket_timeout for each reply', function (): void {
     countersOn([], 'predis');
 
-    expect(Health::message('redis-timeouts'))->toStartWith('A Redis that hangs holds a request up to 60 seconds per call before its limits fail open: "counters", for the counters, waits up to 5 seconds to connect and up to 60 seconds for each reply. ');
+    expect(Health::message('redis-timeouts'))->toStartWith('A Redis that hangs holds a request 60 seconds or more before its limits fail open: "counters", for the counters, waits 5 seconds to connect and 60 seconds for each reply. ');
 });
 
 it('warns that a Predis read_write_timeout of 0 never gives up', function (): void {
@@ -124,7 +124,7 @@ it('checks the connection of the redis cache store that holds the manifest, and 
     [$status, $message] = Health::check('redis-timeouts');
 
     expect($status)->toBe('warning')
-        ->and($message)->toContain(': "cache", for the manifest, waits up to 60 seconds to connect and up to 60 seconds for each reply. ')
+        ->and($message)->toContain(': "cache", for the manifest, waits 60 seconds to connect and 60 seconds for each reply. ')
         ->not->toContain('"counters"');
 });
 
@@ -136,7 +136,7 @@ it('names both uses of one connection, as with the auto driver on a redis store'
         'dynamic-throttle.store' => 'redis',
     ]);
 
-    expect(Health::check('redis-timeouts'))->toBe(['ok', 'A Redis that hangs holds a request at most 0.25 seconds per call: "cache", for the counters and the manifest.']);
+    expect(Health::check('redis-timeouts'))->toBe(['ok', 'The Redis connections requests use time out within 0.25 seconds: "cache", for the counters and the manifest. A call can wait a few times that while the client reconnects and retries (docs/guide/storage-and-runtimes.md#timeouts).']);
 });
 
 it('checks the cache driver on a redis store, whose connection defaults to "default"', function (): void {
@@ -178,5 +178,33 @@ it('reads a Predis cluster\'s timeouts from each node, and warns about the worst
         'dynamic-throttle.redis_connection' => 'counters',
     ]);
 
-    expect(Health::message('redis-timeouts'))->toStartWith('A Redis that hangs holds a request up to 2 seconds per call before its limits fail open: "counters", for the counters, waits up to 2 seconds for each reply. ');
+    expect(Health::message('redis-timeouts'))->toStartWith('A Redis that hangs holds a request 2 seconds or more before its limits fail open: "counters", for the counters, waits 2 seconds for each reply. ');
+});
+
+it('reads a Predis connection\'s own parameters among the client\'s, as Laravel does', function (array $parameters, string $status, string $named): void {
+    countersOn([], 'predis');
+    config()->set('database.redis.options.parameters', $parameters);
+
+    [$actual, $message] = Health::check('redis-timeouts');
+
+    expect($actual)->toBe($status)
+        ->and($message)->toContain($named);
+})->with([
+    'its own, under its name' => [['counters' => ['timeout' => 0.25, 'read_write_timeout' => 0.25]], 'ok', 'within 0.25 seconds'],
+    // Laravel takes the connection's entry whole, so the client's are not merged into it.
+    'its own over the client\'s' => [['timeout' => 0.25, 'read_write_timeout' => 0.25, 'counters' => ['read_write_timeout' => 30]], 'warning', 'waits 5 seconds to connect and 30 seconds for each reply'],
+    'the client\'s, without its own' => [['timeout' => 0.25, 'read_write_timeout' => 0.25], 'ok', 'within 0.25 seconds'],
+]);
+
+it('checks the first store of a failover cache store, which every call tries first', function (): void {
+    config()->set([
+        'database.redis.cache' => ['host' => '127.0.0.1', 'port' => 6379, 'database' => 1],
+        'cache.stores.redis' => ['driver' => 'redis', 'connection' => 'cache'],
+        'cache.stores.local' => ['driver' => 'array'],
+        'cache.stores.failover' => ['driver' => 'failover', 'stores' => ['redis', 'local']],
+        'dynamic-throttle.driver' => 'cache',
+        'dynamic-throttle.store' => 'failover',
+    ]);
+
+    expect(Health::message('redis-timeouts'))->toContain(': "cache", for the counters and the manifest, waits 60 seconds');
 });
