@@ -18,7 +18,7 @@ final class Health
 {
     /** The check ids, in the order the report lists them (SPEC-016). */
     public const array CHECKS = [
-        'config', 'store', 'cache-clear', 'app-key',
+        'config', 'store', 'cache-clear', 'redis-timeouts', 'app-key',
         'attached', 'except', 'two-limiters', 'middleware-order',
         'manifest', 'emergency', 'metrics',
         'guests', 'dominant-ip', 'ignored',

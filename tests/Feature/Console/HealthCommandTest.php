@@ -59,8 +59,8 @@ it('AC-1: prints one line per check, in order, with its status, id and message, 
 
     [$output, $exitCode] = Health::text();
     $lines = Health::lines($output);
-    // The cache driver keeps no traffic per client, which only the Redis driver checks.
-    $skipped = array_search('dominant-ip', Health::CHECKS, true);
+    // Neither store is Redis, so the Redis checks are skipped: the first is the timeouts' (issue #99).
+    $skipped = array_search('redis-timeouts', Health::CHECKS, true);
 
     expect($exitCode)->toBe(0, $output)
         ->and(array_column($lines, 1))->toBe(Health::CHECKS)
@@ -73,7 +73,7 @@ it('AC-1: prints the same report as one JSON object, with the same checks in the
     Health::passing();
 
     [$exitCode, $report] = Health::report();
-    $skipped = array_search('dominant-ip', Health::CHECKS, true);
+    $skipped = array_search('redis-timeouts', Health::CHECKS, true);
 
     expect($exitCode)->toBe(0)
         ->and(array_keys($report))->toBe(['status', 'checks'])
@@ -129,7 +129,7 @@ it('AC-2: counts a skipped check as ok, also with --strict', function (): void {
 
     expect([$exitCode, $report['status']])->toBe([0, 'ok'])
         ->and(array_column(array_filter($report['checks'], fn (array $check): bool => $check['status'] === 'skipped'), 'check'))
-        ->toBe(['metrics', 'guests', 'dominant-ip', 'ignored']);
+        ->toBe(['redis-timeouts', 'metrics', 'guests', 'dominant-ip', 'ignored']);
 });
 
 it('AC-3: writes nothing, to the cache store or the database, and compiles nothing', function (Closure $state): void {
