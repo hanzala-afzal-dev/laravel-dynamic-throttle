@@ -40,7 +40,7 @@ Requests never read the rules from the database: they are compiled into your cac
 It ships with the package at `/dynamic-throttle`, behind your gates, with nothing to build: Overview, Rules, Exemptions, Activity (a live feed of blocks), Explain, Audit log and Settings, in light and dark themes.
 
 <p align="center">
-  <img src="art/dashboard-light.png" width="100%" alt="The Overview: health, bypass and the scale factor, the rule counts, the last hour's requests, blocks and would-blocks, a traffic chart and the top rules by blocks.">
+  <img src="art/limit-change.gif" width="100%" alt="A limit changing while the app runs. On the left, a terminal loops curl against /api/orders, and every response is 200. On the right, the dashboard edits the Orders API rule: its limit goes from 100 to 2 requests a minute, and it is saved. Within two seconds, the terminal's responses turn to 429 Too Many Requests, with no deploy.">
 </p>
 
 ## Requirements
