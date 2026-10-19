@@ -12,8 +12,16 @@ covers(CliActor::class);
 | everyone, so the actor also names the user who ran sudo.
 */
 
+beforeEach(function (): void {
+    $this->environment = ['USER' => getenv('USER'), 'USERNAME' => getenv('USERNAME')];
+});
+
 afterEach(function (): void {
     putenv('SUDO_USER');
+
+    foreach ($this->environment as $name => $value) {
+        putenv($value === false ? $name : "{$name}={$value}");
+    }
 });
 
 function systemUser(): string
@@ -37,4 +45,37 @@ it('names no sudo user when it is the system user itself', function (): void {
     putenv('SUDO_USER='.systemUser());
 
     expect(CliActor::name())->toBe('cli:'.systemUser());
+});
+
+/*
+| Issue #96: without the posix extension, Windows names its user in USERNAME,
+| not USER, so every CLI change was logged as cli:unknown.
+*/
+
+it('names the user from USER without the posix extension', function (): void {
+    putenv('USER=hanzala');
+    putenv('USERNAME');
+
+    expect(CliActor::named(null))->toBe('cli:hanzala');
+});
+
+it('names the user from USERNAME on Windows, which has no USER', function (): void {
+    putenv('USER');
+    putenv('USERNAME=Hanzala');
+
+    expect(CliActor::named(null))->toBe('cli:Hanzala');
+});
+
+it('prefers USER to USERNAME', function (): void {
+    putenv('USER=hanzala');
+    putenv('USERNAME=Administrator');
+
+    expect(CliActor::named(null))->toBe('cli:hanzala');
+});
+
+it('says unknown when neither names a user', function (): void {
+    putenv('USER');
+    putenv('USERNAME=');
+
+    expect(CliActor::named(null))->toBe('cli:unknown');
 });
