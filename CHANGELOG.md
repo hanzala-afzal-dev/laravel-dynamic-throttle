@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- On Windows, the audit log names the user who ran an Artisan command, such as `cli:Hanzala`, instead of `cli:unknown`. Without the `posix` extension, the actor now falls back to the `USERNAME` environment variable after `USER` ([#96](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/96)).
 - The README's install steps now compile the rules once, with `php artisan dynamic-throttle:compile`. Without it, `dynamic-throttle:health` reported a missing manifest as an error right after install, until the scheduler or a first limited request built it.
 
 ## [0.1.0-beta.1] - 2026-10-18
