@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures';
+import { requireParallelServer } from './support/environment';
 
 // The suite's own promises: the page guard fails a test whose page breaks a rule, and no
 // test leaves an emergency setting on for the next. Each test below is expected to fail:
@@ -47,4 +48,13 @@ test.describe.serial('an emergency setting never outlives its test', () => {
         expect(settings.bypass.on).toBe(false);
         expect(settings.scale.factor).toBeNull();
     });
+});
+
+// Issues #112 to #132: on native Windows, PHP's built-in server cannot fork workers, so it
+// answers one request at a time, and the tests time out one by one. The run stops first.
+test('the suite refuses PHP\'s built-in server on native Windows, unless told to try anyway', () => {
+    expect(() => requireParallelServer('win32', {})).toThrow('PHP\'s built-in server answers one request at a time on Windows');
+    expect(() => requireParallelServer('win32', { E2E_ALLOW_WINDOWS: '1' })).not.toThrow();
+    expect(() => requireParallelServer('linux', {})).not.toThrow();
+    expect(() => requireParallelServer('darwin', {})).not.toThrow();
 });
