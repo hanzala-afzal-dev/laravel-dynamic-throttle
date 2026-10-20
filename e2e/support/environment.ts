@@ -19,6 +19,22 @@ export const dashboard = `${baseURL}/dynamic-throttle`;
 export const prefix = (process.env.E2E_PREFIX ??= `e2e-${Date.now().toString(36)}:`);
 
 /**
+ * Stops the run before it starts on native Windows, where PHP's built-in server cannot
+ * fork workers ("forking is not supported on this platform"), so it answers one request
+ * at a time: each page's requests queue, and the tests time out one by one (issues #112
+ * to #132). E2E_ALLOW_WINDOWS=1 runs them there anyway.
+ */
+export function requireParallelServer(platform: NodeJS.Platform, env: NodeJS.ProcessEnv): void {
+    if (platform === 'win32' && env.E2E_ALLOW_WINDOWS !== '1') {
+        throw new Error(
+            "The browser tests need a server that answers requests in parallel, and PHP's built-in server answers one request at a time on Windows, " +
+                'so they would time out. Run them in WSL 2, with the repository in its own file system (CONTRIBUTING.md), ' +
+                'or set E2E_ALLOW_WINDOWS=1 to try anyway.',
+        );
+    }
+}
+
+/**
  * The environment the server and Artisan run with: the Workbench app on Redis, with this
  * run's prefix, rules that apply at once, and the dashboard's own limit off.
  */

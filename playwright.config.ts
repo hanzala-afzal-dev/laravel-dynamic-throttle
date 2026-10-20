@@ -1,5 +1,7 @@
 import { defineConfig } from '@playwright/test';
-import { baseURL, port, serverEnvironment } from './e2e/support/environment';
+import { baseURL, port, requireParallelServer, serverEnvironment } from './e2e/support/environment';
+
+requireParallelServer(process.platform, process.env);
 
 // The dashboard's browser tests: Chromium, against the Workbench app on Redis.
 export default defineConfig({

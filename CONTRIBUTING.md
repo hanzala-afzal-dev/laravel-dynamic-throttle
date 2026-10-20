@@ -94,6 +94,8 @@ npm run e2e
 
 Each run builds a fresh Workbench database and starts its own server on port 8123 (`E2E_PORT` picks another). A failed test keeps a screenshot and a trace in `test-results/`, which `npx playwright show-trace <file>` replays.
 
+On Windows, run them in WSL 2, with the repository in WSL's own file system, such as `~/laravel-dynamic-throttle`, not under `/mnt/c`. PHP's built-in server cannot fork workers on Windows, so it answers one request at a time, and the tests time out: the run stops with a message that says so. `E2E_ALLOW_WINDOWS=1` runs them there anyway.
+
 ### Trying the dashboard
 
 The Workbench app is a demo of the dashboard. It has four rules, an exemption, a week of made-up hourly numbers, and routes for the rules to limit. Node is not needed: `dist/` is committed.
