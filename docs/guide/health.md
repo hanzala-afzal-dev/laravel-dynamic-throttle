@@ -18,6 +18,7 @@ Each check is `ok`, `warning`, `error` or `skipped`, with what it found and what
 | `redis-timeouts` | A Redis connection requests use, for the counters or the manifest, without a timeout, or with one above a second, so a Redis that hangs holds requests that long or more. Without timeouts, phpredis waits PHP's `default_socket_timeout`, 60 seconds by default ([timeouts](storage-and-runtimes.md#timeouts)). |
 | `app-key` | No `APP_KEY`, so identities are hashed without a key. |
 | `apcu` | PHP-FPM without APCu, so every request reads the rules from the cache first, and an outage costs every request a try. The command line cannot see the web server's PHP, so there it is skipped: the dashboard's Settings page runs the checks in the web server, and shows the answer. |
+| `dashboard` | No `viewDynamicThrottle` or `manageDynamicThrottle` gate outside the `local` environment, so nobody can open the dashboard, and visitors get a 403 that says nothing about why ([who gets in](dashboard.md#who-gets-in)). A `Gate::before` callback alone does not count, as for the dashboard itself. |
 | `attached` | `dynamic.throttle` on no route, and not global middleware, so no rule applies. |
 | `except` | Horizon, Telescope, Pulse, Nova or Sanctum at a path `except` does not cover, so a rule can limit them. |
 | `two-limiters` | Routes that run Laravel's `throttle` too, which writes the same headers. |

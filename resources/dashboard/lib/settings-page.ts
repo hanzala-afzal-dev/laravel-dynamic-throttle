@@ -61,6 +61,7 @@ export const CHECK_PURPOSES: Record<string, string> = {
     'redis-timeouts': 'A Redis connection requests use, for the counters or the manifest, without a timeout or with one above a second, so a Redis that hangs holds requests that long or more.',
     'app-key': 'No APP_KEY, so identities are hashed without a key.',
     apcu: 'PHP-FPM without APCu, so every request reads the rules from the cache first, and an outage costs every request a try.',
+    dashboard: 'No viewDynamicThrottle or manageDynamicThrottle gate outside the local environment, so nobody can open the dashboard.',
     attached: 'dynamic.throttle on no route, and not global middleware, so no rule applies.',
     except: 'Horizon, Telescope, Pulse, Nova or Sanctum at a path except does not cover, so a rule can limit them.',
     'two-limiters': 'Routes that run Laravel\'s throttle too, which writes the same headers.',
