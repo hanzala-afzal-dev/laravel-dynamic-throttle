@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle\Tests\Support;
 
+use Afzal\DynamicThrottle\Dashboard\Gates;
 use Afzal\DynamicThrottle\Support\Health\Runtime;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Date;
+use Illuminate\Support\Facades\Gate;
 use RuntimeException;
 
 /**
@@ -19,7 +21,7 @@ final class Health
 {
     /** The check ids, in the order the report lists them (SPEC-016). */
     public const array CHECKS = [
-        'config', 'store', 'cache-clear', 'redis-timeouts', 'app-key', 'apcu',
+        'config', 'store', 'cache-clear', 'redis-timeouts', 'app-key', 'apcu', 'dashboard',
         'attached', 'except', 'two-limiters', 'middleware-order',
         'manifest', 'emergency', 'metrics',
         'guests', 'dominant-ip', 'ignored',
@@ -28,10 +30,12 @@ final class Health
     /**
      * An app where every check passes: PHP-FPM with APCu, a `dynamodb` store, which
      * the test keeps in memory, a rule, a route that runs dynamic.throttle, unless
-     * $attached is false, and the metrics flushed through the last complete minute.
-     * The clock must be frozen.
+     * $attached is false, the metrics flushed through the last complete minute, and
+     * the dashboard's gates, unless $gates is false or the test defined them (SPEC-033):
+     * they let nobody in, as the testing environment did without them. The clock must
+     * be frozen.
      */
-    public static function passing(bool $attached = true): void
+    public static function passing(bool $attached = true, bool $gates = true): void
     {
         self::runtime('fpm-fcgi', apcu: true);
         self::inMemory('dynamodb');
@@ -44,6 +48,10 @@ final class Health
         }
 
         Telemetry::buffer()->markFlushed(intdiv(Date::now()->getTimestamp(), 60) - 2);
+
+        if ($gates && ! Gate::has(Gates::VIEW) && ! Gate::has(Gates::MANAGE)) {
+            Dashboard::gates(fn (): bool => false, fn (): bool => false);
+        }
     }
 
     /**
