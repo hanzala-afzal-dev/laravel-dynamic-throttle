@@ -34,10 +34,19 @@ final readonly class Gates
      */
     public function abilities(): array
     {
-        $defined = $this->gate->has(self::VIEW) || $this->gate->has(self::MANAGE);
+        $defined = $this->defined();
         $manage = $this->allows(self::MANAGE, $defined);
 
         return ['view' => $manage || $this->allows(self::VIEW, $defined), 'manage' => $manage];
+    }
+
+    /**
+     * Whether the app defines either gate. Until it does, only the local environment
+     * gets in. A Gate::before callback alone defines neither (SPEC-033 decision 3).
+     */
+    public function defined(): bool
+    {
+        return $this->gate->has(self::VIEW) || $this->gate->has(self::MANAGE);
     }
 
     private function allows(string $ability, bool $defined): bool
