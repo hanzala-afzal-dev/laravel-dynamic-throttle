@@ -12,7 +12,13 @@ export default tseslint.config(
         languageOptions: { globals: globals.browser },
     },
     {
-        files: ['scripts/**/*.mjs'],
+        // The browser tests (SPEC-032), which run in Node and drive Chromium.
+        files: ['e2e/**/*.ts', 'playwright.config.ts'],
+        extends: [js.configs.recommended, ...tseslint.configs.recommended],
+        languageOptions: { globals: globals.node },
+    },
+    {
+        files: ['scripts/**/*.mjs', 'e2e/**/*.mjs'],
         extends: [js.configs.recommended],
         languageOptions: { globals: globals.node },
     },

@@ -27,7 +27,8 @@ export function EmergencyBanner() {
                 {settings.bypass.on && (
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                         <p>
-                            Bypass is on: no rule limits any request <Until value={settings.bypass.until} />.
+                            Bypass is on: no rule limits any request
+                            <Until value={settings.bypass.until} />.
                         </p>
                         {canManage && (
                             <Button size="sm" variant="outline" disabled={turnOff.pending} onClick={() => turnOff.send({ path: 'settings/bypass', body: { state: 'off' } })}>
@@ -40,7 +41,7 @@ export function EmergencyBanner() {
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                         <p>
                             Every limit is multiplied by {settings.scale.factor}
-                            <Until value={settings.scale.until} comma />.
+                            <Until value={settings.scale.until} />.
                         </p>
                         {canManage && (
                             <Button size="sm" variant="outline" disabled={turnOff.pending} onClick={() => turnOff.send({ path: 'settings/scale', body: { factor: 'off' } })}>
@@ -56,14 +57,15 @@ export function EmergencyBanner() {
     );
 }
 
-function Until({ value, comma = false }: { value: string | null; comma?: boolean }) {
+/** The end of the sentence before it: ", with no end time" or " until <time>", with its own space. */
+function Until({ value }: { value: string | null }) {
     if (value === null) {
         return <>, with no end time</>;
     }
 
     return (
         <>
-            {comma ? ' ' : ''}until <Time value={value} />
+            {' '}until <Time value={value} />
         </>
     );
 }

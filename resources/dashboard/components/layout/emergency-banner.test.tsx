@@ -22,6 +22,13 @@ describe('the emergency banner', () => {
         await waitFor(() => expect(sent).toContainEqual(['PUT', 'settings/bypass', { state: 'off' }]));
     });
 
+    it('AC-9: says bypass with no end time, with no space before the comma', async () => {
+        mockApi(manager({ 'GET settings': { body: { bypass: { on: true, until: null }, scale: { factor: null, until: null } } } }));
+        renderAt(<EmergencyBanner />);
+
+        expect(await screen.findByRole('alert')).toHaveTextContent('Bypass is on: no rule limits any request, with no end time.', { normalizeWhitespace: false });
+    });
+
     it('AC-9: says a scale factor with no end time, and lets a manager turn it off', async () => {
         const sent = mockApi(manager({ ...scaled, 'PUT settings/scale': turnedOff }));
         const user = userEvent.setup();
