@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-25
 - Roadmap phase: 6
+- Amended: 2026-10-25, the site is for the package's users: no ADRs and no edit links (see the decision record)
 
 ## Context
 
@@ -13,10 +14,10 @@
 ## Decision
 
 1. **VitePress builds `docs/` into a static site, and GitHub Pages serves it** at <https://hanzala-afzal-dev.github.io/laravel-dynamic-throttle/>. `.github/workflows/docs.yml` builds it for every pull request that changes the docs, and deploys it from `main`.
-2. **The Markdown stays the source, as GitHub reads it.** The site shows the guide, the runbook and the ADRs as they are. The specs and the roadmap stay on GitHub only: they are for contributors.
+2. **The Markdown stays the source, as GitHub reads it.** The site shows the guide and the runbook as they are, for the package's users. The ADRs, the specs and the roadmap stay on GitHub only: they are for contributors. Its pages have no "Edit this page" links.
    - Links keep their GitHub form. The site sends a link to one of its pages to that page, and a link to anything else, such as a test, the config file or a spec, to the file on GitHub.
    - Headings get GitHub's ids, so the docs' anchors work in both places.
-3. **No text is copied.** The home page and Getting started include sections of `README.md`, marked with `<!-- #region -->` comments, which GitHub does not show; the changelog page includes `CHANGELOG.md`. The site's own pages are in `docs/site/`, and the sidebar is read from the guide's and the ADRs' indexes.
+3. **No text is copied.** The home page and Getting started include sections of `README.md`, marked with `<!-- #region -->` comments, which GitHub does not show; the changelog page includes `CHANGELOG.md`. The site's own pages are in `docs/site/`, and the sidebar is read from the guide's index.
 4. **Its toolchain is apart from the dashboard's** ([ADR-0028](0028-dashboard-react-shadcn.md)): `docs/package.json`, with VitePress pinned to an exact version and its own lock file. Nothing of it ships: `docs/` is export-ignored.
 
 ## Reasoning
@@ -46,3 +47,9 @@
 ## Verification
 
 - The Docs workflow builds the site for every pull request that changes `docs/`, the README, the changelog or `art/`. The build fails on a broken link between pages, on a link to a missing file, and on a link to a heading the target page lacks.
+
+## Decision record
+
+Accepted on 2026-10-25, when the maintainer merged the site.
+
+Amended on 2026-10-25, the same day: the maintainer asked that the site hold what the package's users need, and nothing for contributors. It no longer shows the ADRs, and its pages lose their "Edit this page on GitHub" links. The repository stays public, so the ADRs are still on GitHub, and a guide page that cites one links to it there.

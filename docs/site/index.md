@@ -2,7 +2,6 @@
 layout: home
 title: Dynamic Throttle for Laravel
 titleTemplate: false
-editLink: false
 
 hero:
   name: Dynamic Throttle

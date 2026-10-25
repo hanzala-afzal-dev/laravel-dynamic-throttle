@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- The documentation site is for the package's users: it no longer shows the design decisions (ADRs), and its pages no longer link to editing them on GitHub. The ADRs stay in the repository, and the guide's links to them open them on GitHub.
+
 ## [0.1.0-beta.2] - 2026-10-25
 
 The second beta: three new health checks, a documentation site, and fixes for Windows, for a Redis that hangs and for the dashboard's light theme. Upgrading needs no change to your app. But `dynamic-throttle:health --strict` fails on any warning, and two of the new checks can warn from the command line: a Redis connection without timeouts (`redis-timeouts`; Laravel's default Redis config sets none), and a dashboard nobody can open outside the `local` environment (`dashboard`). A deploy script that runs it may stop on them.

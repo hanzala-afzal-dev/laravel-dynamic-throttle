@@ -1,7 +1,3 @@
----
-editLink: false
----
-
 <!-- The documentation site's getting started page (ADR-0029): the README's sections, so the two never differ. Edit them in README.md. -->
 
 # Getting started
