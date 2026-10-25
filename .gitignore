@@ -37,3 +37,7 @@ benchmarks/results/*.xml
 /playwright-report
 /test-results
 /blob-report
+
+# The documentation site's build and cache (ADR-0029).
+/docs/.vitepress/dist/
+/docs/.vitepress/cache/

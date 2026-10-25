@@ -11,10 +11,15 @@
 #   bash scripts/cloud-setup.sh images       only the service images
 #
 # What the cloud network allows (checked 2026-09-24), and how this script copes:
-# - The image's PHP comes from the ondrej/php PPA, which the network blocks (403),
-#   like packages.sury.org and pecl.php.net. The Ubuntu archive and git clones of
-#   public GitHub repositories work, so a missing extension that apt cannot install
-#   is built from its git tag with phpize.
+# - The image's PHP has come from the ondrej/php PPA (8.4), which the network blocks
+#   (403), like packages.sury.org and pecl.php.net, and from Ubuntu's archive (8.3,
+#   since 2026-10-24). The Ubuntu archive and git clones of public GitHub repositories
+#   work, so a missing extension that apt cannot install is built from its git tag
+#   with phpize.
+# - Ubuntu's php8.3-redis is phpredis 5.3.7. Its Redis class has no return types, so
+#   the tests' Redis doubles, written for the phpredis 6 that CI installs, cannot
+#   extend it, and PHP stops the whole test run. An extension older than the tests
+#   need is built from its git tag too.
 # - Anonymous pulls from Docker Hub hit its rate limit (429), so images fall back to
 #   mirror.gcr.io, Google's Docker Hub mirror, and get their Docker Hub names.
 #
@@ -32,6 +37,14 @@ images=(redis:7.4-alpine valkey/valkey:8-alpine memcached:1.6-alpine mysql:8.4 p
 
 loaded() {
     php -m 2>/dev/null | grep -qix "$1"
+}
+
+# Whether a loaded extension is older than the tests need: phpredis below 6.
+outdated() {
+    case "$1" in
+        redis) php -r 'exit(version_compare((string) phpversion("redis"), "6.0.0", "<") ? 0 : 1);' 2>/dev/null ;;
+        *) return 1 ;;
+    esac
 }
 
 install_with_apt() {
@@ -88,15 +101,25 @@ install_extensions() {
     for extension in "${required[@]}"; do
         loaded "$extension" || missing+=("$extension")
     done
-    [ ${#missing[@]} -eq 0 ] && return
 
-    echo "Installing PHP $php_version extensions: ${missing[*]}"
-    # Fails for the blocked PPA, but still refreshes the Ubuntu archive.
-    apt-get update -qq >/dev/null 2>&1
+    if [ ${#missing[@]} -gt 0 ]; then
+        echo "Installing PHP $php_version extensions: ${missing[*]}"
+        # Fails for the blocked PPA, but still refreshes the Ubuntu archive.
+        apt-get update -qq >/dev/null 2>&1
 
-    for extension in "${missing[@]}"; do
-        install_with_apt "$extension" || build_from_source "$extension"
-        loaded "$extension" || echo "Could not install the $extension extension."
+        for extension in "${missing[@]}"; do
+            install_with_apt "$extension" || build_from_source "$extension"
+            loaded "$extension" || echo "Could not install the $extension extension."
+        done
+    fi
+
+    # Also one that apt has just installed, such as Ubuntu's phpredis 5.
+    for extension in "${required[@]}"; do
+        if loaded "$extension" && outdated "$extension"; then
+            echo "Rebuilding the PHP $php_version extension $extension: $(php -r "echo phpversion('$extension');") is older than the tests need"
+            build_from_source "$extension"
+            outdated "$extension" && echo "Could not install the $extension extension at the version the tests need."
+        fi
     done
 }
 

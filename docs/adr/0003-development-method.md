@@ -27,7 +27,7 @@
 
 ### The loop for every feature
 
-1. **Spec (session A).** Prompt: *"Read docs/adr/README.md, the related ADRs and docs/specs/TEMPLATE.md. I want to build <feature>. Interview me about behavior, edge cases and failure modes. Then write docs/specs/NNN-name.md."* You edit the result. Acceptance criteria must use concrete numbers. Commit: `docs(spec): …`.
+1. **Spec (session A).** Prompt: *"Read docs/adr/README.md, the related ADRs and docs/specs/TEMPLATE.md. I want to build \<feature>. Interview me about behavior, edge cases and failure modes. Then write docs/specs/NNN-name.md."* You edit the result. Acceptance criteria must use concrete numbers. Commit: `docs(spec): …`.
 2. **Plan (session B, fresh, plan mode).** Prompt: *"Read @docs/specs/NNN-name.md. Explore src/ and tests/. Write an implementation plan: files to create or change, public interfaces, and a list of tests mapping each acceptance criterion (AC-n) to a test."* You approve or edit the plan.
 3. **Red.** Prompt: *"Write the Pest tests from the plan. Do not write implementation code. Run them and show me the failing assertions."* The tests must fail because the behavior is missing, not because the test itself is broken. **You review the tests carefully. This is the most important human checkpoint.** Commit: `test: …`.
 4. **Green.** Prompt: *"Implement until all tests pass. Do not edit anything under tests/. If a test looks wrong, stop and explain why."* Then run `composer test`, `composer analyse` and `composer format`, and show the output as evidence.

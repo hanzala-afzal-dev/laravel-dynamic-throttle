@@ -118,6 +118,19 @@ As a guest you are a manager. To see the dashboard as a viewer, open `/_workbenc
 
 After pulling changes, restart the demo. `npm run build` changes take effect on the next page load.
 
+## The documentation site ([ADR-0029](docs/adr/0029-documentation-site.md))
+
+The Markdown in `docs/` is also a website, built with VitePress and served by GitHub Pages at <https://hanzala-afzal-dev.github.io/laravel-dynamic-throttle/>. Write the docs for GitHub, with links relative to their file: the site sends a link to one of its pages to that page, and any other link to the file on GitHub. The specs and the roadmap stay on GitHub only.
+
+```bash
+cd docs
+npm ci
+npm run dev      # http://localhost:5173/laravel-dynamic-throttle/
+npm run build    # fails on a link to a missing file, page or heading
+```
+
+The home page and Getting started show sections of the README between `<!-- #region … -->` comments, so keep those comments when you edit it. The site's own pages are in `docs/site/`, and its sidebar lists the guide's pages in the order of `docs/guide/README.md`.
+
 ## What users download
 
 `composer require` installs only the package: `src/`, `config/`, `database/`, `resources/views/`, `dist/`, `composer.json`, and the README, LICENSE, CHANGELOG and SECURITY files. Everything else in this repository is for development and stays out through `export-ignore` in `.gitattributes`: tests, docs, scripts, Docker and CI files, the dashboard's sources and toolchain, and `CLAUDE.md`. A CI check fails when any other file would ship. When you add a new top-level file or folder, add it to `.gitattributes` unless users need it.
