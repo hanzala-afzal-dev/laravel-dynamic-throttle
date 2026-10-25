@@ -14,8 +14,11 @@ const description =
 const docs = fileURLToPath(new URL('..', import.meta.url));
 const root = resolve(docs, '..');
 
-/** What stays on GitHub only: the specs and the roadmap are for contributors. */
-const githubOnly = ['specs/', 'roadmap.md'];
+/**
+ * What stays on GitHub only: the ADRs, the specs and the roadmap are for contributors.
+ * The site is for the package's users.
+ */
+const githubOnly = ['adr/', 'specs/', 'roadmap.md'];
 
 /** Pages whose source has another path: the site's own pages, and each folder's README as its index. */
 const rewrites: Record<string, string> = {
@@ -23,7 +26,6 @@ const rewrites: Record<string, string> = {
     'site/getting-started.md': 'getting-started.md',
     'site/changelog.md': 'changelog.md',
     'guide/README.md': 'guide/index.md',
-    'adr/README.md': 'adr/index.md',
 };
 
 /** Files outside docs/ whose text a page shows, by the page. */
@@ -106,17 +108,6 @@ function guidePages(): DefaultTheme.SidebarItem[] {
     }));
 
     return pages.length > 0 ? pages : fail('docs/guide/README.md lists no pages under "## Pages".');
-}
-
-/** The ADRs, in the order of their index. */
-function decisions(): DefaultTheme.SidebarItem[] {
-    const index = readFileSync(join(docs, 'adr/README.md'), 'utf8');
-    const adrs = [...index.matchAll(/^\| \[(\d{4})\]\((\d{4}-[\w-]+)\.md\) \| ([^|]+?) \|/gm)].map(([, number, file, title]) => ({
-        text: `${number} ${inlineHtml(title)}`,
-        link: `/adr/${file}`,
-    }));
-
-    return adrs.length > 0 ? adrs : fail('docs/adr/README.md has no ADRs in its index.');
 }
 
 /**
@@ -235,36 +226,25 @@ export default defineConfig({
             { text: 'Getting started', link: '/getting-started' },
             { text: 'Guide', link: '/guide/', activeMatch: '^/guide/' },
             { text: 'Runbook', link: '/runbook' },
-            { text: 'Decisions', link: '/adr/', activeMatch: '^/adr/' },
             { text: 'Changelog', link: '/changelog' },
         ],
 
-        sidebar: {
-            '/adr/': [{ text: 'Design decisions', items: [{ text: 'All decisions', link: '/adr/' }, ...decisions()] }],
-            '/': [
-                {
-                    text: 'Introduction',
-                    items: [
-                        { text: 'Getting started', link: '/getting-started' },
-                        { text: 'How it works', link: '/guide/' },
-                    ],
-                },
-                { text: 'Guide', items: guidePages() },
-                { text: 'Operations', items: [{ text: 'Runbook', link: '/runbook' }] },
-                {
-                    text: 'Reference',
-                    items: [
-                        { text: 'Changelog', link: '/changelog' },
-                        { text: 'Design decisions', link: '/adr/' },
-                    ],
-                },
-            ],
-        },
+        sidebar: [
+            {
+                text: 'Introduction',
+                items: [
+                    { text: 'Getting started', link: '/getting-started' },
+                    { text: 'How it works', link: '/guide/' },
+                ],
+            },
+            { text: 'Guide', items: guidePages() },
+            { text: 'Operations', items: [{ text: 'Runbook', link: '/runbook' }] },
+            { text: 'Reference', items: [{ text: 'Changelog', link: '/changelog' }] },
+        ],
 
         outline: { level: [2, 3] },
         search: { provider: 'local' },
         socialLinks: [{ icon: 'github', link: repository }],
-        editLink: { pattern: `${repository}/edit/main/docs/:path`, text: 'Edit this page on GitHub' },
         footer: {
             message: 'Released under the MIT License. An independent package, not affiliated with or endorsed by Laravel.',
             copyright: '© 2026 Hanzala Afzal',
