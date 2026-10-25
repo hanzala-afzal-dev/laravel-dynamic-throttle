@@ -1,0 +1,46 @@
+/*
+ * The banner's teal (art/banner.svg). In the light theme, links and buttons use teal-700,
+ * which has 5.5:1 contrast on white; the dark theme's links use teal-300.
+ */
+:root {
+    --vp-c-brand-1: #0f766e;
+    --vp-c-brand-2: #0d9488;
+    --vp-c-brand-3: #0f766e;
+    --vp-c-brand-soft: rgba(13, 148, 136, 0.14);
+}
+
+.dark {
+    --vp-c-brand-1: #5eead4;
+    --vp-c-brand-2: #2dd4bf;
+    --vp-c-brand-3: #0f766e;
+    --vp-c-brand-soft: rgba(45, 212, 191, 0.16);
+}
+
+/*
+ * The hero's image is the dashboard's screenshot (HeroShot.vue), wider than the theme's
+ * square logo box, and only beside the text: on a narrow screen it would push the text down.
+ */
+.VPHero .image .image-bg {
+    display: none;
+}
+
+.hero-shot {
+    width: 100%;
+    max-width: 600px;
+    height: auto;
+    border: 1px solid var(--vp-c-divider);
+    border-radius: 12px;
+    box-shadow: var(--vp-shadow-3);
+}
+
+@media (max-width: 959px) {
+    .VPHero .image {
+        display: none;
+    }
+}
+
+@media (min-width: 960px) {
+    .VPHero .image .image-container {
+        transform: none;
+    }
+}

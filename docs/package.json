@@ -1,0 +1,17 @@
+{
+    "name": "laravel-dynamic-throttle-docs",
+    "private": true,
+    "description": "The documentation site, built with VitePress from the Markdown in this folder (ADR-0029).",
+    "type": "module",
+    "scripts": {
+        "dev": "vitepress dev",
+        "build": "vitepress build",
+        "preview": "vitepress preview"
+    },
+    "engines": {
+        "node": ">=22"
+    },
+    "devDependencies": {
+        "vitepress": "1.6.4"
+    }
+}

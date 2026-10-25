@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The `apcu` health check warns when the web server's PHP, such as PHP-FPM, runs without APCu: every request then reads the rules from the cache first, and an outage costs every request a try. The dashboard's Settings page runs it in the web server; `dynamic-throttle:health` in the command line says it cannot tell ([#100](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/100)).
 - The `dashboard` health check warns when nobody can open the dashboard: outside the `local` environment, the app defines neither `viewDynamicThrottle` nor `manageDynamicThrottle`, so every visitor gets a 403 that says nothing about why. `--strict` then exits 1, so a deploy script catches a forgotten gate ([SPEC-033](docs/specs/033-dashboard-access-check.md)).
 - The guide has a page on [removing the package](docs/guide/uninstalling.md): first what names it, since a route that still runs `dynamic.throttle` fails with a 500 once the package is gone, then the package. It lists what stays behind and how to drop the tables.
+- The documentation is also a website, with search: <https://hanzala-afzal-dev.github.io/laravel-dynamic-throttle/>. It shows the guide, the runbook and the design decisions, built from the same Markdown ([ADR-0029](docs/adr/0029-documentation-site.md)).
 
 ### Fixed
 
