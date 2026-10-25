@@ -24,6 +24,7 @@ The [README](../../README.md) gets you started. These pages go into the details.
 - [During an incident](incidents.md): bypass, scale, and switching one rule off
 - [The dashboard](dashboard.md): where it is, who gets in, and what it refuses
 - [Testing your app](testing.md): `DynamicThrottle::fake()`
+- [Removing the package](uninstalling.md): in two deploys, what stays, and cleaning up
 
 When something goes wrong in production, the [runbook](../runbook.md) has the steps: Redis is down, the manifest was evicted, a bad rule blocks `/api`, or an emergency change was left on.
 
