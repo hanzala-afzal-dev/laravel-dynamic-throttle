@@ -15,10 +15,10 @@ const docs = fileURLToPath(new URL('..', import.meta.url));
 const root = resolve(docs, '..');
 
 /**
- * What stays on GitHub only: the ADRs, the specs and the roadmap are for contributors.
+ * What stays on GitHub only: the ADRs, the specs, the roadmap and the release process are for contributors.
  * The site is for the package's users.
  */
-const githubOnly = ['adr/', 'specs/', 'roadmap.md'];
+const githubOnly = ['adr/', 'specs/', 'roadmap.md', 'releasing.md'];
 
 /** Pages whose source has another path: the site's own pages, and each folder's README as its index. */
 const rewrites: Record<string, string> = {

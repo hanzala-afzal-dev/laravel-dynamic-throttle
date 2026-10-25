@@ -106,7 +106,7 @@ After pulling changes, restart the demo. `npm run build` changes take effect on 
 
 ## The documentation site ([ADR-0029](docs/adr/0029-documentation-site.md))
 
-The Markdown in `docs/` is also a website, built with VitePress and served by GitHub Pages at <https://hanzala-afzal-dev.github.io/laravel-dynamic-throttle/>. Write the docs for GitHub, with links relative to their file: the site sends a link to one of its pages to that page, and any other link to the file on GitHub. The site is for the package's users: the ADRs, the specs and the roadmap stay on GitHub only, and a link to one of them opens it there.
+The Markdown in `docs/` is also a website, built with VitePress and served by GitHub Pages at <https://hanzala-afzal-dev.github.io/laravel-dynamic-throttle/>. Write the docs for GitHub, with links relative to their file: the site sends a link to one of its pages to that page, and any other link to the file on GitHub. The site is for the package's users: the ADRs, the specs, the roadmap and the [release process](docs/releasing.md) stay on GitHub only, and a link to one of them opens it there.
 
 ```bash
 cd docs
