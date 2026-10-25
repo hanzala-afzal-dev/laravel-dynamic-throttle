@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.0-beta.2] - 2026-10-25
+
+The second beta: three new health checks, a documentation site, and fixes for Windows, for a Redis that hangs and for the dashboard's light theme. Upgrading needs no change to your app. But `dynamic-throttle:health --strict` fails on any warning, and two of the new checks can warn from the command line: a Redis connection without timeouts (`redis-timeouts`; Laravel's default Redis config sets none), and a dashboard nobody can open outside the `local` environment (`dashboard`). A deploy script that runs it may stop on them.
+
 ### Added
 
 - The `redis-timeouts` health check warns when a Redis connection that requests use, for the counters or the manifest, has no timeout, or one above a second, so a Redis that hangs holds requests that long or more. Without timeouts, phpredis waits PHP's `default_socket_timeout`, 60 seconds by default, before the limits fail open. The docs now show a dedicated connection with 0.25-second timeouts ([timeouts](docs/guide/storage-and-runtimes.md#timeouts)), and the runbook has a "Redis hangs" scenario ([#99](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/99)).
@@ -143,5 +147,6 @@ The first public beta.
   - It exits 1 when a check errs, and with `--strict` when one warns too. It changes nothing.
 - Telemetry also records, per rule and minute, the guests a user rule counted, the requests a rule skipped for want of an identity, and those it was ignored for over the cap. On Redis and Valkey, it also counts each hour's requests per client. The health checks read them, and the hourly table does not change.
 
-[Unreleased]: https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/compare/v0.1.0-beta.1...HEAD
+[Unreleased]: https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/compare/v0.1.0-beta.2...HEAD
+[0.1.0-beta.2]: https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/releases/tag/v0.1.0-beta.2
 [0.1.0-beta.1]: https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/releases/tag/v0.1.0-beta.1
