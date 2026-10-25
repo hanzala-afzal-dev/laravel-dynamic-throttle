@@ -10,6 +10,7 @@ use Afzal\DynamicThrottle\Support\Health\Checks\AppKeyCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\AttachedCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\CacheClearCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\ConfigCheck;
+use Afzal\DynamicThrottle\Support\Health\Checks\DashboardCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\DominantIpCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\EmergencyCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\ExceptCheck;
@@ -69,6 +70,7 @@ final readonly class HealthChecks
             new RedisTimeoutsCheck,
             new AppKeyCheck,
             new ApcuCheck,
+            new DashboardCheck,
             new AttachedCheck,
             new ExceptCheck,
             new TwoLimitersCheck,

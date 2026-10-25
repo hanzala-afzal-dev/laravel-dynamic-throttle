@@ -73,7 +73,7 @@ php artisan dynamic-throttle:compile
 })
 ```
 
-**4. Say who may use the dashboard**, in a service provider's `boot()`. Until you do, only the `local` environment gets in.
+**4. Say who may use the dashboard**, in a service provider's `boot()`. Until you do, only the `local` environment gets in, and `php artisan dynamic-throttle:health` warns everywhere else.
 
 ```php
 use App\Models\User;
