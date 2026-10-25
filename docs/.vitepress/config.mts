@@ -222,8 +222,13 @@ export default defineConfig({
         },
     },
 
-    // The home page shows the README's GIF, from art/ at the repository's root.
-    vite: { server: { fs: { allow: [root] } } },
+    // The home page shows the README's images, from art/ at the repository's root. Pages
+    // import them as @art/…: a relative path breaks in the dev server on a page that
+    // `rewrites` moves, where it resolves from the page's new place.
+    vite: {
+        resolve: { alias: { '@art': join(root, 'art') } },
+        server: { fs: { allow: [root] } },
+    },
 
     themeConfig: {
         nav: [
