@@ -6,7 +6,8 @@
 # 1. Starts Docker. In the background, pulls the service images and starts Redis,
 #    Valkey, Memcached, MySQL and PostgreSQL for `composer test:drivers` and
 #    `composer test:mutate`.
-# 2. Installs missing PHP extensions (scripts/cloud-setup.sh).
+# 2. Installs missing PHP extensions, and rebuilds one older than the tests need,
+#    such as Ubuntu's phpredis 5 (scripts/cloud-setup.sh).
 # 3. Installs the Composer dependencies. A library commits no composer.lock.
 #
 # Its output is added to Claude's context, so it prints one short status line.
