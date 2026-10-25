@@ -46,6 +46,7 @@ This folder records the important decisions for `laravel-dynamic-throttle`: what
 | [0026](0026-one-round-trip-per-request.md) | One counter-store round trip per request | Accepted | 3 |
 | [0027](0027-faster-loop-after-phase-2.md) | A faster loop after Phase 2 | Accepted | 3 onward |
 | [0028](0028-dashboard-react-shadcn.md) | Dashboard UI: React and shadcn/ui, built ahead and shipped in the package | Accepted | 5 |
+| [0029](0029-documentation-site.md) | A documentation site on GitHub Pages, built from docs/ | Accepted | 6 |
 
 ## Template
 
