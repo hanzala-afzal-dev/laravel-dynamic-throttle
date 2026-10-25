@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The home page's hero image: the dashboard's screenshot from art/, which Vite bundles.
-import shot from '../../../art/dashboard-light.png';
+import shot from '@art/dashboard-light.png';
 </script>
 
 <template>

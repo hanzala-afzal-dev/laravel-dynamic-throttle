@@ -36,6 +36,11 @@ features:
 
 <!-- The documentation site's home page (ADR-0029). The text below the header comes from the README. -->
 
-![A limit changing while the app runs. On the left, a terminal loops curl against /api/orders, and every response is 200. On the right, the dashboard edits the Orders API rule: its limit goes from 100 to 2 requests a minute, and it is saved. Within two seconds, the terminal's responses turn to 429 Too Many Requests, with no deploy.](../../art/limit-change.gif)
+<script setup>
+import limitChange from '@art/limit-change.gif';
+</script>
+
+<img :src="limitChange" width="1050" height="560" alt="A limit changing while the app runs. On the left, a terminal loops curl against /api/orders, and every response is 200. On the right, the dashboard edits the Orders API rule: its limit goes from 100 to 2 requests a minute, and it is saved. Within two seconds, the terminal's responses turn to 429 Too Many Requests, with no deploy." />
+
 
 <!--@include: ../../README.md#why-->
