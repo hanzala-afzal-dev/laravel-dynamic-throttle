@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="art/banner.svg" width="100%" alt="Dynamic Throttle for Laravel: inside your Laravel app, Dynamic Throttle is the first stop for requests from IPs, users, tokens, headers and tenants. An even flow goes on to the routes, controllers and database, and the excess gets a 429.">
+  <img src="art/banner.svg" width="100%" alt="Dynamic Throttle for Laravel: requests enter your Laravel app, limited per IP, user, token, header or tenant. After routing and authentication, Dynamic Throttle lets the allowed requests on to the controllers and database, and the excess gets a 429. Install with composer require hanzala-afzal/laravel-dynamic-throttle:^0.1@beta.">
 </p>
 
 <p align="center">
