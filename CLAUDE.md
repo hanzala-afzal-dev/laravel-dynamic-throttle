@@ -20,6 +20,7 @@ Decisions live in docs/adr/ (index: docs/adr/README.md). Feature specs live in d
 - Local machine only (it has PHP 8.2): prefix with `docker compose run --rm php`, e.g. `docker compose run --rm php composer test`
 - `docker compose up -d`: Redis, Valkey, Memcached, MySQL, PostgreSQL for driver tests (`composer test:drivers`)
 - Dashboard (ADR-0028): `npm ci` once, then `npm run build` (writes `dist/`, commit it with the sources), `npm run test` (Vitest), `npm run typecheck`, `npm run lint`. Node 22.
+- Docs site (ADR-0029): `npm ci --prefix docs` once, then `npm run --prefix docs build`, which fails on a link to a missing file, page or heading, or `npm run --prefix docs dev`. Write docs with links relative to their file, as GitHub reads them. Keep the README's `<!-- #region … -->` comments: the site includes those sections.
 - `scripts/verify-install.sh 12|13`: installs the package into a fresh Laravel app and boots it
 
 ## Workflow (IMPORTANT, see ADR-0003 and ADR-0027)

@@ -11,10 +11,16 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="MIT license"></a>
 </p>
 
+<!-- #region beta -->
+
 > [!IMPORTANT]
 > **Public beta.** Everything planned for 0.1.0 is in, but names and options may still change, and the [changelog](CHANGELOG.md) will say how to upgrade. Try it in staging first, and [tell us](#beta-feedback) what breaks or confuses you.
 
+<!-- #endregion beta -->
+
 **Dynamic Throttle for Laravel** lets you change your app's rate limits while it runs: per IP, user, API token, header or tenant, with a dry-run mode, exemptions, emergency switches and a dashboard.
+
+<!-- #region why -->
 
 ## Why
 
@@ -35,6 +41,8 @@ Dynamic Throttle makes limits data. Rules live in your database, you change them
 
 Requests never read the rules from the database: they are compiled into your cache. On local Redis, the middleware adds about 0.8 ms per request at p50 with APCu, against 1.0 ms for Laravel's `throttle` and 0.6 ms for its `throttleWithRedis()` ([performance](docs/guide/performance.md)). It is not a firewall or bot detection, and it does not replace edge rate limiting such as Cloudflare or Nginx. Use it for limits that need to know who the client is.
 
+<!-- #endregion why -->
+
 ## The dashboard
 
 It ships with the package at `/dynamic-throttle`, behind your gates, with nothing to build: Overview, Rules, Exemptions, Activity (a live feed of blocks), Explain, Audit log and Settings, in light and dark themes.
@@ -42,6 +50,8 @@ It ships with the package at `/dynamic-throttle`, behind your gates, with nothin
 <p align="center">
   <img src="art/limit-change.gif" width="100%" alt="A limit changing while the app runs. On the left, a terminal loops curl against /api/orders, and every response is 200. On the right, the dashboard edits the Orders API rule: its limit goes from 100 to 2 requests a minute, and it is saved. Within two seconds, the terminal's responses turn to 429 Too Many Requests, with no deploy.">
 </p>
+
+<!-- #region getting-started -->
 
 ## Requirements
 
@@ -118,9 +128,11 @@ Each user now gets 60 requests a minute under `/api`. The 61st gets Laravel's ow
 | `dynamic-throttle:list` | Lists every rule with its id |
 | `dynamic-throttle:compile` | Recompiles the rules now |
 
+<!-- #endregion getting-started -->
+
 ## Documentation
 
-The [guide](docs/guide/README.md) has the details:
+The [guide](docs/guide/README.md) has the details, also on the [documentation site](https://hanzala-afzal-dev.github.io/laravel-dynamic-throttle/), with search:
 
 - [Rules](docs/guide/rules.md): every attribute, examples, your own scope, and exemptions
 - [An endpoint that costs money](docs/guide/rules.md#an-endpoint-that-costs-money), such as one that calls an AI model: a limit per user or per plan, tried in dry-run first
@@ -128,6 +140,8 @@ The [guide](docs/guide/README.md) has the details:
 - [Configuration](docs/guide/configuration.md), [attaching the middleware](docs/guide/middleware.md), and [storage and runtimes](docs/guide/storage-and-runtimes.md)
 - [The dashboard](docs/guide/dashboard.md), [health checks](docs/guide/health.md) and [during an incident](docs/guide/incidents.md)
 - The [runbook](docs/runbook.md): Redis is down, the manifest was evicted, a bad rule blocks `/api`, or an emergency change was left on
+
+<!-- #region beta-feedback -->
 
 ## Beta feedback
 
@@ -138,6 +152,8 @@ What helps most:
 - Was anything in the dashboard or the docs unclear?
 
 Report bugs in [issues](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/new/choose), and bring questions and ideas to [discussions](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/discussions). Report security issues privately, as [SECURITY.md](SECURITY.md) explains, never in a public issue.
+
+<!-- #endregion beta-feedback -->
 
 ## License
 

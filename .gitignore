@@ -32,3 +32,7 @@ node_modules
 
 # PHPBench's raw XML stays out of the repository: benchmarks/results/ keeps the summaries only (ADR-0027).
 benchmarks/results/*.xml
+
+# The documentation site's build and cache (ADR-0029).
+/docs/.vitepress/dist/
+/docs/.vitepress/cache/
