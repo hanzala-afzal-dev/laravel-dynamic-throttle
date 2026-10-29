@@ -4,11 +4,12 @@ Rules apply only to routes that run the `dynamic.throttle` middleware, and insta
 
 ```php
 ->withMiddleware(function (Middleware $middleware) {
-    $middleware->appendToGroup('api', 'dynamic.throttle');
+    $middleware->appendToGroup('web', 'dynamic.throttle'); // pages and forms, such as login and sign-up
+    $middleware->appendToGroup('api', 'dynamic.throttle'); // routes/api.php
 })
 ```
 
-Or list the groups in the `middleware.auto_attach` config key, such as `['api']`. **A route outside those groups is never limited**, and `php artisan dynamic-throttle:health` names each rule that matches only such routes (the `unreached` check).
+Or list the groups in the `middleware.auto_attach` config key, such as `['web', 'api']`. **A route outside those groups is never limited**, and `php artisan dynamic-throttle:health` names each rule that matches only such routes (the `unreached` check). Login, sign-up and password reset routes, such as Breeze's and Fortify's, are in `web`. A new Laravel app has no API routes until you run `php artisan install:api`.
 
 - **After authentication.** The middleware runs after Laravel's authentication middleware, `auth` and `auth.basic`, even in a group that lists it first, so user rules see the user. If users log in through middleware that Laravel cannot recognize, such as a JWT package's or your own API key check, list it in `middleware.after`, by alias or class. Until you do, user rules count those users as guests.
 - **Excluded paths.** No rule ever applies to the paths in the `except` config key, not even a `*` rule. By default, they are Horizon, Telescope, Pulse, Nova, Livewire 3 and 4, `broadcasting/auth`, `sanctum/csrf-cookie` and `up`. Remove an entry to limit its path.

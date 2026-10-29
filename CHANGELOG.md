@@ -17,6 +17,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - On a phone, the dashboard's pages fit the screen. A wide table, such as the rules list, made its whole page as wide as the table, so the Rules page's "New rule" button sat off the screen and could not be tapped. The table now scrolls sideways inside its card ([#146](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/146)).
+- The README's install steps attach the middleware to the `web` group as well as `api`. With `api` alone, rules from the dashboard's Login, Password reset and Sign-up templates never applied, since those routes are in `web`. The steps also say that a new Laravel app gets its API routes from `php artisan install:api`, and that the dashboard's gates can wait until you deploy: once defined, they decide in the `local` environment too, which left a fresh app's dashboard at 403 ([#148](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/148)).
+- The rules guide explains how a limit counts: why a client at its limit can get a request through between 429s, and that a rule you promote keeps what it counted in dry-run ([#154](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/154)).
 
 ## [0.1.0-beta.2] - 2026-10-25
 
