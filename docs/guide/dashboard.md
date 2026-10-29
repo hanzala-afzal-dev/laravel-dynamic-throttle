@@ -31,7 +31,7 @@ Gate::define('viewDynamicThrottle', fn (User $user) => $user->is_support || $use
 Gate::define('manageDynamicThrottle', fn (User $user) => $user->is_admin);
 ```
 
-- **Until you define a gate, only the `local` environment gets in**, guests too, as with Horizon. In production, nobody does, and `php artisan dynamic-throttle:health` warns about it (the `dashboard` check), unless you turn the dashboard off there with `DYNAMIC_THROTTLE_DASHBOARD=false`. So never run a public server with `APP_ENV=local`. Once you define one gate, a gate you left out denies.
+- **Until you define a gate, only the `local` environment gets in**, guests too, as with Horizon. In production, nobody does, and `php artisan dynamic-throttle:health` warns about it (the `dashboard` check), unless you turn the dashboard off there with `DYNAMIC_THROTTLE_DASHBOARD=false`. So never run a public server with `APP_ENV=local`. Once you define one gate, the gates decide in `local` too, so sign in to open the dashboard there, and a gate you left out denies.
 - **Managing includes viewing,** so defining `manageDynamicThrottle` alone is enough for a team of admins.
 - **Guests never get in** through a gate you define, unless its callback accepts a null user (`?User $user`).
 - **A denied request gets a 403,** never a redirect to a login page your app may not have. To send guests to your login page first, add `auth`: `'middleware' => ['web', 'auth']`.
