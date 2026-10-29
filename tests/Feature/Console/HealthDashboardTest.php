@@ -28,7 +28,7 @@ afterEach(function (): void {
     ManifestRepository::flushState();
 });
 
-const DASHBOARD_WARNING = 'Nobody can open the dashboard: define viewDynamicThrottle or manageDynamicThrottle, or turn the dashboard off with DYNAMIC_THROTTLE_DASHBOARD=false (docs/guide/dashboard.md#who-gets-in).';
+const DASHBOARD_WARNING = 'Nobody can open the dashboard: define viewDynamicThrottle or manageDynamicThrottle, or turn the dashboard off with DYNAMIC_THROTTLE_DASHBOARD=false: see https://hanzala-afzal-dev.github.io/laravel-dynamic-throttle/guide/dashboard#who-gets-in.';
 
 const DASHBOARD_BOTH = 'viewDynamicThrottle and manageDynamicThrottle decide who opens the dashboard.';
 

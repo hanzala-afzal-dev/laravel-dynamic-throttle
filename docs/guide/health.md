@@ -25,7 +25,7 @@ Each check is `ok`, `warning`, `error` or `skipped`, with what it found and what
 | `middleware-order` | Routes where authentication runs after `dynamic.throttle`, so user rules count your users as guests. |
 | `manifest` | No manifest in the cache, so no rule applies. One that the scheduled compile has not rewritten for 10 minutes. More than 500 rules or 1,000 exemptions, which every load of it pays for. |
 | `emergency` | Bypass or a scale factor that servers apply with no end time, or with one more than 24 hours away: an emergency change left on. One that ends within 24 hours is ok, so a deploy during an incident passes `--strict`. |
-| `metrics` | Metrics not flushed for more than 10 minutes: the scheduler is not running. |
+| `metrics` | Metrics not flushed for more than 10 minutes: the scheduler is not running. Skipped while no rule is enabled and nothing was flushed, as right after install, since nothing is counted. |
 | `guests` | A user rule that saw mostly guests in the last hour, half or more of at least 100 requests recorded: authentication the route check cannot see, or a rule on public routes. |
 | `dominant-ip` | One client IP behind half or more of at least 1,000 requests recorded over the current and the previous hour: usually a load balancer's, because the trusted proxies are not set. Redis and Valkey only. |
 | `ignored` | Rules ignored in the last hour because more than `matching.max_rules_per_request` rules of their mode matched a request. |
