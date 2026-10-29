@@ -47,6 +47,17 @@ describe('the Settings page\'s health card', () => {
         expect(cells(store!)[1]).toHaveTextContent('What the counter store guarantees.');
     });
 
+    it('issue #153: labels what each check looks for, so under OK it never reads as what the check found', async () => {
+        mockApi(viewer({ 'GET health': { body: REPORT } }));
+        renderAt(<SettingsHealthCard />, '/settings');
+
+        await screen.findByRole('table');
+        const config = rows()[2]!;
+
+        expect(cells(config)[0]).toHaveTextContent('OK');
+        expect(within(cells(config)[1]!).getByText(/^Looks for:/)).toHaveTextContent('Looks for: A config the counter driver cannot be built from');
+    });
+
     it('AC-3: asks api/health again on "Check again"', async () => {
         const sent = mockApi(viewer({ 'GET health': { body: REPORT } }));
         renderAt(<SettingsHealthCard />, '/settings');

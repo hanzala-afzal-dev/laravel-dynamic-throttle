@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `dynamic-throttle:health` no longer warns that the metrics were not flushed right after install, before any rule is enabled: nothing is counted then, so the `metrics` check is skipped. It also came back after moving the counters to another Redis connection ([#150](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/150)).
 - The `redis-timeouts` check names the connections to give timeouts, such as `"cache"`, which holds the manifest. It said "a connection for the package", so after following the guide's dedicated connection, the warning stayed with no hint why. The guide now shows the cache connection's timeouts in code too ([#151](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/151)).
 - Health messages and the published config file no longer point to specs, ADRs or `docs/` paths, which an app does not have. Messages link to the documentation site instead ([#152](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/152)).
+- The dashboard's wording: on the Settings page, what each health check looks for is labelled "Looks for:", so under an OK it no longer reads as a problem. Offenders say "1 client blocked" instead of "1 different clients blocked", and for a rule in dry-run, which blocks no one, they show would-blocks ([#153](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/153)).
 
 ## [0.1.0-beta.2] - 2026-10-25
 
