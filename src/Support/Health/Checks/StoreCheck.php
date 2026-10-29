@@ -46,9 +46,9 @@ final readonly class StoreCheck implements Check
         return match ($type) {
             'redis', 'memcached', 'dynamodb' => CheckResult::ok($this->id(), "{$counts}, which every server shares."),
             'database' => CheckResult::warning($this->id(), "{$counts}, which adds database writes to every limited request.".($this->onSqlite($context, $store)
-                ? ' On SQLite, most attempts also fail under contention, when requests run at the same time, and fail open (SPEC-002).'
+                ? ' On SQLite, most attempts also fail under contention, when requests run at the same time, and fail open.'
                 : '').self::ADVICE),
-            'file', 'apc' => CheckResult::warning($this->id(), "{$counts}, which counts per server, so limits multiply by the servers, and loses counts when requests run at the same time (SPEC-002).".self::ADVICE),
+            'file', 'apc' => CheckResult::warning($this->id(), "{$counts}, which counts per server, so limits multiply by the servers, and loses counts when requests run at the same time.".self::ADVICE),
             'octane' => CheckResult::warning($this->id(), "{$counts}, which counts per server, so limits multiply by the servers.".self::ADVICE),
             'array' => CheckResult::warning($this->id(), "{$counts}, which is for tests only: each process counts on its own, and forgets."),
             'null' => CheckResult::error($this->id(), "{$counts}, which counts nothing, so no request is ever limited."),

@@ -37,6 +37,12 @@ final readonly class MetricsCheck implements Check
             return CheckResult::error($this->id(), 'The counter store cannot be read: '.HealthContext::message($exception));
         }
 
+        // Never flushed, as right after install: without an enabled rule, nothing is
+        // counted, so there is nothing to lose yet (issue #150).
+        if ($flushed === null && $context->rules() === []) {
+            return CheckResult::skipped($this->id(), 'No enabled rule counts requests, so there is nothing to flush yet.');
+        }
+
         if ($flushed === null) {
             return CheckResult::warning($this->id(), 'The metrics have not been flushed in the last 2 hours, which is as long as the counter store keeps them: check that the scheduler runs php artisan schedule:run every minute, which runs php artisan dynamic-throttle:flush-metrics.');
         }

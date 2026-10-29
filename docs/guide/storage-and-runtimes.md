@@ -38,6 +38,18 @@ Give the package a Redis connection of its own, with timeouts of a fraction of a
 DYNAMIC_THROTTLE_REDIS_CONNECTION=throttle
 ```
 
+The manifest stays in your cache store, so give that store's connection timeouts too:
+
+```php
+// config/database.php, under 'redis': your cache store's connection, "cache" by default
+'cache' => [
+    // ... the settings it has, and:
+    'timeout' => 0.25,
+    'read_timeout' => 0.25,
+    'read_write_timeout' => 0.25,
+],
+```
+
 - **The counters** then hold a request about 0.25 seconds when Redis hangs. The request goes through, or gets a 503 on a fail-closed rule, and the [cooldown](failures.md) skips Redis for the next 10 seconds: in the process, or with APCu, in every PHP-FPM worker of the server.
 - **Reconnects and retries repeat the wait.** After a failed call, Laravel's phpredis connection reconnects, and on a connection that selects a `database` or authenticates, that waits the read timeout too: twice the timeout in all, as on an Octane worker whose connection was open when Redis hung. A cluster client also tries each seed node as it reconnects, and Predis's cluster client retries a timed-out command up to 5 times, so give clusters the shortest timeouts you can. Predis on a single connection waits once.
 - **A database of its own** also keeps `php artisan cache:clear` from wiping the counters (the `cache-clear` check).

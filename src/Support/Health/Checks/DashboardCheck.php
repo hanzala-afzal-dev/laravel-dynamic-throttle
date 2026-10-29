@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Afzal\DynamicThrottle\Support\Health\Checks;
 
 use Afzal\DynamicThrottle\Dashboard\Gates;
+use Afzal\DynamicThrottle\Support\Docs;
 use Afzal\DynamicThrottle\Support\Health\Check;
 use Afzal\DynamicThrottle\Support\Health\CheckResult;
 use Afzal\DynamicThrottle\Support\Health\HealthContext;
@@ -36,7 +37,7 @@ final readonly class DashboardCheck implements Check
         if (! $context->container->make(Gates::class)->defined()) {
             return $context->container->make(Application::class)->environment('local')
                 ? CheckResult::ok($this->id(), 'In the local environment, anyone can open the dashboard, guests too. Elsewhere, nobody can until the app defines viewDynamicThrottle or manageDynamicThrottle.')
-                : CheckResult::warning($this->id(), 'Nobody can open the dashboard: define viewDynamicThrottle or manageDynamicThrottle, or turn the dashboard off with DYNAMIC_THROTTLE_DASHBOARD=false (docs/guide/dashboard.md#who-gets-in).');
+                : CheckResult::warning($this->id(), 'Nobody can open the dashboard: define viewDynamicThrottle or manageDynamicThrottle, or turn the dashboard off with DYNAMIC_THROTTLE_DASHBOARD=false: see '.Docs::url('guide/dashboard#who-gets-in').'.');
         }
 
         $gate = $context->container->make(Gate::class);
