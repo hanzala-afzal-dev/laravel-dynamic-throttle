@@ -57,7 +57,7 @@ export function RulePage({ id }: { id: number }) {
     const { rule, exemptions } = found.data;
 
     return (
-        <section className="grid gap-6">
+        <section className="grid grid-cols-1 gap-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="grid gap-2">
                     <div className="flex flex-wrap items-center gap-2">

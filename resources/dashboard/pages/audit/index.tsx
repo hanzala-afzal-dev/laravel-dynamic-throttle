@@ -24,7 +24,7 @@ export function AuditLogPage() {
     const filtered = auditQuery(filters) !== '';
 
     return (
-        <section className="grid gap-6">
+        <section className="grid grid-cols-1 gap-6">
             <div>
                 <h1 className="text-2xl font-semibold tracking-tight">Audit log</h1>
                 <p className="mt-1 text-sm text-muted-foreground">Every change to the rules, the exemptions and the emergency settings, from the dashboard and the CLI.</p>

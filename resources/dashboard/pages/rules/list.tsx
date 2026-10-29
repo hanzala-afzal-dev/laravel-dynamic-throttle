@@ -61,7 +61,7 @@ export function RulesList() {
     }, [lastPage, filters, setFilters]);
 
     return (
-        <section className="grid gap-6">
+        <section className="grid grid-cols-1 gap-6">
             <div className="flex flex-wrap items-end justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-semibold tracking-tight">Rules</h1>
