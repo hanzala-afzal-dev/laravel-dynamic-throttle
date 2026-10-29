@@ -32,11 +32,13 @@ return [
     | for example in bootstrap/app.php:
     |
     |     ->withMiddleware(function (Middleware $middleware) {
+    |         $middleware->appendToGroup('web', 'dynamic.throttle');
     |         $middleware->appendToGroup('api', 'dynamic.throttle');
     |     })
     |
-    | or list the groups in "auto_attach", such as ['api']. A route in no
-    | group that runs the middleware is never limited.
+    | or list the groups in "auto_attach", such as ['web', 'api']. A route
+    | in no group that runs the middleware is never limited. Login, sign-up
+    | and password reset routes are in "web".
     |
     | The middleware always runs after Laravel's authentication middleware,
     | auth and auth.basic, so user rules see the user. List any other
