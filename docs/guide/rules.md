@@ -29,6 +29,14 @@ X-RateLimit-Remaining: 0
 X-RateLimit-Reset: 1791403200
 ```
 
+### How a limit counts
+
+A limit counts in a sliding window. The rule keeps a count for the current window, such as this minute, and one for the previous window, and adds the previous count in proportion to how much of it falls within the last `window_seconds`: 30 seconds into a minute, half of the previous minute's requests still count. A request goes through while that sum stays under `max_attempts`. A rejected request is not counted, as with Laravel's `throttle`.
+
+So a client that keeps sending at its limit can get a request through between 429s: as the previous window's requests count for less and less, the sum drops below the limit for a moment.
+
+The count belongs to the rule, whatever its mode: a rule in dry-run counts as it would when enforcing, so a rule you promote starts with what it counted in dry-run. Changing `max_attempts` keeps the count, so a lower limit applies at once. Changing `window_seconds` starts a new count.
+
 ## Examples
 
 ```php

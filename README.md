@@ -76,27 +76,30 @@ php artisan migrate
 php artisan dynamic-throttle:compile
 ```
 
-**3. Attach the middleware** to the routes rules may limit, in `bootstrap/app.php`. Routes without it are never limited.
+**3. Attach the middleware** to the route groups rules may limit, in `bootstrap/app.php`. Routes without it are never limited.
 
 ```php
 ->withMiddleware(function (Middleware $middleware) {
-    $middleware->appendToGroup('api', 'dynamic.throttle');
+    $middleware->appendToGroup('web', 'dynamic.throttle'); // pages and forms, such as login and sign-up
+    $middleware->appendToGroup('api', 'dynamic.throttle'); // routes/api.php
 })
 ```
 
-**4. Say who may use the dashboard**, in a service provider's `boot()`. Until you do, only the `local` environment gets in, and `php artisan dynamic-throttle:health` warns everywhere else.
+A new Laravel app has no API routes until you run `php artisan install:api`. The dashboard's own routes are never limited.
+
+**4. Before you deploy, say who may use the dashboard**, in a service provider's `boot()`. On your machine, this can wait: in the `local` environment, anyone can open the dashboard. Once you define the gates, they decide there too, so sign in to open it. Until you do, `php artisan dynamic-throttle:health` warns everywhere but `local`.
 
 ```php
 use App\Models\User;
 use Illuminate\Support\Facades\Gate;
 
-Gate::define('viewDynamicThrottle', fn (User $user) => $user->is_admin);
-Gate::define('manageDynamicThrottle', fn (User $user) => $user->is_admin);
+Gate::define('viewDynamicThrottle', fn (User $user) => in_array($user->email, ['you@example.com'], true));
+Gate::define('manageDynamicThrottle', fn (User $user) => in_array($user->email, ['you@example.com'], true));
 ```
 
 **5. Run [Laravel's scheduler](https://laravel.com/docs/scheduling#running-the-scheduler).** It recompiles the rules every five minutes and stores the traffic numbers every minute.
 
-Then check your setup with `php artisan dynamic-throttle:health`.
+Then check your setup with `php artisan dynamic-throttle:health`. With Redis, it warns until the counters have a connection of their own and every connection requests use has short timeouts: [timeouts](docs/guide/storage-and-runtimes.md#timeouts) shows both.
 
 ## Usage
 
