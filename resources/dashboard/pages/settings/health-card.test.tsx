@@ -47,6 +47,15 @@ describe('the Settings page\'s health card', () => {
         expect(cells(store!)[1]).toHaveTextContent('What the counter store guarantees.');
     });
 
+    it('SPEC-035 AC-12: says what the unreached check looks for', async () => {
+        mockApi(viewer({ 'GET health': { body: { status: 'ok', checks: [{ check: 'unreached', status: 'ok', message: 'Every rule that matches a route of the app matches one that dynamic.throttle limits.' }] } } }));
+        renderAt(<SettingsHealthCard />, '/settings');
+
+        await screen.findByRole('table');
+
+        expect(cells(rows()[0]!)[1]).toHaveTextContent('Rules that match only routes dynamic.throttle never limits');
+    });
+
     it('AC-3: asks api/health again on "Check again"', async () => {
         const sent = mockApi(viewer({ 'GET health': { body: REPORT } }));
         renderAt(<SettingsHealthCard />, '/settings');
