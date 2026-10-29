@@ -2,8 +2,6 @@
 
 # Getting started
 
-<!--@include: ../../README.md#beta-->
-
 <!--@include: ../../README.md#getting-started-->
 
-<!--@include: ../../README.md#beta-feedback-->
+<!--@include: ../../README.md#feedback-->

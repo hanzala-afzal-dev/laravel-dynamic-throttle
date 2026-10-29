@@ -213,13 +213,15 @@ A dashboard that ships with the package, as Laravel Horizon's does: served at it
 - `0.1.0-RC1` with fixes only, then `0.1.0` when no serious bug is reported for a week or two.
 - Then Phase 6 towards 1.0.
 
+**Changed on 2026-10-29:** `0.1.0` came straight after `0.1.0-beta.2`, without a release candidate. Two betas brought no feedback, so waiting for reports would only have delayed the first release that installs without `@beta`. A new-user test (issues #148 to #154) stood in for the testers, and later fixes ship as `0.1.x`.
+
 **Fallback:** if the phase runs more than 50% over its estimate, release 0.1.0 once Overview, Rules, Exemptions, Settings and the emergency controls are finished, since those manage throttling, and move Activity, Audit log and Explain to a minor release.
 
 ---
 
 ## The betas — before 0.1.0
 
-Changes from beta feedback, while the API may still change. Each breaking change gets an upgrade note in the changelog.
+Changes from beta feedback, while the API may still change. Each breaking change gets an upgrade note in the changelog. Done: `0.1.0` was released on 2026-10-29. SPEC-034 did not make it, and moves to a later minor release.
 
 **Dashboard access in production** (raised by the maintainer on 2026-10-19, important): in production, nobody can open the dashboard until the app defines a gate, as with Horizon. An app that skips that step gets a 403 and no explanation, and an app without a user login has no one for a gate to check.
 
@@ -234,9 +236,9 @@ Changes from beta feedback, while the API may still change. Each breaking change
 
 **A new-user test of `0.1.0-beta.2`** (2026-10-29, issues #148 to #154): installing from Packagist into fresh Laravel 12 and 13 apps and following the README word for word. The install steps, health messages and dashboard wording are fixed without a spec.
 
-- **SPEC-035: say when a rule can never apply (S).** An `unreached` health check warns about a rule that matches routes, none of which runs `dynamic.throttle` outside `except`, such as a Login rule while only the `api` group runs the middleware (#149).
+- **SPEC-035: say when a rule can never apply (S), done, in `0.1.0`.** An `unreached` health check warns about a rule that matches routes, none of which runs `dynamic.throttle` outside `except`, such as a Login rule while only the `api` group runs the middleware (#149).
 
-**Considered, not planned:** finer permissions than view and manage, such as a third gate for bypass and scaling. Only if beta users ask for it.
+**Considered, not planned:** finer permissions than view and manage, such as a third gate for bypass and scaling. Only if users ask for it.
 
 ---
 

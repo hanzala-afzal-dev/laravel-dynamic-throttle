@@ -1,16 +1,16 @@
-name: Beta feedback
-description: You tried a 0.1.0 beta. Tell us how it went, good or bad.
+name: Feedback
+description: You tried the package. Tell us how it went, good or bad.
 labels: [beta-feedback]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for trying the beta. Short answers are fine. Security problems go through private reporting (see SECURITY.md), not here.
+        Thanks for trying it. Short answers are fine. Security problems go through private reporting (see SECURITY.md), not here.
   - type: input
     id: package-version
     attributes:
       label: Package version
-      placeholder: 0.1.0-beta.1
+      placeholder: 0.1.0
     validations:
       required: true
   - type: input

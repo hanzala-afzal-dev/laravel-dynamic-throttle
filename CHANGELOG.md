@@ -6,12 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-29
+
+The first stable release, after two betas: `composer require hanzala-afzal/laravel-dynamic-throttle` installs it, without `@beta`. From a beta, `composer update` brings it, since `^0.1@beta` allows it, and your app needs no change. But check two things. A rule for a `web` route, such as one from the Login, Password reset or Sign-up template, applies only once `dynamic.throttle` runs on the `web` group too, as the README now shows. And `dynamic-throttle:health --strict` fails on a new warning, `unreached`, for a rule that matches only routes that do not run the middleware, so a deploy script that runs it may stop on one.
+
 ### Added
 
 - The `unreached` health check warns about a rule that matches routes of the app, none of which limits it: they do not run `dynamic.throttle`, or `except` covers their paths. Such a rule never applies, and nothing said so. A new user's Login rule did that while only the `api` group ran the middleware ([SPEC-035](docs/specs/035-unreached-rules.md), [#149](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/149)).
 
 ### Changed
 
+- The package is out of beta: `composer require hanzala-afzal/laravel-dynamic-throttle` installs it, and the README, its banner and the documentation site no longer say beta. Later fixes ship as `0.1.x`.
 - The documentation site is for the package's users: it no longer shows the design decisions (ADRs), and its pages no longer link to editing them on GitHub. The ADRs stay in the repository, and the guide's links to them open them on GitHub.
 
 ### Fixed
@@ -165,6 +170,7 @@ The first public beta.
   - It exits 1 when a check errs, and with `--strict` when one warns too. It changes nothing.
 - Telemetry also records, per rule and minute, the guests a user rule counted, the requests a rule skipped for want of an identity, and those it was ignored for over the cap. On Redis and Valkey, it also counts each hour's requests per client. The health checks read them, and the hourly table does not change.
 
-[Unreleased]: https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/compare/v0.1.0-beta.2...HEAD
+[Unreleased]: https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/releases/tag/v0.1.0
 [0.1.0-beta.2]: https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/releases/tag/v0.1.0-beta.2
 [0.1.0-beta.1]: https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/releases/tag/v0.1.0-beta.1

@@ -6,7 +6,7 @@ titleTemplate: false
 hero:
   name: Dynamic Throttle
   text: Rate limits you change while your Laravel app runs
-  tagline: Per IP, user, API token, header or tenant, with dry-run, exemptions, emergency switches and a dashboard. Now in public beta.
+  tagline: Per IP, user, API token, header or tenant, with dry-run, exemptions, emergency switches and a dashboard.
   actions:
     - theme: brand
       text: Get started
