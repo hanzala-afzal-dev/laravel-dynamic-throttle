@@ -75,7 +75,7 @@ export function RulePage({ id }: { id: number }) {
                 <TrafficCard period={period} onPeriodChange={setPeriod} ruleId={rule.id} className="xl:col-span-2" />
             </div>
             <div className="grid gap-4 xl:grid-cols-2">
-                <OffendersPanel ruleId={rule.id} />
+                <OffendersPanel ruleId={rule.id} mode={rule.mode} />
                 <ExemptionsPanel ruleId={rule.id} exemptions={exemptions} />
             </div>
             <HistoryPanel ruleId={rule.id} />
@@ -259,10 +259,10 @@ function SettingsPanel({ rule }: { rule: Rule }) {
     );
 }
 
-function OffendersPanel({ ruleId }: { ruleId: number }) {
+function OffendersPanel({ ruleId, mode }: { ruleId: number; mode: Rule['mode'] }) {
     return (
         <Panel title="Offenders">
-            <OffendersByHour ruleId={ruleId} />
+            <OffendersByHour ruleId={ruleId} mode={mode} />
         </Panel>
     );
 }

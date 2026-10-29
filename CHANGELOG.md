@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - On a phone, the dashboard's pages fit the screen. A wide table, such as the rules list, made its whole page as wide as the table, so the Rules page's "New rule" button sat off the screen and could not be tapped. The table now scrolls sideways inside its card ([#146](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/146)).
+- The dashboard's wording: on the Settings page, what each health check looks for is labelled "Looks for:", so under an OK it no longer reads as a problem. Offenders say "1 client blocked" instead of "1 different clients blocked", and for a rule in dry-run, which blocks no one, they show would-blocks ([#153](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/153)).
 
 ## [0.1.0-beta.2] - 2026-10-25
 
