@@ -22,6 +22,7 @@ use Afzal\DynamicThrottle\Support\Health\Checks\MiddlewareOrderCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\RedisTimeoutsCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\StoreCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\TwoLimitersCheck;
+use Afzal\DynamicThrottle\Support\Health\Checks\UnreachedCheck;
 use Illuminate\Contracts\Container\Container;
 use Throwable;
 
@@ -72,6 +73,7 @@ final readonly class HealthChecks
             new ApcuCheck,
             new DashboardCheck,
             new AttachedCheck,
+            new UnreachedCheck,
             new ExceptCheck,
             new TwoLimitersCheck,
             new MiddlewareOrderCheck,

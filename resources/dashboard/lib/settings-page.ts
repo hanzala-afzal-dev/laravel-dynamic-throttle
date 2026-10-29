@@ -63,6 +63,7 @@ export const CHECK_PURPOSES: Record<string, string> = {
     apcu: 'PHP-FPM without APCu, so every request reads the rules from the cache first, and an outage costs every request a try.',
     dashboard: 'No viewDynamicThrottle or manageDynamicThrottle gate outside the local environment, so nobody can open the dashboard.',
     attached: 'dynamic.throttle on no route, and not global middleware, so no rule applies.',
+    unreached: 'Rules that match only routes dynamic.throttle never limits: routes without it, such as a login rule while only the api group runs it, or paths except covers.',
     except: 'Horizon, Telescope, Pulse, Nova or Sanctum at a path except does not cover, so a rule can limit them.',
     'two-limiters': 'Routes that run Laravel\'s throttle too, which writes the same headers.',
     'middleware-order': 'Routes where authentication runs after dynamic.throttle, so user rules count your users as guests.',

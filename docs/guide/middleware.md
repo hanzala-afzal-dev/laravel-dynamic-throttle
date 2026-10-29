@@ -8,7 +8,7 @@ Rules apply only to routes that run the `dynamic.throttle` middleware, and insta
 })
 ```
 
-Or list the groups in the `middleware.auto_attach` config key, such as `['api']`. **A route outside those groups is never limited.**
+Or list the groups in the `middleware.auto_attach` config key, such as `['api']`. **A route outside those groups is never limited**, and `php artisan dynamic-throttle:health` names each rule that matches only such routes (the `unreached` check).
 
 - **After authentication.** The middleware runs after Laravel's authentication middleware, `auth` and `auth.basic`, even in a group that lists it first, so user rules see the user. If users log in through middleware that Laravel cannot recognize, such as a JWT package's or your own API key check, list it in `middleware.after`, by alias or class. Until you do, user rules count those users as guests.
 - **Excluded paths.** No rule ever applies to the paths in the `except` config key, not even a `*` rule. By default, they are Horizon, Telescope, Pulse, Nova, Livewire 3 and 4, `broadcasting/auth`, `sanctum/csrf-cookie` and `up`. Remove an entry to limit its path.

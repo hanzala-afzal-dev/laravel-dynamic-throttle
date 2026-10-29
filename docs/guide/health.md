@@ -20,6 +20,7 @@ Each check is `ok`, `warning`, `error` or `skipped`, with what it found and what
 | `apcu` | PHP-FPM without APCu, so every request reads the rules from the cache first, and an outage costs every request a try. The command line cannot see the web server's PHP, so there it is skipped: the dashboard's Settings page runs the checks in the web server, and shows the answer. |
 | `dashboard` | No `viewDynamicThrottle` or `manageDynamicThrottle` gate outside the `local` environment, so nobody can open the dashboard, and visitors get a 403 that says nothing about why ([who gets in](dashboard.md#who-gets-in)). A `Gate::before` callback alone does not count, as for the dashboard itself. |
 | `attached` | `dynamic.throttle` on no route, and not global middleware, so no rule applies. |
+| `unreached` | Rules that match only routes `dynamic.throttle` never limits, so they never apply: routes without it, such as a login rule while only the `api` group runs it, or paths `except` covers. A rule that matches no route is not named, since its pattern may name a route parameter's value. |
 | `except` | Horizon, Telescope, Pulse, Nova or Sanctum at a path `except` does not cover, so a rule can limit them. |
 | `two-limiters` | Routes that run Laravel's `throttle` too, which writes the same headers. |
 | `middleware-order` | Routes where authentication runs after `dynamic.throttle`, so user rules count your users as guests. |

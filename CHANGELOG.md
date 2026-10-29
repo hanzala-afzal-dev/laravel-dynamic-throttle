@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- The `unreached` health check warns about a rule that matches routes of the app, none of which limits it: they do not run `dynamic.throttle`, or `except` covers their paths. Such a rule never applies, and nothing said so. A new user's Login rule did that while only the `api` group ran the middleware ([SPEC-035](docs/specs/035-unreached-rules.md), [#149](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/149)).
+
 ### Changed
 
 - The documentation site is for the package's users: it no longer shows the design decisions (ADRs), and its pages no longer link to editing them on GitHub. The ADRs stay in the repository, and the guide's links to them open them on GitHub.

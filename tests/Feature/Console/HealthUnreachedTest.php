@@ -54,7 +54,7 @@ it('AC-1: warns about a rule that matches only a web route while only api runs d
 });
 
 it('AC-2: is ok once web runs dynamic.throttle too', function (): void {
-    app(Router::class)->pushMiddlewareToGroup('web', 'dynamic.throttle');
+    app(Kernel::class)->appendMiddlewareToGroup('web', 'dynamic.throttle');
     Route::middleware('web')->post('login', fn (): string => 'ok');
     loginRule();
 

@@ -1,6 +1,6 @@
 # SPEC-035: Say when a rule can never apply
 
-- Status: In progress
+- Status: Done
 - ADRs: ADR-0008, ADR-0017, ADR-0020
 - Roadmap phase: the betas, before 0.1.0
 
@@ -75,3 +75,7 @@ No config key, command, event or schema changes. A new check id is not a breakin
 ## Open questions
 
 None.
+
+## Notes from implementation
+
+- Tests changed after the red step: AC-2's setup pushed `dynamic.throttle` onto the router's `web` group, which the kernel's groups replace, so the route never ran it. It now appends to the kernel's group, as `appendToGroup` in `bootstrap/app.php` does. The test was red on the red step's code with either setup, since the report had no `unreached` check.
