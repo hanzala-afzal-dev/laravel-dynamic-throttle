@@ -46,7 +46,7 @@ export function OffendersCard() {
                             </NativeSelect>
                         </div>
                         {/* Keyed, so a new rule starts on this hour. */}
-                        <OffendersByHour key={ruleId} ruleId={ruleId} />
+                        <OffendersByHour key={ruleId} ruleId={ruleId} mode={list.find((rule) => rule.id === ruleId)?.mode} />
                     </>
                 )}
             </CardContent>

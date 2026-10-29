@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle\Support\Health\Checks;
 
+use Afzal\DynamicThrottle\Support\Docs;
 use Afzal\DynamicThrottle\Support\Health\Check;
 use Afzal\DynamicThrottle\Support\Health\CheckResult;
 use Afzal\DynamicThrottle\Support\Health\HealthContext;
@@ -33,8 +34,6 @@ final readonly class RedisTimeoutsCheck implements Check
     /** Predis's connect timeout when the connection sets none. */
     private const float PREDIS_CONNECT = 5.0;
 
-    private const string ADVICE = 'Set "timeout" and "read_timeout" ("read_write_timeout" with Predis) to about 0.25 seconds on a connection for the package, with "max_retries" 0: see docs/guide/storage-and-runtimes.md#timeouts.';
-
     public function id(): string
     {
         return 'redis-timeouts';
@@ -49,6 +48,7 @@ final readonly class RedisTimeoutsCheck implements Check
         $predis = $context->config->get('database.redis.client') === 'predis';
         $named = [];
         $slow = [];
+        $change = [];
         $longest = 0.0;
         $slowest = 0.0;
 
@@ -65,6 +65,7 @@ final readonly class RedisTimeoutsCheck implements Check
             $long = array_filter($waits, fn (?float $seconds): bool => $seconds === null || $seconds > self::LONGEST);
 
             if ($long !== []) {
+                $change[] = "\"{$connection}\"";
                 $slow[] = "{$name}, waits ".implode(' and ', array_map(
                     fn (string $what, ?float $seconds): string => ($seconds === null ? 'forever' : $this->seconds($seconds)).($what === 'connect' ? ' to connect' : ' for each reply'),
                     array_keys($long),
@@ -79,12 +80,15 @@ final readonly class RedisTimeoutsCheck implements Check
         }
 
         if ($slow === []) {
-            return CheckResult::ok($this->id(), 'The Redis connections requests use time out within '.$this->seconds((float) $longest).': '.implode('; ', $named).'. A call can wait a few times that while the client reconnects and retries (docs/guide/storage-and-runtimes.md#timeouts).');
+            return CheckResult::ok($this->id(), 'The Redis connections requests use time out within '.$this->seconds((float) $longest).': '.implode('; ', $named).'. A call can wait a few times that while the client reconnects and retries: see '.Docs::url('guide/storage-and-runtimes#timeouts').'.');
         }
 
         $holds = $slowest === null ? 'forever' : $this->seconds($slowest).' or more';
 
-        return CheckResult::warning($this->id(), "A Redis that hangs holds a request {$holds} before its limits fail open: ".implode('; ', $slow).'. '.self::ADVICE);
+        // The connections to change, not "a connection for the package": the manifest's is the
+        // cache store's, which a connection of the package's own leaves waiting (issue #151).
+        return CheckResult::warning($this->id(), "A Redis that hangs holds a request {$holds} before its limits fail open: ".implode('; ', $slow).'. '
+            .'Set "timeout" and "read_timeout" ("read_write_timeout" with Predis) to about 0.25 seconds on '.implode(' and ', $change).', in config/database.php: see '.Docs::url('guide/storage-and-runtimes#timeouts').'.');
     }
 
     /**

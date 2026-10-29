@@ -55,7 +55,8 @@ export function SettingsHealthCard() {
                                         </TableCell>
                                         <TableCell className="max-w-72 align-top whitespace-normal">
                                             <code className="font-mono text-xs font-medium">{check.check}</code>
-                                            {CHECK_PURPOSES[check.check] !== undefined && <p className="mt-1 text-xs text-muted-foreground">{CHECK_PURPOSES[check.check]}</p>}
+                                            {/* Labelled, so under OK it never reads as what the check found (issue #153). */}
+                                            {CHECK_PURPOSES[check.check] !== undefined && <p className="mt-1 text-xs text-muted-foreground">Looks for: {CHECK_PURPOSES[check.check]}</p>}
                                         </TableCell>
                                         <TableCell className="align-top whitespace-normal">{check.message}</TableCell>
                                     </TableRow>

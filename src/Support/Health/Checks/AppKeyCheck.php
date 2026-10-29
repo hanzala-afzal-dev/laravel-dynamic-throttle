@@ -26,6 +26,6 @@ final readonly class AppKeyCheck implements Check
 
         return is_string($key) && $key !== ''
             ? CheckResult::ok($this->id(), 'Identities are hashed with the app\'s key.')
-            : CheckResult::warning($this->id(), 'APP_KEY is empty, so identities are hashed without a key, and anyone who knows a client\'s IP or user id can tell which counter is theirs (ADR-0024). Run php artisan key:generate.');
+            : CheckResult::warning($this->id(), 'APP_KEY is empty, so identities are hashed without a key, and anyone who knows a client\'s IP or user id can tell which counter is theirs. Run php artisan key:generate.');
     }
 }

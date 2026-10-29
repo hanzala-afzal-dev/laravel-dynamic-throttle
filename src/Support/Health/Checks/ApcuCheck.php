@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle\Support\Health\Checks;
 
+use Afzal\DynamicThrottle\Support\Docs;
 use Afzal\DynamicThrottle\Support\Health\Check;
 use Afzal\DynamicThrottle\Support\Health\CheckResult;
 use Afzal\DynamicThrottle\Support\Health\HealthContext;
@@ -41,6 +42,6 @@ final readonly class ApcuCheck implements Check
 
         return $runtime->apcu
             ? CheckResult::ok($this->id(), "{$php}'s workers share the rules and the counter store's cooldown in APCu.")
-            : CheckResult::warning($this->id(), "{$php} runs without APCu, so every request reads the rules from the cache store first, and the workers do not share the counter store's cooldown: during an outage, every request tries the store again. Install and enable the APCu extension (docs/guide/storage-and-runtimes.md#runtimes).");
+            : CheckResult::warning($this->id(), "{$php} runs without APCu, so every request reads the rules from the cache store first, and the workers do not share the counter store's cooldown: during an outage, every request tries the store again. Install and enable the APCu extension: see ".Docs::url('guide/storage-and-runtimes#runtimes').'.');
     }
 }

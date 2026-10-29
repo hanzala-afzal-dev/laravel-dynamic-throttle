@@ -159,6 +159,15 @@ it('AC-13: warns when nothing was flushed in the last 2 hours, saying to check t
         ->and($message)->toContain('2 hours')->toContain('scheduler');
 });
 
+it('issue #150: is skipped when nothing was flushed and no enabled rule counts requests, as right after install', function (): void {
+    healthTravel('11:01:30');
+    Health::passing();
+    Rule::query()->get()->each->delete();
+    Cache::store('health')->forget(app(KeyBuilder::class)->telemetryFlushed());
+
+    expect(Health::check('metrics'))->toBe(['skipped', 'No enabled rule counts requests, so there is nothing to flush yet.']);
+});
+
 it('AC-13: is skipped with telemetry off', function (): void {
     healthTravel('11:01:30');
     Health::passing();
