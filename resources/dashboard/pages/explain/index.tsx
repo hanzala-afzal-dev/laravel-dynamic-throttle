@@ -24,7 +24,7 @@ export function ExplainPage() {
     const fieldError = Object.keys(fields).some((field) => field !== 'request');
 
     return (
-        <section className="grid gap-6">
+        <section className="grid grid-cols-1 gap-6">
             <div>
                 <h1 className="text-2xl font-semibold tracking-tight">Explain</h1>
                 <p className="mt-1 text-sm text-muted-foreground">What the rules would do with a request, and why. Nothing is counted or changed.</p>

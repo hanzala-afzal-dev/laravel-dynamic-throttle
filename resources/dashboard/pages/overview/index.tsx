@@ -13,7 +13,7 @@ export default function OverviewPage() {
     const [period, setPeriod] = useState<Period>('hour');
 
     return (
-        <section className="grid gap-6">
+        <section className="grid grid-cols-1 gap-6">
             <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <HealthCard />

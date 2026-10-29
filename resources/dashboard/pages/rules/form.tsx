@@ -141,7 +141,7 @@ function Editor({ initial, rule, duplicateOf }: { initial: Values; rule?: Rule; 
     );
 
     return (
-        <section className="grid gap-6">
+        <section className="grid grid-cols-1 gap-6">
             <div>
                 <h1 className="text-2xl font-semibold tracking-tight">{rule === undefined ? 'New rule' : `Edit ${rule.name}`}</h1>
                 <p className="mt-1 text-sm text-muted-foreground">
