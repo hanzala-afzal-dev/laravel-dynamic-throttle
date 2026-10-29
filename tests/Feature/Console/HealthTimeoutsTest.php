@@ -73,13 +73,13 @@ it('warns about a phpredis connection without timeouts, which waits default_sock
 
     expect($status)->toBe('warning')
         ->and($message)->toBe('A Redis that hangs holds a request 60 seconds or more before its limits fail open: "counters", for the counters, waits 60 seconds to connect and 60 seconds for each reply. '
-            .'Set "timeout" and "read_timeout" ("read_write_timeout" with Predis) to about 0.25 seconds on a connection for the package, with "max_retries" 0: see docs/guide/storage-and-runtimes.md#timeouts.');
+            .'Set "timeout" and "read_timeout" ("read_write_timeout" with Predis) to about 0.25 seconds on "counters", in config/database.php: see https://hanzala-afzal-dev.github.io/laravel-dynamic-throttle/guide/storage-and-runtimes#timeouts.');
 });
 
 it('is ok with short timeouts, names the longest, and says retries can repeat it', function (array $connection): void {
     countersOn($connection);
 
-    expect(Health::check('redis-timeouts'))->toBe(['ok', 'The Redis connections requests use time out within 0.5 seconds: "counters", for the counters. A call can wait a few times that while the client reconnects and retries (docs/guide/storage-and-runtimes.md#timeouts).']);
+    expect(Health::check('redis-timeouts'))->toBe(['ok', 'The Redis connections requests use time out within 0.5 seconds: "counters", for the counters. A call can wait a few times that while the client reconnects and retries: see https://hanzala-afzal-dev.github.io/laravel-dynamic-throttle/guide/storage-and-runtimes#timeouts.']);
 })->with([
     'as numbers' => [['timeout' => 0.5, 'read_timeout' => 0.25]],
     'as strings, from the environment' => [['timeout' => '0.5', 'read_timeout' => '0.25']],
@@ -128,6 +128,20 @@ it('checks the connection of the redis cache store that holds the manifest, and 
         ->not->toContain('"counters"');
 });
 
+it('issue #151: names the connections that wait too long in its advice, the manifest\'s too, not only the package\'s own', function (): void {
+    config()->set([
+        'database.redis.cache' => ['host' => '127.0.0.1', 'port' => 6379, 'database' => 1],
+        'cache.stores.redis' => ['driver' => 'redis', 'connection' => 'cache'],
+        'dynamic-throttle.store' => 'redis',
+    ]);
+
+    countersOn(SHORT_TIMEOUTS);
+    expect(Health::message('redis-timeouts'))->toEndWith(' on "cache", in config/database.php: see https://hanzala-afzal-dev.github.io/laravel-dynamic-throttle/guide/storage-and-runtimes#timeouts.');
+
+    countersOn([]);
+    expect(Health::message('redis-timeouts'))->toEndWith(' on "counters" and "cache", in config/database.php: see https://hanzala-afzal-dev.github.io/laravel-dynamic-throttle/guide/storage-and-runtimes#timeouts.');
+});
+
 it('names both uses of one connection, as with the auto driver on a redis store', function (): void {
     config()->set([
         'database.redis.cache' => ['host' => '127.0.0.1', 'port' => 6379, 'database' => 1, ...SHORT_TIMEOUTS],
@@ -136,7 +150,7 @@ it('names both uses of one connection, as with the auto driver on a redis store'
         'dynamic-throttle.store' => 'redis',
     ]);
 
-    expect(Health::check('redis-timeouts'))->toBe(['ok', 'The Redis connections requests use time out within 0.25 seconds: "cache", for the counters and the manifest. A call can wait a few times that while the client reconnects and retries (docs/guide/storage-and-runtimes.md#timeouts).']);
+    expect(Health::check('redis-timeouts'))->toBe(['ok', 'The Redis connections requests use time out within 0.25 seconds: "cache", for the counters and the manifest. A call can wait a few times that while the client reconnects and retries: see https://hanzala-afzal-dev.github.io/laravel-dynamic-throttle/guide/storage-and-runtimes#timeouts.']);
 });
 
 it('checks the cache driver on a redis store, whose connection defaults to "default"', function (): void {

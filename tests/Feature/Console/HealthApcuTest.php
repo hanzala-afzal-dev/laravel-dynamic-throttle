@@ -29,7 +29,7 @@ afterEach(function (): void {
     unset($_SERVER['LARAVEL_OCTANE']);
 });
 
-const APCU_WARNING = 'PHP-FPM runs without APCu, so every request reads the rules from the cache store first, and the workers do not share the counter store\'s cooldown: during an outage, every request tries the store again. Install and enable the APCu extension (docs/guide/storage-and-runtimes.md#runtimes).';
+const APCU_WARNING = 'PHP-FPM runs without APCu, so every request reads the rules from the cache store first, and the workers do not share the counter store\'s cooldown: during an outage, every request tries the store again. Install and enable the APCu extension: see https://hanzala-afzal-dev.github.io/laravel-dynamic-throttle/guide/storage-and-runtimes#runtimes.';
 
 it('is listed after app-key', function (): void {
     expect(array_keys(Health::checks()))->toBe(Health::CHECKS)
