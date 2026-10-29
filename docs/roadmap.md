@@ -232,6 +232,10 @@ Changes from beta feedback, while the API may still change. Each breaking change
   - Off by default (`dashboard.links`), so an app that relies on its gates gets no new way in until it opts in.
   - Open question for the spec: where links live (the cache, or a table of their own, which survives `cache:clear`).
 
+**A new-user test of `0.1.0-beta.2`** (2026-10-29, issues #148 to #154): installing from Packagist into fresh Laravel 12 and 13 apps and following the README word for word. The install steps, health messages and dashboard wording are fixed without a spec.
+
+- **SPEC-035: say when a rule can never apply (S).** An `unreached` health check warns about a rule that matches routes, none of which runs `dynamic.throttle` outside `except`, such as a Login rule while only the `api` group runs the middleware (#149).
+
 **Considered, not planned:** finer permissions than view and manage, such as a third gate for bypass and scaling. Only if beta users ask for it.
 
 ---
