@@ -51,8 +51,26 @@ describe('the offenders card', () => {
 
         await userEvent.click(offenders.getByRole('tab', { name: 'Last hour' }));
 
-        expect(await offenders.findByText('1 different clients blocked')).toBeInTheDocument();
+        expect(await offenders.findByText('1 client blocked')).toBeInTheDocument();
         expect(reads(sent)).toEqual(['rules/3/offenders?hour=current', 'rules/1/offenders?hour=current', 'rules/1/offenders?hour=previous']);
+    });
+
+    it('issue #153: says would-blocks for a rule in dry-run, which blocks no one', async () => {
+        mockApi(viewer(answers({
+            'GET rules': { body: pageOf([{ ...LOGIN, mode: 'dry_run' }, API]) },
+            'GET rules/3/offenders?hour=previous': { body: { hour: '2027-01-15T11:00:00+00:00', offenders: [], clients: 0 } },
+        })));
+        renderAt(<OffendersCard />, '/activity');
+
+        const offenders = await card();
+
+        expect(await offenders.findByText('3 different clients would have been blocked')).toBeInTheDocument();
+        expect(offenders.getByRole('columnheader', { name: 'Would-blocks' })).toBeInTheDocument();
+        expect(offenders.queryByRole('columnheader', { name: 'Blocks' })).not.toBeInTheDocument();
+
+        await userEvent.click(offenders.getByRole('tab', { name: 'Last hour' }));
+
+        expect(await offenders.findByText('It would have blocked no client in that hour.')).toBeInTheDocument();
     });
 
     it('AC-6: says the counter store keeps none', async () => {

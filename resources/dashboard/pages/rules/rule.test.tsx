@@ -73,6 +73,19 @@ describe('a rule\'s page', () => {
         expect(gets(sent)).toContain('rules/3/offenders?hour=previous');
     });
 
+    it('issue #153: says would-blocks for its offenders while the rule is in dry-run', async () => {
+        mockApi(viewer(answers({
+            'GET rules/3': { body: { rule: { ...LOGIN, mode: 'dry_run' }, exemptions: [EXEMPTION] } },
+            'GET rules/3/offenders?hour=current': { body: { hour: '2027-01-15T12:00:00+00:00', offenders: [{ hash: HASH, count: 9 }], clients: 1 } },
+        })));
+        renderAt(<RulePage id={3} />, '/rules/3');
+
+        const offenders = within(await screen.findByRole('region', { name: 'Offenders' }));
+
+        expect(await offenders.findByText('1 client would have been blocked')).toBeInTheDocument();
+        expect(offenders.getByRole('columnheader', { name: 'Would-blocks' })).toBeInTheDocument();
+    });
+
     it('AC-8: says when the counter store keeps no offenders', async () => {
         mockApi(viewer(answers({ 'GET rules/3/offenders?hour=current': { body: { hour: '2027-01-15T12:00:00+00:00', offenders: null, clients: null } } })));
         renderAt(<RulePage id={3} />, '/rules/3');
