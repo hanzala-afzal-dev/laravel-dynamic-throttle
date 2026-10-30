@@ -210,6 +210,26 @@ export default defineConfig({
 
                 return render(tokens, idx, options, env, self);
             };
+
+            // The changelog keeps an "Unreleased" section on top (Keep a Changelog). Right after a
+            // release it is empty, which on the site reads as a mistake, so the site leaves it out
+            // until a change waits for the next release. Before the anchors and the outline read
+            // the headings, so neither lists it.
+            md.core.ruler.after('inline', 'empty-unreleased', (state) => {
+                const tokens = state.tokens;
+
+                for (let i = 0; i + 2 < tokens.length; i++) {
+                    const unreleased =
+                        tokens[i].type === 'heading_open' && tokens[i].tag === 'h2' && tokens[i + 1].content.replace(/[[\]]/g, '').trim() === 'Unreleased';
+                    const next = tokens[i + 3];
+
+                    if (unreleased && (next === undefined || (next.type === 'heading_open' && next.tag === 'h2'))) {
+                        tokens.splice(i, 3);
+
+                        return;
+                    }
+                }
+            });
         },
     },
 
