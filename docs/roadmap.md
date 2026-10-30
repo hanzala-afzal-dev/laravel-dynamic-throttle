@@ -226,13 +226,13 @@ Changes from beta feedback, while the API may still change. Each breaking change
 **Dashboard access in production** (raised by the maintainer on 2026-10-19, important): in production, nobody can open the dashboard until the app defines a gate, as with Horizon. An app that skips that step gets a 403 and no explanation, and an app without a user login has no one for a gate to check.
 
 - **SPEC-033: say when nobody can open the dashboard (S), done, in `0.1.0-beta.2`.** A `dashboard` health check warns when the dashboard is on, the environment is not `local`, and neither `viewDynamicThrottle` nor `manageDynamicThrottle` is defined: "Nobody can open the dashboard: define viewDynamicThrottle or manageDynamicThrottle". The 403 page stays as it is, so it tells a visitor nothing about the setup. The README's install step says the check will catch a forgotten gate.
-- **SPEC-034: dashboard links for apps without a login, and for incidents (M).** `php artisan dynamic-throttle:link --for=60m --name="alice, incident 42"` prints a one-time link that opens the dashboard until it expires. Amends ADR-0015, so the spec is reviewed before any code:
+- **SPEC-034: dashboard links for apps without a login, and for incidents (M).** `php artisan dynamic-throttle:link --for=60m --name="alice, incident 42"` prints a one-time link that opens the dashboard until it expires. [The spec](specs/034-dashboard-links.md) and [ADR-0031](adr/0031-dashboard-links.md), which amends ADR-0015, are reviewed in their own PR before any code, then the code ships in four stacked PRs, for `0.2.0`:
   - `--for` takes the format the other commands take (`30m`, `2h`), 60 minutes by default and at most a day. A link only views, unless `--manage`.
   - The link opens a page with a "Continue" button, so a chat app's link preview never uses it. Continuing trades it for a session, which ends when the link does, and moves to the plain `/dynamic-throttle` address, so the token is never left in the address bar, the browser's history or a `Referer` header.
   - Only a hash of the 32-byte random token is stored. `--revoke` ends one link early, and `--revoke-all` every link.
-  - The audit log names the link's holder, `link:alice, incident 42`, and who created it, such as `cli:hanzala`.
+  - The audit log names the link's holder, `link:7:alice, incident 42` (with the link's id, since names are not unique), and who created it, such as `cli:hanzala`.
   - Off by default (`dashboard.links`), so an app that relies on its gates gets no new way in until it opts in.
-  - Open question for the spec: where links live (the cache, or a table of their own, which survives `cache:clear`).
+  - Links live in a table of their own, which survives `cache:clear` and works across servers (the spec's decision 1).
 
 **A new-user test of `0.1.0-beta.2`** (2026-10-29, issues #148 to #154): installing from Packagist into fresh Laravel 12 and 13 apps and following the README word for word. The install steps, health messages and dashboard wording are fixed without a spec.
 
