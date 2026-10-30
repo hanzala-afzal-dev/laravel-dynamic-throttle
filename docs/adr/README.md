@@ -47,6 +47,7 @@ This folder records the important decisions for `laravel-dynamic-throttle`: what
 | [0027](0027-faster-loop-after-phase-2.md) | A faster loop after Phase 2 | Accepted | 3 onward |
 | [0028](0028-dashboard-react-shadcn.md) | Dashboard UI: React and shadcn/ui, built ahead and shipped in the package | Accepted | 5 |
 | [0029](0029-documentation-site.md) | A documentation site on GitHub Pages, built from docs/ | Accepted | 6 |
+| [0030](0030-dist-built-after-merge.md) | The dashboard's build reaches main in a bot pull request | Accepted | after 0.1.0 |
 
 ## Template
 

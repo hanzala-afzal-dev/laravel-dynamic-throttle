@@ -19,7 +19,7 @@ Decisions live in docs/adr/ (index: docs/adr/README.md). Feature specs live in d
 - `scripts/ci-local.sh` runs CI's checks locally (`--drivers` adds the stores, `--mutate PATHS` mutation testing). Use it when GitHub Actions cannot run, and say so in the PR. The repository is public since 2026-10-18, so Actions minutes are free.
 - Local machine only (it has PHP 8.2): prefix with `docker compose run --rm php`, e.g. `docker compose run --rm php composer test`
 - `docker compose up -d`: Redis, Valkey, Memcached, MySQL, PostgreSQL for driver tests (`composer test:drivers`)
-- Dashboard (ADR-0028): `npm ci` once, then `npm run build` (writes `dist/`, commit it with the sources), `npm run test` (Vitest), `npm run typecheck`, `npm run lint`. Node 22.
+- Dashboard (ADR-0028, ADR-0030): `npm ci` once, then `npm run build` (writes `dist/` to try a change: never commit it, and put it back with `git checkout -- dist && git clean -fdq dist`), `npm run test` (Vitest), `npm run typecheck`, `npm run lint`. Node 22. After each merge, the Build dist workflow opens a pull request with the build; merge it before a release.
 - Docs site (ADR-0029): `npm ci --prefix docs` once, then `npm run --prefix docs build`, which fails on a link to a missing file, page or heading, or `npm run --prefix docs dev`. Write docs with links relative to their file, as GitHub reads them. Keep the README's `<!-- #region … -->` comments: the site includes those sections.
 - `scripts/verify-install.sh 12|13`: installs the package into a fresh Laravel app and boots it
 
@@ -42,7 +42,7 @@ Decisions live in docs/adr/ (index: docs/adr/README.md). Feature specs live in d
 - All cache and Redis keys come from KeyBuilder.
 - No exception from storage may escape the middleware (ADR-0010).
 - Dashboard routes are never subject to dynamic rules.
-- Dashboard: React + shadcn/ui in `resources/dashboard/`, built by Vite into the committed `dist/`, which users get with nothing to install (ADR-0028). No inline scripts or styles; runtime style elements carry the page's nonce. Never ship sources or `node_modules` in the Composer download, and never edit `dist/` by hand: rebuild it.
+- Dashboard: React + shadcn/ui in `resources/dashboard/`, built by Vite into the committed `dist/`, which users get with nothing to install (ADR-0028). No inline scripts or styles; runtime style elements carry the page's nonce. Never ship sources or `node_modules` in the Composer download, and never edit `dist/` by hand or commit it in a pull request: the Build dist workflow commits the build after merge (ADR-0030).
 - tests/Arch enforces several of these rules. Never weaken an arch test to make code pass.
 
 ## Style
