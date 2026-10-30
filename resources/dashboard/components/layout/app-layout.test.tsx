@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { AppLayout } from '@/components/layout/app-layout';
 import { Pages } from '@/pages';
 import { manager, mockApi, renderAt, viewer } from '@/test/render';
+import logo from '../../../../art/logo.svg?url';
 
 /* SPEC-020 AC-7 and AC-8: the sidebar, the header, the role and the theme. */
 
@@ -41,6 +42,22 @@ describe('the layout', () => {
         dashboardAt('/rules/12');
 
         expect(within(screen.getByRole('navigation', { name: 'Pages' })).getByRole('link', { name: 'Rules' })).toHaveAttribute('aria-current', 'page');
+    });
+
+    it('shows the logo beside the name in the sidebar', () => {
+        mockApi(manager());
+        dashboardAt('/');
+
+        expect(screen.getByText('Dynamic Throttle').querySelector('svg[data-slot="logo"]')).not.toBeNull();
+    });
+
+    it('makes the logo the browser tab\'s icon, in place of the empty one the page starts with', () => {
+        document.head.innerHTML = '<link rel="icon" href="data:,">';
+        mockApi(manager());
+        dashboardAt('/');
+
+        expect(document.head.querySelectorAll('link[rel="icon"]')).toHaveLength(1);
+        expect(document.head.querySelector('link[rel="icon"]')).toHaveAttribute('href', logo);
     });
 
     it('AC-7: says the page is not found for an unknown path', () => {
