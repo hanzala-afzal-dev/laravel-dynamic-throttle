@@ -1,23 +1,16 @@
 <!-- Packagist shows this README's images through rawcdn.githack.com, which caches each address for good: give a changed image a new file name, or Packagist keeps showing the old one. -->
 <p align="center">
-  <img src="art/banner-v2.svg" width="100%" alt="Dynamic Throttle for Laravel: requests enter your Laravel app, limited per IP, user, token, header or tenant. After routing and authentication, Dynamic Throttle lets the allowed requests on to the controllers and database, and the excess gets a 429. Install with composer require hanzala-afzal/laravel-dynamic-throttle:^0.1@beta.">
+  <img src="art/banner-v3.svg" width="100%" alt="Dynamic Throttle for Laravel: requests enter your Laravel app, limited per IP, user, token, header or tenant. After routing and authentication, Dynamic Throttle lets the allowed requests on to the controllers and database, and the excess gets a 429. Install with composer require hanzala-afzal/laravel-dynamic-throttle.">
 </p>
 
 <p align="center">
-  <a href="https://packagist.org/packages/hanzala-afzal/laravel-dynamic-throttle"><img src="https://img.shields.io/packagist/v/hanzala-afzal/laravel-dynamic-throttle.svg?style=flat-square&label=packagist&include_prereleases" alt="Latest version on Packagist"></a>
+  <a href="https://packagist.org/packages/hanzala-afzal/laravel-dynamic-throttle"><img src="https://img.shields.io/packagist/v/hanzala-afzal/laravel-dynamic-throttle.svg?style=flat-square&label=packagist" alt="Latest version on Packagist"></a>
   <a href="https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/actions/workflows/ci.yml"><img src="https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/actions/workflows/ci.yml/badge.svg" alt="Tests"></a>
   <a href="https://packagist.org/packages/hanzala-afzal/laravel-dynamic-throttle"><img src="https://img.shields.io/packagist/dt/hanzala-afzal/laravel-dynamic-throttle.svg?style=flat-square" alt="Total downloads"></a>
   <img src="https://img.shields.io/badge/php-8.3%20%7C%208.4%20%7C%208.5-777BB4?style=flat-square&logo=php&logoColor=white" alt="PHP 8.3, 8.4 and 8.5">
   <img src="https://img.shields.io/badge/laravel-12%20%7C%2013-FF2D20?style=flat-square&logo=laravel&logoColor=white" alt="Laravel 12 and 13">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="MIT license"></a>
 </p>
-
-<!-- #region beta -->
-
-> [!IMPORTANT]
-> **Public beta.** Everything planned for 0.1.0 is in, but names and options may still change, and the [changelog](CHANGELOG.md) will say how to upgrade. Try it in staging first, and [tell us](#beta-feedback) what breaks or confuses you.
-
-<!-- #endregion beta -->
 
 **Dynamic Throttle for Laravel** lets you change your app's rate limits while it runs: per IP, user, API token, header or tenant, with a dry-run mode, exemptions, emergency switches and a dashboard.
 
@@ -62,10 +55,10 @@ It ships with the package at `/dynamic-throttle`, behind your gates, with nothin
 
 ## Installation
 
-**1. Install the beta:**
+**1. Install:**
 
 ```bash
-composer require hanzala-afzal/laravel-dynamic-throttle:^0.1@beta
+composer require hanzala-afzal/laravel-dynamic-throttle
 ```
 
 **2. Create the tables, and compile the rules once.** After this, saving a rule compiles them, and so does the scheduler.
@@ -145,9 +138,9 @@ The [guide](docs/guide/README.md) has the details, also on the [documentation si
 - [The dashboard](docs/guide/dashboard.md), [health checks](docs/guide/health.md) and [during an incident](docs/guide/incidents.md)
 - The [runbook](docs/runbook.md): Redis is down, the manifest was evicted, a bad rule blocks `/api`, or an emergency change was left on
 
-<!-- #region beta-feedback -->
+<!-- #region feedback -->
 
-## Beta feedback
+## Feedback
 
 What helps most:
 
@@ -157,7 +150,7 @@ What helps most:
 
 Report bugs in [issues](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/new/choose), and bring questions and ideas to [discussions](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/discussions). Report security issues privately, as [SECURITY.md](SECURITY.md) explains, never in a public issue.
 
-<!-- #endregion beta-feedback -->
+<!-- #endregion feedback -->
 
 ## License
 
