@@ -4,6 +4,7 @@
 - Date: 2026-10-15
 - Roadmap phase: 5
 - Amends: ADR-0018 (points 2 and 6), ADR-0016, ADR-0017 (see "Effect on other ADRs")
+- Amended: 2026-10-30 by ADR-0030: pull requests leave `dist/` alone, and a workflow builds it after each merge to `main` and opens a pull request with it.
 - Related: ADR-0014, ADR-0015, ADR-0018
 
 ## Context
