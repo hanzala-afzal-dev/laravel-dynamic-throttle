@@ -473,9 +473,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # A pull request's checkout is its merge into the base branch, so HEAD^1 is the base.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 2
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -495,12 +497,17 @@ jobs:
       - name: Tests
         run: npm run test
 
-      - name: The committed build is what the sources build
+      - name: The sources build
+        run: npm run build
+
+      # The Build dist workflow brings dist/ to main after each merge, in a pull request of
+      # its own (ADR-0030), so two dashboard pull requests never conflict in it.
+      - name: This pull request leaves dist/ alone
+        if: github.event_name == 'pull_request' && github.head_ref != 'bot/build-dist'
         run: |
-          npm run build
-          changed="$(git status --porcelain -- dist)"
+          changed="$(git diff --name-only HEAD^1 HEAD -- dist)"
           if [ -n "$changed" ]; then
-            echo "::error::dist/ differs from a fresh build: run npm run build and commit dist/."
+            echo "::error::dist/ is built after merge by the Build dist workflow (ADR-0030). Leave it out of this pull request: git rm -r -q dist && git checkout origin/main -- dist"
             echo "$changed"
             exit 1
           fi
