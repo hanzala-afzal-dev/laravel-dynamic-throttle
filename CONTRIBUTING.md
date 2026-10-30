@@ -117,7 +117,7 @@ npm run build    # fails on a link to a missing file, page or heading
 
 The home page and Getting started show sections of the README between `<!-- #region … -->` comments, so keep those comments when you edit it. The site's own pages are in `docs/site/`, and its sidebar lists the guide's pages in the order of `docs/guide/README.md`. Pages show images from `art/` by importing them as `@art/…`.
 
-`docs/package.json` overrides VitePress's Vite with 6.4.4. VitePress 1.6.4, its latest release, brings Vite 5, whose development server has known advisories that no Vite 5 release fixes. They affect `npm run dev` only, never the published site. Remove the override once a VitePress release brings a fixed Vite.
+`docs/package.json` overrides VitePress's Vite with 6.4.5. VitePress 1.6.4, its latest release, brings Vite 5, whose development server has known advisories that no Vite 5 release fixes. They affect `npm run dev` only, never the published site. Remove the override once a VitePress release brings a fixed Vite.
 
 ## What users download
 
