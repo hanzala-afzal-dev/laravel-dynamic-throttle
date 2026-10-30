@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Plugin } from 'vite';
 import { type DefaultTheme, defineConfig } from 'vitepress';
 
 // The documentation site (ADR-0029): docs/ as GitHub Pages, at hanzala-afzal-dev.github.io/laravel-dynamic-throttle.
@@ -93,6 +94,38 @@ const inlineHtml = (text: string): string =>
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/`([^`]+)`/g, '<code>$1</code>');
+
+/** The logo files, which the README shows from art/. */
+const logos = ['logo.svg', 'logo-on-dark.svg', 'logo-on-light.svg'];
+
+/**
+ * Serves the logo files from art/ at the site's root, in the dev server and in the build,
+ * so the site never holds a copy of them that could drift.
+ */
+function artLogos(): Plugin {
+    return {
+        name: 'art-logos',
+        configureServer(server) {
+            server.middlewares.use((request, response, next) => {
+                const name = logos.find((logo) => request.url === `${base}${logo}`);
+
+                if (name === undefined) {
+                    next();
+
+                    return;
+                }
+
+                response.setHeader('Content-Type', 'image/svg+xml');
+                response.end(readFileSync(join(root, 'art', name)));
+            });
+        },
+        generateBundle() {
+            for (const name of logos) {
+                this.emitFile({ type: 'asset', fileName: name, source: readFileSync(join(root, 'art', name)) });
+            }
+        },
+    };
+}
 
 function fail(message: string): never {
     throw new Error(message);
@@ -188,6 +221,7 @@ export default defineConfig({
     rewrites,
 
     head: [
+        ['link', { rel: 'icon', type: 'image/svg+xml', href: `${base}logo.svg` }],
         ['meta', { property: 'og:type', content: 'website' }],
         ['meta', { property: 'og:title', content: 'Dynamic Throttle for Laravel' }],
         ['meta', { property: 'og:description', content: description }],
@@ -237,11 +271,13 @@ export default defineConfig({
     // import them as @art/…: a relative path breaks in the dev server on a page that
     // `rewrites` moves, where it resolves from the page's new place.
     vite: {
+        plugins: [artLogos()],
         resolve: { alias: { '@art': join(root, 'art') } },
         server: { fs: { allow: [root] } },
     },
 
     themeConfig: {
+        logo: { light: '/logo-on-light.svg', dark: '/logo-on-dark.svg', alt: '' },
         nav: [
             { text: 'Getting started', link: '/getting-started' },
             { text: 'Guide', link: '/guide/', activeMatch: '^/guide/' },

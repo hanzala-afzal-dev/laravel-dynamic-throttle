@@ -1,7 +1,15 @@
 <!-- Packagist shows this README's images through rawcdn.githack.com, which caches each address for good: give a changed image a new file name, or Packagist keeps showing the old one. -->
+<!-- The dark version's address is absolute, so Packagist, which rewrites only img src, still finds it. -->
 <p align="center">
-  <img src="art/banner-v3.svg" width="100%" alt="Dynamic Throttle for Laravel: requests enter your Laravel app, limited per IP, user, token, header or tenant. After routing and authentication, Dynamic Throttle lets the allowed requests on to the controllers and database, and the excess gets a 429. Install with composer require hanzala-afzal/laravel-dynamic-throttle.">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/hanzala-afzal-dev/laravel-dynamic-throttle/main/art/logo-on-dark.svg">
+    <img src="art/logo-on-light.svg" width="140" alt="The Dynamic Throttle logo: a red D whose curve is a gauge, its needle near the red end of the scale.">
+  </picture>
 </p>
+
+<h1 align="center">Dynamic Throttle for Laravel</h1>
+
+<p align="center">Change your app's rate limits while it runs, and dry-run them first.</p>
 
 <p align="center">
   <a href="https://packagist.org/packages/hanzala-afzal/laravel-dynamic-throttle"><img src="https://img.shields.io/packagist/v/hanzala-afzal/laravel-dynamic-throttle.svg?style=flat-square&label=packagist" alt="Latest version on Packagist"></a>
