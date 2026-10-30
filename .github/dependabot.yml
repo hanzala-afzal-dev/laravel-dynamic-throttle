@@ -20,6 +20,33 @@ updates:
       prefix: chore
       include: scope
 
+  # The dashboard's toolchain (ADR-0028). Majors open on their own, so one
+  # that breaks the build does not hold back the rest.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      dashboard:
+        patterns: ['*']
+        update-types: [minor, patch]
+    commit-message:
+      prefix: chore
+      include: scope
+
+  # The documentation site (ADR-0029).
+  - package-ecosystem: npm
+    directory: /docs
+    schedule:
+      interval: weekly
+    groups:
+      docs-site:
+        patterns: ['*']
+        update-types: [minor, patch]
+    commit-message:
+      prefix: chore
+      include: scope
+
   - package-ecosystem: docker
     directory: /docker/php
     schedule:
