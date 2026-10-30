@@ -1,0 +1,111 @@
+name: Build dist
+
+# The dashboard's build (ADR-0030). Pull requests leave dist/ alone. After each push to
+# main, this builds the sources and, when the build differs from main's dist/, opens a
+# pull request with it, since main's ruleset lets no workflow push there. Composer
+# installs from a tag's tree, so a release must hold the build: this checks each one.
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Open a pull request with the build
+    if: github.event_name != 'release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Only the newest push matters: each run builds main as that push left it.
+    concurrency:
+      group: build-dist
+      cancel-in-progress: true
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        # Without install scripts, as in CI (SPEC-020 AC-19).
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Build
+        run: npm run build
+
+      - name: Open, update or close the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          open="$(gh pr list --head bot/build-dist --state open --json number --jq '.[].number')"
+
+          if [ -z "$(git status --porcelain -- dist)" ]; then
+            echo "dist/ is what the sources build."
+            if [ -n "$open" ]; then
+              gh pr close "$open" --comment "main's dist/ is already what the sources build, so this is no longer needed." --delete-branch
+            fi
+            exit 0
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c bot/build-dist
+          git add -A dist
+          git commit -q -m "chore: build dist" -m "Built from ${GITHUB_SHA} on main by the Build dist workflow (ADR-0030)."
+          # The branch is the workflow's alone: each run replaces it with a build of main as it is now.
+          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/bot/build-dist
+
+          if [ -n "$open" ]; then
+            echo "Updated #${open} with a build of ${GITHUB_SHA}."
+            exit 0
+          fi
+
+          gh pr create --base main --head bot/build-dist --title 'chore: build dist' --body "The dashboard's build, from \`main\` at ${GITHUB_SHA}. Pull requests leave \`dist/\` alone, and this one brings it up to date (ADR-0030).
+
+          - Merge it before publishing a release: Composer installs from the tag, which must hold the build.
+          - CI does not run on it, since the workflow's own token starts no workflows. It changes only \`dist/\`, built from \`main\`'s sources as CI would.
+          - A later push to \`main\` updates it in place."
+
+  release:
+    name: The release holds what its sources build
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Build, and compare with the tag's dist/
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          npm run build
+          changed="$(git status --porcelain -- dist)"
+          if [ -n "$changed" ]; then
+            echo "::error::${TAG} ships a dist/ that is not what its sources build, so its users get an older dashboard. Merge the open \"chore: build dist\" pull request, then publish a patch release from main."
+            echo "$changed"
+            exit 1
+          fi
+          echo "${TAG} holds what its sources build."
