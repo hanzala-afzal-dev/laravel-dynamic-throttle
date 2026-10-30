@@ -1,13 +1,15 @@
-import { Activity, Gauge, LayoutDashboard, ListChecks, Monitor, Moon, ScrollText, SearchCode, Settings, ShieldCheck, Sun } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { Activity, LayoutDashboard, ListChecks, Monitor, Moon, ScrollText, SearchCode, Settings, ShieldCheck, Sun } from 'lucide-react';
+import { type ReactNode, useEffect } from 'react';
 import { Link, useLocation } from 'wouter';
 import { EmergencyBanner } from '@/components/layout/emergency-banner';
 import { PageErrorBoundary } from '@/components/layout/page-error-boundary';
+import { Logo } from '@/components/logo';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useMe } from '@/lib/queries';
 import { useTheme } from '@/lib/theme';
 import { cn } from '@/lib/utils';
+import tabIcon from '../../../../art/logo.svg?url';
 
 const PAGES = [
     { href: '/', label: 'Overview', icon: LayoutDashboard },
@@ -24,6 +26,7 @@ const THEME_ICONS = { system: Monitor, light: Sun, dark: Moon } as const;
 /** The frame every page shares (SPEC-020): the sidebar, the header and the emergency banner. */
 export function AppLayout({ children }: { children: ReactNode }) {
     const [location] = useLocation();
+    useTabIcon();
 
     return (
         <div className="flex min-h-svh flex-col md:flex-row">
@@ -41,13 +44,26 @@ export function AppLayout({ children }: { children: ReactNode }) {
     );
 }
 
+/**
+ * The browser tab's icon: the logo, in place of the empty one the page starts with, which
+ * keeps the browser from asking for /favicon.ico. The build inlines it, as the CSP allows.
+ */
+function useTabIcon(): void {
+    useEffect(() => {
+        const link = document.head.querySelector<HTMLLinkElement>('link[rel="icon"]') ?? document.head.appendChild(document.createElement('link'));
+        link.setAttribute('rel', 'icon');
+        link.setAttribute('type', 'image/svg+xml');
+        link.setAttribute('href', tabIcon);
+    }, []);
+}
+
 function Sidebar() {
     const [location] = useLocation();
 
     return (
         <aside className="border-b bg-sidebar text-sidebar-foreground md:w-60 md:shrink-0 md:border-r md:border-b-0">
             <div className="flex h-14 items-center gap-2 px-4 font-semibold">
-                <Gauge className="size-5" aria-hidden />
+                <Logo className="size-6" />
                 Dynamic Throttle
             </div>
             <nav aria-label="Pages" className="flex gap-1 overflow-x-auto px-2 pb-2 md:flex-col md:pb-4">
