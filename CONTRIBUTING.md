@@ -67,20 +67,20 @@ These are covered by Semantic Versioning from 1.0 ([ADR-0017](docs/adr/0017-vers
 
 A PR that changes any of them must say so, and a breaking change needs an upgrade note. Published migrations are never edited. Schema changes ship as new migrations.
 
-## Working on the dashboard ([ADR-0028](docs/adr/0028-dashboard-react-shadcn.md))
+## Working on the dashboard ([ADR-0028](docs/adr/0028-dashboard-react-shadcn.md), [ADR-0030](docs/adr/0030-dist-built-after-merge.md))
 
-The dashboard is React with shadcn/ui, in `resources/dashboard/`. Vite builds it into `dist/`, which is committed: users get the build and install nothing. You need Node 22.
+The dashboard is React with shadcn/ui, in `resources/dashboard/`. Vite builds it into `dist/`, which is committed: users get the build and install nothing. Pull requests leave `dist/` alone: after each merge, the Build dist workflow builds it and opens a pull request with it, "chore: build dist". You need Node 22.
 
 ```bash
 npm ci
-npm run build       # writes dist/: commit it with your change
+npm run build       # writes dist/, to try your change: leave it out of your commit
 npm run test        # Vitest
 npm run typecheck
 npm run lint
 npm run budget      # the first page stays under 300 KB gzipped
 ```
 
-`npm run dev` rebuilds on every change. CI fails when `dist/` is not what the sources build, so never edit it by hand. Add shadcn/ui components by copying them into `components/ui/`.
+`npm run dev` rebuilds on every change. Both rewrite `dist/` in your checkout, so put it back before you commit: `git checkout -- dist && git clean -fdq dist`. CI fails a pull request that changes `dist/`, and never edit it by hand. Add shadcn/ui components by copying them into `components/ui/`.
 
 ### Trying the dashboard
 
