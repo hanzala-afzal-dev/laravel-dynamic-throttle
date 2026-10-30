@@ -6,6 +6,7 @@
 - Related: ADR-0004, ADR-0011, ADR-0014
 - Amended by: [ADR-0018](0018-minimal-dashboard.md) (Blade dashboard instead of an SPA)
 - Amended: 2026-10-14, the dashboard's routes run behind `['web']` by default, and the gates decide (SPEC-018, see the decision record)
+- Amended: 2026-10-30 by [ADR-0031](0031-dashboard-links.md): with `dashboard.links` on, a one-time link from `dynamic-throttle:link` opens the dashboard too, and the audit log records each link made, used and ended (SPEC-034).
 
 ## Context
 
