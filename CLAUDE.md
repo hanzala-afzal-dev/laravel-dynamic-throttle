@@ -50,3 +50,5 @@ Decisions live in docs/adr/ (index: docs/adr/README.md). Feature specs live in d
 - PHP 8.3, `declare(strict_types=1)`, final classes by default, readonly value objects, backed enums instead of string constants.
 - Pest tests. Test names start with the acceptance-criterion id when one exists: `it('AC-3: …')`.
 - Conventional commits (`feat:`, `fix:`, `test:`, `docs(spec):`, `refactor:`, `ci:`, `chore:`).
+- Public files are for users only (ADR-0033): `README.md`, `docs/guide/`, `docs/runbook.md`, `docs/site/` and `CHANGELOG.md` never mention or link ADRs, specs, the roadmap, tests, CI, benchmark commands, branches or PRs. State a decision's effect in plain words instead. That content goes in CONTRIBUTING.md, CLAUDE.md, `docs/adr/`, `docs/specs/` and `docs/roadmap.md`.
+- `CHANGELOG.md` lists only what users notice, under **Added** and **Fixed**. A change an app must act on goes in the release's first paragraph, as its upgrade note. Dependency updates, CI, tests, the docs site and repository changes get no entry.

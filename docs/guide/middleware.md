@@ -1,6 +1,6 @@
 # Attaching the middleware
 
-Rules apply only to routes that run the `dynamic.throttle` middleware, and installing the package attaches it nowhere ([ADR-0020](../adr/0020-laravel-ecosystem-coexistence.md)). Add it to your route groups in `bootstrap/app.php`:
+Rules apply only to routes that run the `dynamic.throttle` middleware, and installing the package attaches it nowhere. Add it to your route groups in `bootstrap/app.php`:
 
 ```php
 ->withMiddleware(function (Middleware $middleware) {

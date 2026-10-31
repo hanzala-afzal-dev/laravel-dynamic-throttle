@@ -50,6 +50,7 @@ This folder records the important decisions for `laravel-dynamic-throttle`: what
 | [0030](0030-dist-built-after-merge.md) | The dashboard's build reaches main in a bot pull request | Accepted | after 0.1.0 |
 | [0031](0031-dashboard-links.md) | One-time links open the dashboard without a gate | Accepted | after 0.1.0 |
 | [0032](0032-develop-and-release-branches.md) | A develop branch, and a release branch for each release | Accepted | after 0.1.0 |
+| [0033](0033-public-docs-for-users.md) | The README, the docs and the changelog are for users only | Accepted | after 0.1.0 |
 
 ## Template
 
