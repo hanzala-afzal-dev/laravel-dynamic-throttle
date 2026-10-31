@@ -198,10 +198,10 @@ Stacked on each other, each green on its own, every one against `develop` (ADR-0
 | PR | Branch | Adds | Covers | `src` lines, about |
 |---|---|---|---|---|
 | 1 | `beta/spec-034-1` | This spec, ADR-0031, ADR-0015's note, the ADR index and the roadmap's line | Decisions | 0 |
-| 2 | `beta/spec-034-2` | The config key, the migration, the model, the token, the audit actions, `EmergencyControls`' link changes and `dynamic-throttle:link` | AC-1 to AC-10 | 450 |
-| 3 | `beta/spec-034-3` | The two routes, using a link, the session's link in the gates, `api/me` and the actor | AC-11 to AC-20 | 350 |
-| 4 | `beta/spec-034-4` | The link's page and the header's line, in the dashboard's frontend | AC-21 to AC-23 | 250 |
-| 5 | `beta/spec-034-5` | The health check, the arch tests, the docs, the changelog, the review's fixes, and the spec's close | AC-24 to AC-26 | 100 |
+| 2 | `feat/spec-034-2` | The config key, the migration, the model, the token, the audit actions, `EmergencyControls`' link changes and `dynamic-throttle:link` | AC-1 to AC-10 | 450 |
+| 3 | `feat/spec-034-3` | The two routes, using a link, the session's link in the gates, `api/me` and the actor | AC-11 to AC-20 | 350 |
+| 4 | `feat/spec-034-4` | The link's page and the header's line, in the dashboard's frontend | AC-21 to AC-23 | 250 |
+| 5 | `feat/spec-034-5` | The health check, the arch tests, the docs, the changelog, the review's fixes, and the spec's close | AC-24 to AC-26 | 100 |
 
 ## Open questions
 
