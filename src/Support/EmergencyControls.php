@@ -10,6 +10,7 @@ use Afzal\DynamicThrottle\Compiler\ManifestCompileFailed;
 use Afzal\DynamicThrottle\Enums\AuditAction;
 use Afzal\DynamicThrottle\Enums\SettingName;
 use Afzal\DynamicThrottle\Models\AuditEntry;
+use Afzal\DynamicThrottle\Models\DashboardLink;
 use Afzal\DynamicThrottle\Models\Exemption;
 use Afzal\DynamicThrottle\Models\Rule;
 use Afzal\DynamicThrottle\Models\Setting;
@@ -248,6 +249,86 @@ final readonly class EmergencyControls
     }
 
     /**
+     * Saves a new dashboard link, with its link.create entry (SPEC-034). The entry says
+     * who it is for, what it allows, when it ends and who made it, never the token or
+     * its hash. Links are not in the manifest, so nothing compiles.
+     *
+     * @throws TableMissing|Throwable from the database, with nothing written
+     */
+    public function createLink(string $name, string $tokenHash, bool $canManage, CarbonInterface $expiresAt, Actor $actor): DashboardLink
+    {
+        $this->requireTable(new DashboardLink);
+        $this->requireTable(new AuditEntry);
+
+        // Created inside the transaction, so a retry after a deadlock inserts afresh.
+        return (new DashboardLink)->getConnection()->transaction(function () use ($name, $tokenHash, $canManage, $expiresAt, $actor): DashboardLink {
+            $link = DashboardLink::query()->create([
+                'name' => $name,
+                'token_hash' => $tokenHash,
+                'can_manage' => $canManage,
+                'created_by' => $actor->name,
+                'expires_at' => $expiresAt,
+            ])->refresh();
+            $this->audit($actor, AuditAction::LinkCreate, "link:{$link->id}", null, [
+                'name' => $link->name,
+                'can_manage' => $link->can_manage,
+                'expires_at' => $link->expires_at->toIso8601String(),
+                'created_by' => $link->created_by,
+            ]);
+
+            return $link;
+        }, self::ATTEMPTS);
+    }
+
+    /**
+     * Ends a link, used or not, with its link.revoke entry. False when it had already
+     * ended, revoked or expired, as read again, locked.
+     *
+     * @throws TableMissing|Throwable from the database, with nothing written
+     */
+    public function revokeLink(DashboardLink $link, Actor $actor): bool
+    {
+        $this->requireTable(new DashboardLink);
+        $this->requireTable(new AuditEntry);
+
+        return $link->getConnection()->transaction(function () use ($link, $actor): bool {
+            $current = DashboardLink::query()->whereKey($link->getKey())->lockForUpdate()->first();
+
+            if (! $current instanceof DashboardLink || $current->ended()) {
+                return false;
+            }
+
+            $this->endLink($current, $actor);
+
+            return true;
+        }, self::ATTEMPTS);
+    }
+
+    /**
+     * Ends every link that has not ended, each with its own link.revoke entry, in one
+     * transaction: all of them, or none when an entry cannot be written.
+     *
+     * @return int how many it ended
+     *
+     * @throws TableMissing|Throwable from the database, with nothing written
+     */
+    public function revokeLinks(Actor $actor): int
+    {
+        $this->requireTable(new DashboardLink);
+        $this->requireTable(new AuditEntry);
+
+        return (new DashboardLink)->getConnection()->transaction(function () use ($actor): int {
+            $links = DashboardLink::query()->active()->orderBy('id')->lockForUpdate()->get();
+
+            foreach ($links as $link) {
+                $this->endLink($link, $actor);
+            }
+
+            return $links->count();
+        }, self::ATTEMPTS);
+    }
+
+    /**
      * Turns a setting on with a value, or off with null.
      *
      * @throws TableMissing|Throwable from the database, with nothing written
@@ -317,6 +398,14 @@ final readonly class EmergencyControls
             // In a surrounding transaction, the observer compiles when it commits.
             default => ChangeOutcome::pending(),
         };
+    }
+
+    private function endLink(DashboardLink $link, Actor $actor): void
+    {
+        $revokedAt = Date::now();
+        $link->revoked_at = $revokedAt;
+        $link->save();
+        $this->audit($actor, AuditAction::LinkRevoke, "link:{$link->id}", ['revoked_at' => null], ['revoked_at' => $revokedAt->toIso8601String()]);
     }
 
     private function ended(Setting $setting): bool
