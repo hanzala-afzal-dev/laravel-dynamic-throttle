@@ -416,7 +416,7 @@ it('AC-1: makes no link when its audit entry cannot be written', function (): vo
 });
 
 it('AC-9: refuses every mode while links are off, the default, without reading the table', function (array $options): void {
-    config()->set('dynamic-throttle.dashboard.links', null);
+    config()->set('dynamic-throttle.dashboard.links');
     Schema::drop('dynamic_throttle_links');
 
     [$code, $output] = linkCommand($options);
