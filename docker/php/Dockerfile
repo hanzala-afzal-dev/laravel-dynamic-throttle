@@ -8,7 +8,7 @@
 ARG PHP_VERSION=8.3
 
 FROM composer:2 AS composer
-FROM mlocati/php-extension-installer:2.11.33 AS extension-installer
+FROM mlocati/php-extension-installer:2.12.3 AS extension-installer
 
 FROM php:${PHP_VERSION}-cli
 
