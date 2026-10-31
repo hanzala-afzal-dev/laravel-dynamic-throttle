@@ -1,6 +1,6 @@
 # Dry-run rules
 
-A rule whose `mode` is `dry_run` counts requests exactly as an enforcing rule does, but never rejects one and sets no headers. When it would have rejected a request, the middleware dispatches `RateLimitWouldBlock` after the response has been sent, so a listener never slows the response ([ADR-0012](../adr/0012-dry-run.md)):
+A rule whose `mode` is `dry_run` counts requests exactly as an enforcing rule does, but never rejects one and sets no headers. When it would have rejected a request, the middleware dispatches `RateLimitWouldBlock` after the response has been sent, so a listener never slows the response:
 
 ```php
 use Afzal\DynamicThrottle\Events\RateLimitWouldBlock;

@@ -1,6 +1,6 @@
 # The dashboard
 
-The dashboard ships with the package, as Horizon's does: open `/dynamic-throttle` in your browser. There is nothing to build or publish; the package serves its own assets. This page covers where it is served, who gets in, its pages, how it protects itself, and its JSON API ([ADR-0015](../adr/0015-dashboard-security-and-audit.md), [ADR-0028](../adr/0028-dashboard-react-shadcn.md), [SPEC-018](../specs/018-dashboard-access-and-guardrails.md), [SPEC-020](../specs/020-dashboard-foundation.md), [SPEC-021](../specs/021-dashboard-overview.md), [SPEC-017](../specs/017-json-api.md)).
+The dashboard ships with the package, as Horizon's does: open `/dynamic-throttle` in your browser. There is nothing to build or publish; the package serves its own assets. This page covers where it is served, who gets in, its pages, how it protects itself, and its JSON API.
 
 ## Where it is
 
@@ -145,7 +145,7 @@ Everything the dashboard saves is checked first, so a rule saved there always co
 
 ## The JSON API
 
-The dashboard's pages read and change everything through a JSON API under `{path}/api`, which you can call too, for example from a script with a session. It is internal until it is declared stable, so its shape may still change before 1.0 ([SPEC-017](../specs/017-json-api.md)).
+The dashboard's pages read and change everything through a JSON API under `{path}/api`, which you can call too, for example from a script with a session. It is internal until it is declared stable, so its shape may still change before 1.0.
 
 | Endpoint | Gate | Does |
 |---|---|---|
