@@ -193,7 +193,7 @@ Public API (ADR-0017): a new config key, a new command, a new migration, and new
 
 ## PRs
 
-Stacked on each other, each green on its own, every one against `main` (ADR-0027). This first one is the spec and ADR-0031 alone, since ADR-0031 amends ADR-0015: no code until it is reviewed. The review subagent reads PRs 2 and 3 before they open; its findings become acceptance criteria here, fixed test-first.
+Stacked on each other, each green on its own, every one against `develop` (ADR-0027, ADR-0032). This first one is the spec and ADR-0031 alone, since ADR-0031 amends ADR-0015: no code until it is reviewed. The review subagent reads PRs 2 and 3 before they open; its findings become acceptance criteria here, fixed test-first.
 
 | PR | Branch | Adds | Covers | `src` lines, about |
 |---|---|---|---|---|
