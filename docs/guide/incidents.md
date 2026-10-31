@@ -1,6 +1,6 @@
 # During an incident
 
-Two runtime settings change every rule at once, without a deploy, and end by themselves ([ADR-0011](../adr/0011-emergency-controls.md)). They need the package's newest migrations: publish them and run `php artisan migrate`.
+Two runtime settings change every rule at once, without a deploy, and end by themselves. They need the package's newest migrations: publish them and run `php artisan migrate`.
 
 ```bash
 php artisan dynamic-throttle:bypass on --for=30m   # every request goes through, unlimited

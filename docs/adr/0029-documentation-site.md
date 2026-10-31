@@ -4,6 +4,7 @@
 - Date: 2026-10-25
 - Roadmap phase: 6
 - Amended: 2026-10-25, the site is for the package's users: no ADRs and no edit links (see the decision record)
+- Amended: 2026-10-31 by [ADR-0033](0033-public-docs-for-users.md): guide pages no longer cite or link ADRs, specs or other files for contributors, and neither do the README and the changelog.
 
 ## Context
 

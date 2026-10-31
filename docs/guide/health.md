@@ -1,6 +1,6 @@
 # Health checks
 
-The package lets requests through when something is wrong ([ADR-0010](../adr/0010-failure-policy.md)), so a mistake in its setup can switch limits off without a sound. `dynamic-throttle:health` looks for those mistakes:
+The package lets requests through when something is wrong, so a mistake in its setup can switch limits off without a sound. `dynamic-throttle:health` looks for those mistakes:
 
 ```bash
 php artisan dynamic-throttle:health            # a line per check

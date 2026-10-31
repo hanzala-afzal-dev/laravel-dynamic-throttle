@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Before 1.0, minor versions may contain breaking changes; they are called out under **Changed** with an upgrade note.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Each release lists what is new and what is fixed. Before 1.0, a minor version may contain breaking changes: the release's first paragraph says what to change in your app.
 
 ## [Unreleased]
 
@@ -12,12 +12,7 @@ The first stable release, after two betas: `composer require hanzala-afzal/larav
 
 ### Added
 
-- The `unreached` health check warns about a rule that matches routes of the app, none of which limits it: they do not run `dynamic.throttle`, or `except` covers their paths. Such a rule never applies, and nothing said so. A new user's Login rule did that while only the `api` group ran the middleware ([SPEC-035](docs/specs/035-unreached-rules.md), [#149](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/149)).
-
-### Changed
-
-- The package is out of beta: `composer require hanzala-afzal/laravel-dynamic-throttle` installs it, and the README, its banner and the documentation site no longer say beta. Later fixes ship as `0.1.x`.
-- The documentation site is for the package's users: it no longer shows the design decisions (ADRs), and its pages no longer link to editing them on GitHub. The ADRs stay in the repository, and the guide's links to them open them on GitHub.
+- The `unreached` health check warns about a rule that matches routes of the app, none of which limits it: they do not run `dynamic.throttle`, or `except` covers their paths. Such a rule never applies, and nothing said so. A new user's Login rule did that while only the `api` group ran the middleware ([#149](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/149)).
 
 ### Fixed
 
@@ -26,7 +21,7 @@ The first stable release, after two betas: `composer require hanzala-afzal/larav
 - The rules guide explains how a limit counts: why a client at its limit can get a request through between 429s, and that a rule you promote keeps what it counted in dry-run ([#154](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/154)).
 - `dynamic-throttle:health` no longer warns that the metrics were not flushed right after install, before any rule is enabled: nothing is counted then, so the `metrics` check is skipped. It also came back after moving the counters to another Redis connection ([#150](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/150)).
 - The `redis-timeouts` check names the connections to give timeouts, such as `"cache"`, which holds the manifest. It said "a connection for the package", so after following the guide's dedicated connection, the warning stayed with no hint why. The guide now shows the cache connection's timeouts in code too ([#151](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/151)).
-- Health messages and the published config file no longer point to specs, ADRs or `docs/` paths, which an app does not have. Messages link to the documentation site instead ([#152](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/152)).
+- Health messages and the published config file no longer point to files in the package's repository, which an app does not have. Messages link to the documentation site instead ([#152](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/152)).
 - The dashboard's wording: on the Settings page, what each health check looks for is labelled "Looks for:", so under an OK it no longer reads as a problem. Offenders say "1 client blocked" instead of "1 different clients blocked", and for a rule in dry-run, which blocks no one, they show would-blocks ([#153](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/153)).
 
 ## [0.1.0-beta.2] - 2026-10-25
@@ -37,9 +32,9 @@ The second beta: three new health checks, a documentation site, and fixes for Wi
 
 - The `redis-timeouts` health check warns when a Redis connection that requests use, for the counters or the manifest, has no timeout, or one above a second, so a Redis that hangs holds requests that long or more. Without timeouts, phpredis waits PHP's `default_socket_timeout`, 60 seconds by default, before the limits fail open. The docs now show a dedicated connection with 0.25-second timeouts ([timeouts](docs/guide/storage-and-runtimes.md#timeouts)), and the runbook has a "Redis hangs" scenario ([#99](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/99)).
 - The `apcu` health check warns when the web server's PHP, such as PHP-FPM, runs without APCu: every request then reads the rules from the cache first, and an outage costs every request a try. The dashboard's Settings page runs it in the web server; `dynamic-throttle:health` in the command line says it cannot tell ([#100](https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/issues/100)).
-- The `dashboard` health check warns when nobody can open the dashboard: outside the `local` environment, the app defines neither `viewDynamicThrottle` nor `manageDynamicThrottle`, so every visitor gets a 403 that says nothing about why. `--strict` then exits 1, so a deploy script catches a forgotten gate ([SPEC-033](docs/specs/033-dashboard-access-check.md)).
+- The `dashboard` health check warns when nobody can open the dashboard: outside the `local` environment, the app defines neither `viewDynamicThrottle` nor `manageDynamicThrottle`, so every visitor gets a 403 that says nothing about why. `--strict` then exits 1, so a deploy script catches a forgotten gate.
 - The guide has a page on [removing the package](docs/guide/uninstalling.md): first what names it, since a route that still runs `dynamic.throttle` fails with a 500 once the package is gone, then the package. It lists what stays behind and how to drop the tables.
-- The documentation is also a website, with search: <https://hanzala-afzal-dev.github.io/laravel-dynamic-throttle/>. It shows the guide, the runbook and the design decisions, built from the same Markdown ([ADR-0029](docs/adr/0029-documentation-site.md)).
+- The documentation is also a website, with search: <https://hanzala-afzal-dev.github.io/laravel-dynamic-throttle/>. It shows the guide and the runbook.
 
 ### Fixed
 
@@ -102,7 +97,7 @@ The first public beta.
   - It lets through, untouched, the paths in `except` (by default Horizon, Telescope, Pulse, Nova, Livewire 3 and 4, `broadcasting/auth`, `sanctum/csrf-cookie` and `up`), the package's own routes, and every request while `enabled` is off.
   - A limited request gets Laravel's 429 through your exception handler, or the rule's `response_override` as its JSON body, with `Retry-After`, `X-RateLimit-Reset`, `X-RateLimit-Limit` and `X-RateLimit-Remaining`. An allowed request gets `X-RateLimit-Limit` and `X-RateLimit-Remaining` from its most restrictive enforcing rule. Dry-run rules set no headers.
   - When something fails while deciding, such as the counter store, a config value or one of your scope resolvers, the request goes through, unless a rule fails closed (below), and the error is reported.
-- Emergency controls: runtime settings that change every rule without a deploy, and end by themselves (ADR-0011).
+- Emergency controls: runtime settings that change every rule without a deploy, and end by themselves.
   - `php artisan dynamic-throttle:bypass on|off` lets every request through, unlimited. `dynamic-throttle:scale <factor>|off` multiplies every rule's limit by 0.1 to 10, rounding up, dry-run rules too.
   - `--for` sets how long, such as `30m`, `2h` or `1d`, and one hour without it. `--forever` sets no end time. Every server stops applying a setting at its end time, even without a compile.
   - In production, turning bypass on, a factor below 1 and disabling an enforcing rule ask for confirmation, and `--force` skips it.
@@ -147,7 +142,7 @@ The first public beta.
   - `POST api/explain`, with the view gate, which masks bearer tokens and header values;
   - every change writes one audit entry, with the user, the IP and the user agent, in the same transaction.
   - `GET api/audit` reads the audit log, newest first, filtered by action, target, actor and time.
-- The dashboard's pages, at `/dynamic-throttle`, with nothing to install or publish: React and shadcn/ui, built into the package (ADR-0028).
+- The dashboard's pages, at `/dynamic-throttle`, with nothing to install or publish: React and shadcn/ui, built into the package.
   - A sidebar, the app's environment and your role in the header, light and dark themes that follow your system, and a banner on every page while bypass or a scale factor is on, with a button to turn it off.
   - The Overview: health, the rule counts, the last hour's blocks and would-blocks, a traffic chart over an hour, a day or a week, the top rules by blocks, and the controls for bypass and the scale factor, with a confirmation for the dangerous ones.
   - `GET api/rules/counts`: the enabled rules by mode, and the disabled ones.
@@ -164,7 +159,7 @@ The first public beta.
   - A strict Content Security Policy, `X-Frame-Options: DENY`, and assets cached for a year.
   - in a dashboard request, explain never takes the admin who sends it for the request it explains.
   - behind `auth:<guard>` in `dashboard.middleware`, a user id alone still means a user of the app's default guard, in exemptions and in explain.
-- The runbook, `docs/runbook.md`: what to do when Redis is down, the manifest was evicted, a bad rule blocks `/api`, or an emergency change was left on. A test follows each scenario's steps.
+- The runbook: what to do when Redis is down, the manifest was evicted, a bad rule blocks `/api`, or an emergency change was left on.
 - On PHP-FPM with APCu, a manifest the cache cannot give is reported at most once per 30 seconds per server, as the counter store's errors are once per cooldown.
   - It prints a line per check, `ok`, `warning`, `error` or `skipped`, with what to do, or `--json`.
   - It exits 1 when a check errs, and with `--strict` when one warns too. It changes nothing.

@@ -61,6 +61,17 @@ docker compose down -v
 
 `docker compose run --rm php scripts/verify-install.sh 13` installs the package into a fresh Laravel app and checks that it boots.
 
+The comparison on the guide's [performance page](docs/guide/performance.md), with no limiter, Laravel's `throttle` and Dynamic Throttle, runs like this ([the recorded results](benchmarks/results/phase-6-comparison.md)):
+
+```bash
+docker compose up -d redis
+vendor/bin/phpbench run benchmarks/Http/ComparisonBench.php --report=engine --dump-file=run.xml
+php benchmarks/percentiles.php run.xml
+php -d apc.enable_cli=1 benchmarks/round-trips.php
+```
+
+The first command takes about 20 minutes: each request runs in a process of its own, so the 200 per case give the spread of single requests.
+
 ## Style
 
 - PHP 8.3 syntax, `declare(strict_types=1)` everywhere, final classes by default, readonly value objects, and backed enums instead of string constants.
@@ -117,6 +128,13 @@ With PHP 8.3 or later installed instead, `composer serve` builds, seeds and serv
 As a guest you are a manager. To see the dashboard as a viewer, open `/_workbench/login/viewer@example.com`. `/_workbench/logout` signs you out again.
 
 After pulling changes, restart the demo. `npm run build` changes take effect on the next page load.
+
+## Writing for users ([ADR-0033](docs/adr/0033-public-docs-for-users.md))
+
+The README, the guide, the runbook, the docs site and the changelog are for the package's users. They say what it does, how to use it, what is new and what is fixed.
+
+- **Nothing about developing the package goes there,** and no link to it: no ADRs, specs, roadmap, tests, CI, benchmark commands, branches or pull requests. A guide page says what a decision means for the user, in its own words. That material belongs in this file, `CLAUDE.md`, `docs/adr/`, `docs/specs/` and `docs/roadmap.md`.
+- **The changelog lists what users notice,** under **Added** and **Fixed**. When a release needs a change in an app, its first paragraph says what to do. Dependency updates, CI, tests, the docs site and changes to the repository get no entry.
 
 ## The documentation site ([ADR-0029](docs/adr/0029-documentation-site.md))
 
