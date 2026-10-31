@@ -1,6 +1,6 @@
 # SPEC-034: Dashboard links for apps without a login, and for incidents
 
-- Status: Draft
+- Status: In progress
 - ADRs: ADR-0031 (new, amends ADR-0015), ADR-0007, ADR-0011, ADR-0017, ADR-0027
 - Roadmap phase: after 0.1.0, in 0.2.0
 
@@ -66,14 +66,14 @@ The maintainer vetoes any of these in this PR (ADR-0027). **(roadmap)** marks wh
 - More than one mode: `Pass one of --name, --list, --revoke or --revoke-all.`
 - Made, view only:
   ```
-  Link 7 for "alice, incident 42": view only, until 2026-10-30 11:30 UTC.
+  Link 7 for "alice, incident 42": view only, until 2026-10-30 11:30:00 UTC.
   https://example.com/dynamic-throttle/link#<token>
   It works once, in one browser. Send it privately: until it is used, anyone who has it can open the dashboard.
   End it early with: php artisan dynamic-throttle:link --revoke=7
   ```
   With `--manage`, "view only" reads "can view and change rules, exemptions and settings".
 - Over `http://`: `The link starts with http://, so anyone on the network can read it: set APP_URL to an https:// address.`
-- Confirming `--manage`: `The link lets whoever holds it change rules, exemptions and settings until 2026-10-30 11:30 UTC`
+- Confirming `--manage`: `The link lets whoever holds it change rules, exemptions and settings until 2026-10-30 11:30:00 UTC`
 - Revoked: `Link 7 for "alice, incident 42" has ended.` Already ended: `Link 7 has already ended.` Unknown: `No link has the id 99.`
 - Revoked all: `Ended 3 links.` None: `No link is active.`
 - A link that cannot be used: `This link is not valid: it was already used, it was revoked, or it has expired. Ask for a new one.`

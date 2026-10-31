@@ -98,6 +98,11 @@ return [
     | Laravel's own throttle: "rate_limit" requests a minute per user, or per
     | IP for a guest, and 0 turns it off.
     |
+    | "links" lets php artisan dynamic-throttle:link make one-time links that
+    | open the dashboard for up to a day, for an app without a user login, or
+    | for a helper during an incident. They need their own table: publish the
+    | package's newest migrations and run php artisan migrate.
+    |
     */
 
     'dashboard' => [
@@ -106,6 +111,7 @@ return [
         'domain' => env('DYNAMIC_THROTTLE_DASHBOARD_DOMAIN'),
         'middleware' => ['web'],
         'rate_limit' => 120,
+        'links' => env('DYNAMIC_THROTTLE_DASHBOARD_LINKS', false),
     ],
 
     /*
