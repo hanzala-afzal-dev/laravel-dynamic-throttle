@@ -69,7 +69,8 @@ it('AC-1: makes a link that only views, for 60 minutes, and prints it once', fun
         ->and($output)->toContain('It works once, in one browser. Send it privately: until it is used, anyone who has it can open the dashboard.')
         ->and($output)->toContain("End it early with: php artisan dynamic-throttle:link --revoke={$row['id']}")
         ->and($token)->toMatch('/\A[A-Za-z0-9_-]{43}\z/')
-        ->and(base64_decode(strtr($token, '-_', '+/'), true))->toHaveLength(32);
+        // strlen, not toHaveLength: Pest counts a text's characters, and random bytes are no UTF-8 text.
+        ->and(strlen((string) base64_decode(strtr($token, '-_', '+/'), true)))->toBe(32);
 });
 
 it('AC-1: stores only the token\'s SHA-256 hash, with who the link is for, what it allows, when it ends and who made it', function (): void {
