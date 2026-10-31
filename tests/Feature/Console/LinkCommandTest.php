@@ -429,7 +429,7 @@ it('AC-9: refuses every mode while links are off, the default, without reading t
     'revoke all' => [['--revoke-all' => true]],
 ]);
 
-it('AC-9: takes links as off for any value but true', function (mixed $value): void {
+it('AC-9: takes links as off for any value that does not mean true', function (mixed $value): void {
     config()->set('dynamic-throttle.dashboard.links', $value);
 
     [$code, $output] = linkCommand(['--name' => 'alice']);
@@ -480,3 +480,87 @@ it('AC-10: refuses two modes at once, and writes nothing', function (array $opti
     '--name and --list' => [['--name' => 'x', '--list' => true]],
     '--revoke and --revoke-all' => [['--revoke' => '1', '--revoke-all' => true]],
 ]);
+
+/*
+| From the security review, each fixed test-first: AC-27 to AC-31.
+*/
+
+it('AC-27: builds the link on dashboard.domain as Laravel serves it: without a scheme of its own, and with APP_URL\'s port', function (array $config, string $link): void {
+    foreach ($config as $key => $value) {
+        config()->set($key, $value);
+    }
+
+    [$code, $output] = linkCommand(['--name' => 'alice']);
+
+    // The whole line, so a doubled scheme such as https://https://… cannot pass.
+    expect($code)->toBe(0)->and($output)->toMatch('~^'.preg_quote($link, '~').'[A-Za-z0-9_-]{43}$~m');
+})->with([
+    'a domain with https://' => [['dynamic-throttle.dashboard.domain' => 'https://admin.example.com'], 'https://admin.example.com/dynamic-throttle/link#'],
+    'a domain with http://, on an https APP_URL' => [['dynamic-throttle.dashboard.domain' => 'http://admin.example.com'], 'https://admin.example.com/dynamic-throttle/link#'],
+    'APP_URL with a port' => [['app.url' => 'http://localhost:8000', 'dynamic-throttle.dashboard.domain' => 'admin.test'], 'http://admin.test:8000/dynamic-throttle/link#'],
+    'APP_URL with its default port' => [['app.url' => 'https://example.com:443', 'dynamic-throttle.dashboard.domain' => 'admin.example.com'], 'https://admin.example.com/dynamic-throttle/link#'],
+]);
+
+it('AC-28: never prints the token or its hash when the database refuses the link', function (): void {
+    DB::statement("CREATE TRIGGER links_down BEFORE INSERT ON dynamic_throttle_links BEGIN SELECT RAISE(ABORT, 'The links table is down.'); END");
+
+    [$code, $output] = linkCommand(['--name' => 'alice']);
+
+    expect($code)->toBe(1)
+        ->and($output)->toContain('Could not save the change:')->toContain('The links table is down.')
+        ->and($output)->not->toMatch('/[0-9a-f]{64}/')->not->toContain('/link#')
+        ->and(linkCount())->toBe(0);
+});
+
+it('AC-29: counts an option given without a value as its mode', function (array $options, string $message): void {
+    linkCommand(['--name' => 'alice']);
+
+    [$code, $output] = linkCommand($options);
+
+    expect($code)->toBe(1)
+        ->and($output)->toContain($message)
+        ->and(linkCount())->toBe(1)
+        ->and(linkRows()[0]['revoked_at'])->toBeNull();
+})->with([
+    '--name without a value, and --revoke-all' => [['--name' => null, '--revoke-all' => true], 'Pass one of --name, --list, --revoke or --revoke-all.'],
+    '--revoke without a value, and --name' => [['--revoke' => null, '--name' => 'bob'], 'Pass one of --name, --list, --revoke or --revoke-all.'],
+    '--revoke without a value' => [['--revoke' => null], '--revoke must be a link\'s id, a whole number, got "".'],
+    '--name without a value' => [['--name' => null], '--name is required: who the link is for, such as "alice, incident 42".'],
+]);
+
+it('AC-30: refuses a --name of only Unicode spaces as empty', function (string $name): void {
+    [$code, $output] = linkCommand(['--name' => $name]);
+
+    expect($code)->toBe(1)
+        ->and($output)->toContain('--name is required: who the link is for, such as "alice, incident 42".')
+        ->and(linkCount())->toBe(0);
+})->with([
+    'no-break spaces' => ["\u{00A0}\u{00A0}"],
+    'an ideographic space' => ["\u{3000}"],
+    'a tab and a line separator' => ["\t\u{2028}"],
+]);
+
+it('AC-30: trims Unicode spaces around a --name', function (): void {
+    linkCommand(['--name' => "\u{00A0}alice\u{3000}"]);
+
+    expect(linkRows()[0]['name'])->toBe('alice');
+});
+
+it('AC-30: warns about http:// in any case', function (): void {
+    config()->set('app.url', 'HTTP://example.com');
+    $this->app['env'] = 'production';
+
+    [, $output] = linkCommand(['--name' => 'alice']);
+
+    expect($output)->toContain('The link starts with http://, so anyone on the network can read it: set APP_URL to an https:// address.');
+});
+
+it('AC-31: says the dashboard has no path when dashboard.path is empty', function (): void {
+    config()->set('dynamic-throttle.dashboard.path', '');
+
+    [$code, $output] = linkCommand(['--name' => 'alice']);
+
+    expect($code)->toBe(1)
+        ->and($output)->toContain('The dashboard has no path (dynamic-throttle.dashboard.path), so a link would open nothing.')
+        ->and(linkCount())->toBe(0);
+});
