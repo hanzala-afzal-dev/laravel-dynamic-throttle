@@ -49,8 +49,8 @@ it('SPEC-022 AC-16: searches ignoring case, with %, _ and \\ as themselves', fun
         $schema = Schema::connection("search-{$driver}");
         $schema->disableForeignKeyConstraints();
 
-        foreach (['metrics_hourly', 'audit_log', 'settings', 'exemptions', 'rules'] as $table) {
-            $schema->dropIfExists("dynamic_throttle_{$table}");
+        foreach (RuleSchema::tables() as $table) {
+            $schema->dropIfExists($table);
         }
 
         RuleSchema::unlock();
