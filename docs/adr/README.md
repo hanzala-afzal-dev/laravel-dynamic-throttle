@@ -49,6 +49,7 @@ This folder records the important decisions for `laravel-dynamic-throttle`: what
 | [0029](0029-documentation-site.md) | A documentation site on GitHub Pages, built from docs/ | Accepted | 6 |
 | [0030](0030-dist-built-after-merge.md) | The dashboard's build reaches main in a bot pull request | Accepted | after 0.1.0 |
 | [0032](0032-develop-and-release-branches.md) | A develop branch, and a release branch for each release | Accepted | after 0.1.0 |
+| [0033](0033-public-docs-for-users.md) | The README, the docs and the changelog are for users only | Accepted | after 0.1.0 |
 
 ## Template
 
