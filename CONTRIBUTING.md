@@ -28,6 +28,20 @@ Tiny changes can skip the spec. Bug fixes always start with a failing regression
 
 If a spec would break an ADR, write a new ADR that supersedes the old one first.
 
+## Branches and releases ([ADR-0032](docs/adr/0032-develop-and-release-branches.md))
+
+`main` holds the last release: its README, its docs and its changelog. The work collects in `develop`.
+
+- **Pull requests go to `develop`.** Start your branch from `develop`, and open the pull request against it. CI fails a pull request into `main` unless its branch is `release/<version>`.
+- **A release goes through a release branch:**
+  1. Merge `develop`'s open "chore: build dist" pull request, if there is one.
+  2. Start `release/<version>` from `develop`. In `CHANGELOG.md`, move the Unreleased entries under a heading with the version and the day you will tag it. Open a pull request into `main`.
+  3. CI runs the integration run on it: the full matrix, the driver tests on every store, mutation testing of the whole engine, installs into fresh Laravel 12 and 13 apps, and a check that `dist/` is what the sources build.
+  4. Fix any problem on the release branch, with a pull request against it.
+  5. Once it is green, the maintainer merges it, tags the merge commit on `main` as `v<version>`, and publishes the GitHub release. Packagist updates on its own.
+  6. Open a pull request from `main` into `develop`, so `develop` gets the release's changelog heading.
+- **There are no hotfix branches:** a fix for a released version ships with the next release from `develop`.
+
 ## Local setup
 
 The test suite runs in Docker, so you do not need PHP 8.3 installed:
@@ -69,7 +83,7 @@ A PR that changes any of them must say so, and a breaking change needs an upgrad
 
 ## Working on the dashboard ([ADR-0028](docs/adr/0028-dashboard-react-shadcn.md), [ADR-0030](docs/adr/0030-dist-built-after-merge.md))
 
-The dashboard is React with shadcn/ui, in `resources/dashboard/`. Vite builds it into `dist/`, which is committed: users get the build and install nothing. Pull requests leave `dist/` alone: after each merge, the Build dist workflow builds it and opens a pull request with it, "chore: build dist". You need Node 22.
+The dashboard is React with shadcn/ui, in `resources/dashboard/`. Vite builds it into `dist/`, which is committed: users get the build and install nothing. Pull requests leave `dist/` alone: after each merge into `develop`, the Build dist workflow builds it and opens a pull request with it, "chore: build dist". You need Node 22.
 
 ```bash
 npm ci
