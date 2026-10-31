@@ -13,6 +13,7 @@ use Afzal\DynamicThrottle\Support\EmergencyControls;
 use Afzal\DynamicThrottle\Support\TableMissing;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\Config\Repository as Config;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -47,10 +48,11 @@ final class LinkCommand extends ChangeCommand
 
     public function handle(EmergencyControls $controls, Config $config): int
     {
+        // Given, not only given a value: --name --revoke-all must refuse, not end every link (the review).
         $modes = array_keys(array_filter([
-            'make' => $this->option('name') !== null,
+            'make' => $this->input->hasParameterOption('--name', true),
             'list' => $this->option('list') === true,
-            'revoke' => $this->option('revoke') !== null,
+            'revoke' => $this->input->hasParameterOption('--revoke', true),
             'revoke-all' => $this->option('revoke-all') === true,
         ]));
 
@@ -58,10 +60,14 @@ final class LinkCommand extends ChangeCommand
             return $this->refuse('Pass one of --name, --list, --revoke or --revoke-all.');
         }
 
+        if ($config->get('dynamic-throttle.dashboard.enabled') === false) {
+            return $this->refuse('The dashboard is off (dynamic-throttle.dashboard.enabled), so a link would open nothing.');
+        }
+
         $path = DashboardPath::of($config);
 
         if ($path === null) {
-            return $this->refuse('The dashboard is off (dynamic-throttle.dashboard.enabled), so a link would open nothing.');
+            return $this->refuse('The dashboard has no path (dynamic-throttle.dashboard.path), so a link would open nothing.');
         }
 
         // Before the table is read, so an app that never turns links on needs no migration (decision 2).
@@ -90,7 +96,8 @@ final class LinkCommand extends ChangeCommand
     private function make(EmergencyControls $controls, Config $config, string $path): int
     {
         $name = $this->option('name');
-        $name = is_string($name) ? trim($name) : '';
+        // Unicode spaces too, such as a no-break space, so a name cannot look blank (the review).
+        $name = is_string($name) ? (preg_replace('/\A[\s\p{Z}]+|[\s\p{Z}]+\z/u', '', $name) ?? $name) : '';
 
         if ($name === '') {
             return $this->refuse('--name is required: who the link is for, such as "alice, incident 42".');
@@ -141,7 +148,7 @@ final class LinkCommand extends ChangeCommand
         $this->line('It works once, in one browser. Send it privately: until it is used, anyone who has it can open the dashboard.');
         $this->line("End it early with: php artisan dynamic-throttle:link --revoke={$link->id}");
 
-        if (str_starts_with($url, 'http://') && ! $this->laravel->environment('local')) {
+        if (stripos($url, 'http://') === 0 && ! $this->laravel->environment('local')) {
             $this->warn('The link starts with http://, so anyone on the network can read it: set APP_URL to an https:// address.');
         }
 
@@ -215,6 +222,13 @@ final class LinkCommand extends ChangeCommand
 
     private function failed(Throwable $exception): int
     {
-        return $this->refuse($exception instanceof TableMissing ? $exception->getMessage() : 'Could not save the change: '.$exception->getMessage());
+        if ($exception instanceof TableMissing) {
+            return $this->refuse($exception->getMessage());
+        }
+
+        // A query's message lists its values, a new link's token hash among them; the driver's own has none (the review).
+        $cause = $exception instanceof QueryException && $exception->getPrevious() instanceof Throwable ? $exception->getPrevious() : $exception;
+
+        return $this->refuse('Could not save the change: '.$cause->getMessage());
     }
 }

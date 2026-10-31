@@ -37,10 +37,25 @@ final class Links
         $domain = $config->get('dynamic-throttle.dashboard.domain');
 
         if (is_string($domain) && $domain !== '') {
-            $scheme = parse_url($root, PHP_URL_SCHEME);
-            $root = (is_string($scheme) ? $scheme : 'https').'://'.$domain;
+            $root = self::onDomain($root, $domain);
         }
 
         return "{$root}/{$path}/link#{$token}";
+    }
+
+    /**
+     * dashboard.domain as Laravel serves it: without a scheme of its own, as
+     * Route::getDomain() strips one, on APP_URL's scheme, and with APP_URL's port
+     * unless it is the scheme's default, as Laravel's URL generator adds it (the review).
+     */
+    private static function onDomain(string $root, string $domain): string
+    {
+        $parts = parse_url($root);
+        $scheme = is_array($parts) && isset($parts['scheme']) ? strtolower($parts['scheme']) : 'https';
+        $port = is_array($parts) ? ($parts['port'] ?? null) : null;
+        $domain = str_replace(['http://', 'https://'], '', $domain);
+        $default = ($scheme === 'https' && $port === 443) || ($scheme === 'http' && $port === 80);
+
+        return "{$scheme}://{$domain}".($port !== null && ! $default && ! str_contains($domain, ':') ? ":{$port}" : '');
     }
 }
