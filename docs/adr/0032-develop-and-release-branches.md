@@ -3,7 +3,8 @@
 - Status: Accepted
 - Date: 2026-10-31
 - Roadmap phase: after 0.1.0
-- Amends: ADR-0027 (point 3: which branch pull requests target), ADR-0030 (which branch the build goes to), ADR-0017 (point 4: how a release is made), ADR-0016 (what a release's pull request tests)
+- Amended: 2026-10-31, branches are named after their type of change (see the decision record)
+- Amends: ADR-0027 (point 3: which branch pull requests target, and how stacked branches are named), ADR-0030 (which branch the build goes to), ADR-0017 (point 4: how a release is made), ADR-0016 (what a release's pull request tests)
 
 ## Context
 
@@ -13,7 +14,7 @@
 
 ## Decision
 
-1. **`develop` takes every pull request:** features, fixes, Dependabot's updates and the Build dist workflow's build. Branches start from `develop`, and stacked branches (ADR-0027) target it.
+1. **`develop` takes every pull request:** features, fixes, Dependabot's updates and the Build dist workflow's build. Branches start from `develop`, and stacked branches (ADR-0027) target it. A branch is named after its type of change, as its commits are: `feat/`, `fix/`, `docs/`, `ci/`, `chore/`, `refactor/` or `test/`, and a spec's stack is `feat/spec-NNN-M`.
 2. **`main` takes only release branches.** For each release, a `release/<version>` branch starts from `develop`, moves the changelog's Unreleased entries under the version's heading, and opens a pull request into `main`. CI fails a pull request into `main` from any other branch.
 3. **A release's pull request runs the integration run:**
    - the full matrix: PHP 8.3 to 8.5, Laravel 12 and 13, lowest and highest dependencies;
@@ -67,3 +68,5 @@
 ## Decision record
 
 Chosen by the maintainer on 2026-10-31, in chat: a `develop` branch kept up to date; a release branch for each release, with `main` updated last; `main`'s README, docs and changelog showing only what is released; fixes only through `develop`; and full CI with a browser test on each release's pull request.
+
+Amended on 2026-10-31, the same day: the maintainer chose to name branches after their type of change, as the commits are. `beta/<name>` dated from the betas, and `phase-N/spec-NNN-M` from the roadmap's phases.
