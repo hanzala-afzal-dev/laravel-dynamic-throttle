@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # develop collects every pull request, and main takes only releases (ADR-0032).
+    branches: [main, develop]
   pull_request:
     # ready_for_review too: mutation testing waits until a pull request leaves draft (ADR-0016).
     types: [opened, synchronize, reopened, ready_for_review]
@@ -46,9 +47,17 @@ jobs:
           SCHEDULE: ${{ github.event.schedule }}
           WEEKLY: '47 3 * * 1'
           DRAFT: ${{ github.event.pull_request.draft }}
+          BASE: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
+          # ADR-0032: main takes only release branches, and every other pull request goes to develop.
+          if [ "$EVENT" = "pull_request" ] && [ "$BASE" = "main" ] && [[ "$HEAD_REF" != release/* ]]; then
+            echo "::error::main takes only release/<version> branches (ADR-0032). Open this pull request against develop."
+            exit 1
+          fi
+
           private=false
           if [ "$EVENT" = "schedule" ]; then
             private="$(gh api "repos/$REPOSITORY" --jq .private)"
@@ -63,9 +72,10 @@ jobs:
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
 
-          # ADR-0016: pull requests test the lowest and the highest supported versions;
-          # pushes to main, nightly and manual runs test the full matrix.
-          if [ "$EVENT" = "pull_request" ]; then
+          # ADR-0016: pull requests test the lowest and the highest supported versions. A
+          # release's pull request into main (ADR-0032), pushes to main and develop, nightly
+          # and manual runs test the full matrix.
+          if [ "$EVENT" = "pull_request" ] && [ "$BASE" != "main" ]; then
             tests='{"include":[{"php":"8.3","laravel":"12","stability":"prefer-lowest"},{"php":"8.5","laravel":"13","stability":"prefer-stable"}]}'
           else
             tests='{"php":["8.3","8.4","8.5"],"laravel":["12","13"],"stability":["prefer-lowest","prefer-stable"]}'
@@ -76,12 +86,16 @@ jobs:
           # and those its changed tests cover ("files"), or the whole engine when it changes
           # what every test runs on ("full"); scripts/mutation-paths.sh decides. The whole
           # engine is also mutated nightly while the repository is public, weekly while it is
-          # private, and on manual runs. Pushes to main skip it: the merged pull request passed it.
+          # private, on manual runs, and on a release's pull request into main (ADR-0032). Pushes
+          # to main and develop skip it: the merged pull request passed it.
           mutation=false
           paths=
           if [ "$EVENT" = "pull_request" ]; then
             if [ "$DRAFT" = "true" ]; then
               echo "A draft: mutation testing waits until it is ready for review."
+            elif [ "$BASE" = "main" ]; then
+              echo "A release: mutation testing of the whole engine."
+              mutation=full
             else
               paths="$(scripts/mutation-paths.sh HEAD^1 HEAD)"
               case "$paths" in
@@ -500,14 +514,27 @@ jobs:
       - name: The sources build
         run: npm run build
 
-      # The Build dist workflow brings dist/ to main after each merge, in a pull request of
-      # its own (ADR-0030), so two dashboard pull requests never conflict in it.
+      # The Build dist workflow brings dist/ to develop after each merge, in a pull request of
+      # its own (ADR-0030, ADR-0032), so two dashboard pull requests never conflict in it.
       - name: This pull request leaves dist/ alone
-        if: github.event_name == 'pull_request' && github.head_ref != 'bot/build-dist'
+        if: github.event_name == 'pull_request' && github.base_ref != 'main' && !startsWith(github.head_ref, 'bot/build-dist')
+        env:
+          BASE: ${{ github.base_ref }}
         run: |
           changed="$(git diff --name-only HEAD^1 HEAD -- dist)"
           if [ -n "$changed" ]; then
-            echo "::error::dist/ is built after merge by the Build dist workflow (ADR-0030). Leave it out of this pull request: git rm -r -q dist && git checkout origin/main -- dist"
+            echo "::error::dist/ is built after merge by the Build dist workflow (ADR-0030). Leave it out of this pull request: git rm -r -q dist && git checkout origin/${BASE} -- dist"
+            echo "$changed"
+            exit 1
+          fi
+
+      # A release ships the dist/ its branch holds, which the bot built on develop (ADR-0032).
+      - name: The release holds what its sources build
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        run: |
+          changed="$(git status --porcelain -- dist)"
+          if [ -n "$changed" ]; then
+            echo "::error::dist/ is not what the sources build, so this release would ship an older dashboard. Merge the open \"chore: build dist\" pull request into develop, then merge develop into this release branch."
             echo "$changed"
             exit 1
           fi

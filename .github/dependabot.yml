@@ -1,8 +1,13 @@
 version: 2
+
+# Every update goes to develop, which collects the pull requests; main takes only releases
+# (ADR-0032). Dependabot reads this file from main, the default branch, so this takes
+# effect with the first release after it.
 updates:
   # Keeps the SHA-pinned actions in the workflows current.
   - package-ecosystem: github-actions
     directory: /
+    target-branch: develop
     schedule:
       interval: weekly
     groups:
@@ -13,6 +18,7 @@ updates:
 
   - package-ecosystem: composer
     directory: /
+    target-branch: develop
     schedule:
       interval: weekly
     versioning-strategy: increase-if-necessary
@@ -24,6 +30,7 @@ updates:
   # that breaks the build does not hold back the rest.
   - package-ecosystem: npm
     directory: /
+    target-branch: develop
     schedule:
       interval: weekly
     groups:
@@ -37,6 +44,7 @@ updates:
   # The documentation site (ADR-0029).
   - package-ecosystem: npm
     directory: /docs
+    target-branch: develop
     schedule:
       interval: weekly
     groups:
@@ -49,6 +57,7 @@ updates:
 
   - package-ecosystem: docker
     directory: /docker/php
+    target-branch: develop
     schedule:
       interval: monthly
     commit-message:
