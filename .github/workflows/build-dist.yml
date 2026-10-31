@@ -1,13 +1,15 @@
 name: Build dist
 
-# The dashboard's build (ADR-0030). Pull requests leave dist/ alone. After each push to
-# main, this builds the sources and, when the build differs from main's dist/, opens a
-# pull request with it, since main's ruleset lets no workflow push there. Composer
-# installs from a tag's tree, so a release must hold the build: this checks each one.
+# The dashboard's build (ADR-0030, ADR-0032). Pull requests leave dist/ alone. After each
+# push to develop, or to a release branch, this builds the sources and, when the build
+# differs from the branch's dist/, opens a pull request into that branch with it, since its
+# ruleset lets no workflow push there. A release branch starts from develop, so it holds
+# the build, and its pull request into main checks it. Composer installs from a tag's
+# tree, so a release must hold the build: this checks each one too.
 
 on:
   push:
-    branches: [main]
+    branches: [develop, 'release/**']
   release:
     types: [published]
   workflow_dispatch:
@@ -21,9 +23,9 @@ jobs:
     if: github.event_name != 'release'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Only the newest push matters: each run builds main as that push left it.
+    # Only the newest push to a branch matters: each run builds the branch as that push left it.
     concurrency:
-      group: build-dist
+      group: build-dist-${{ github.ref_name }}
       cancel-in-progress: true
     permissions:
       contents: write
@@ -49,35 +51,38 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          TARGET: ${{ github.ref_name }}
         run: |
-          open="$(gh pr list --head bot/build-dist --state open --json number --jq '.[].number')"
+          # One bot branch per target: bot/build-dist-develop, bot/build-dist-release-0.2.0.
+          branch="bot/build-dist-${TARGET//\//-}"
+          open="$(gh pr list --head "$branch" --base "$TARGET" --state open --json number --jq '.[].number')"
 
           if [ -z "$(git status --porcelain -- dist)" ]; then
             echo "dist/ is what the sources build."
             if [ -n "$open" ]; then
-              gh pr close "$open" --comment "main's dist/ is already what the sources build, so this is no longer needed." --delete-branch
+              gh pr close "$open" --comment "${TARGET}'s dist/ is already what the sources build, so this is no longer needed." --delete-branch
             fi
             exit 0
           fi
 
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git switch -c bot/build-dist
+          git switch -c "$branch"
           git add -A dist
-          git commit -q -m "chore: build dist" -m "Built from ${GITHUB_SHA} on main by the Build dist workflow (ADR-0030)."
-          # The branch is the workflow's alone: each run replaces it with a build of main as it is now.
-          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/bot/build-dist
+          git commit -q -m "chore: build dist" -m "Built from ${GITHUB_SHA} on ${TARGET} by the Build dist workflow (ADR-0030)."
+          # The branch is the workflow's alone: each run replaces it with a build of its target as it is now.
+          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${branch}"
 
           if [ -n "$open" ]; then
             echo "Updated #${open} with a build of ${GITHUB_SHA}."
             exit 0
           fi
 
-          gh pr create --base main --head bot/build-dist --title 'chore: build dist' --body "The dashboard's build, from \`main\` at ${GITHUB_SHA}. Pull requests leave \`dist/\` alone, and this one brings it up to date (ADR-0030).
+          gh pr create --base "$TARGET" --head "$branch" --title 'chore: build dist' --body "The dashboard's build, from \`${TARGET}\` at ${GITHUB_SHA}. Pull requests leave \`dist/\` alone, and this one brings it up to date (ADR-0030, ADR-0032).
 
-          - Merge it before publishing a release: Composer installs from the tag, which must hold the build.
-          - CI does not run on it, since the workflow's own token starts no workflows. It changes only \`dist/\`, built from \`main\`'s sources as CI would.
-          - A later push to \`main\` updates it in place."
+          - Merge it before starting a release branch from \`develop\`: a release ships the build its branch holds, and its pull request into \`main\` fails without it.
+          - CI does not run on it, since the workflow's own token starts no workflows. It changes only \`dist/\`, built from \`${TARGET}\`'s sources as CI would.
+          - A later push to \`${TARGET}\` updates it in place."
 
   release:
     name: The release holds what its sources build
@@ -104,7 +109,7 @@ jobs:
           npm run build
           changed="$(git status --porcelain -- dist)"
           if [ -n "$changed" ]; then
-            echo "::error::${TAG} ships a dist/ that is not what its sources build, so its users get an older dashboard. Merge the open \"chore: build dist\" pull request, then publish a patch release from main."
+            echo "::error::${TAG} ships a dist/ that is not what its sources build, so its users get an older dashboard. Merge develop's open \"chore: build dist\" pull request, and ship the build in the next release."
             echo "$changed"
             exit 1
           fi

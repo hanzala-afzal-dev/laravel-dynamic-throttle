@@ -6,6 +6,7 @@
 - Amends: [ADR-0003](0003-development-method.md) (the loop for every feature)
 - Amended: 2026-10-07, a spec ships as small stacked PRs, and benchmark results without their raw dumps (see the decision record)
 - Amended: 2026-10-17, every PR targets `main`, its branch still stacked on the one below (see the decision record)
+- Amended: 2026-10-31 by [ADR-0032](0032-develop-and-release-branches.md): every PR targets `develop` instead of `main`, its branch still stacked on the one below, and `main` takes only release branches.
 
 ## Context
 

@@ -6,6 +6,7 @@
 - Related: ADR-0002, ADR-0014
 - Amended by: [ADR-0018](0018-minimal-dashboard.md) (no `dist/` build or freshness check)
 - Amended by: [ADR-0028](0028-dashboard-react-shadcn.md) (a committed `dist/` again, which the release checks is fresh)
+- Amended: 2026-10-31 by [ADR-0032](0032-develop-and-release-branches.md): a release is a `release/<version>` branch from `develop`, merged into `main` once its integration run passes, then tagged there.
 
 ## Context
 
