@@ -400,14 +400,17 @@ it('AC-34: keeps the token\'s hash out of the response and the reported error wh
     [, $token] = dashboardLink();
     Illuminate\Support\Facades\DB::statement("CREATE TRIGGER links_use_down BEFORE UPDATE ON dynamic_throttle_links BEGIN SELECT RAISE(ABORT, 'The links table is down.'); END");
     config()->set('app.debug', true);
-    Illuminate\Support\Facades\Exceptions::fake();
+    // Every message reported, whatever the exception's class: Exceptions::fake() matches a closure's exact class only.
+    $reported = [];
+    app(Illuminate\Contracts\Debug\ExceptionHandler::class)->reportable(function (Throwable $error) use (&$reported): void {
+        $reported[] = $error->getMessage();
+    });
 
     $use = useDashboardLink($this, $token);
 
     expect($use->status())->toBe(500)
-        ->and((string) $use->getContent())->not->toContain(LinkToken::hash($token));
-    Illuminate\Support\Facades\Exceptions::assertReported(fn (Throwable $error): bool => str_contains($error->getMessage(), 'The links table is down.'));
-    Illuminate\Support\Facades\Exceptions::assertNotReported(fn (Throwable $error): bool => str_contains($error->getMessage(), LinkToken::hash($token)));
+        ->and((string) $use->getContent())->not->toContain(LinkToken::hash($token))
+        ->and(implode("\n", $reported))->toContain('The links table is down.')->not->toContain(LinkToken::hash($token));
 });
 
 it('AC-35: lets a session in only through the very link it used, not one that took its id later', function (): void {
