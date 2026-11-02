@@ -281,6 +281,37 @@ final readonly class EmergencyControls
     }
 
     /**
+     * Uses the link a token's hash names, with its link.use entry, which names the link
+     * as its actor, with the request's IP and user agent (SPEC-034). One update, which
+     * sets used_at only while the link is unused, unrevoked and unexpired, so two
+     * requests with the same token never both use it (decision 8).
+     *
+     * @return ?DashboardLink the link, or null when no link that token names can be used
+     *
+     * @throws TableMissing|Throwable from the database, with nothing written
+     */
+    public function useLink(string $tokenHash, ?string $ip, ?string $userAgent): ?DashboardLink
+    {
+        $this->requireTable(new DashboardLink);
+        $this->requireTable(new AuditEntry);
+
+        return (new DashboardLink)->getConnection()->transaction(function () use ($tokenHash, $ip, $userAgent): ?DashboardLink {
+            $model = new DashboardLink;
+            $used = DashboardLink::query()->where('token_hash', $tokenHash)->whereNull('used_at')->active()
+                ->update(['used_at' => $model->fromDateTime(Date::now())]);
+
+            if ($used !== 1) {
+                return null;
+            }
+
+            $link = DashboardLink::query()->where('token_hash', $tokenHash)->firstOrFail();
+            $this->audit(new Actor($link->actor(), $ip, $userAgent), AuditAction::LinkUse, "link:{$link->id}", ['used_at' => null], ['used_at' => $link->used_at?->toIso8601String()]);
+
+            return $link;
+        }, self::ATTEMPTS);
+    }
+
+    /**
      * Ends a link, used or not, with its link.revoke entry. False when it had already
      * ended, revoked or expired, as read again, locked.
      *

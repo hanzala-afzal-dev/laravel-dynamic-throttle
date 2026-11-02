@@ -14,6 +14,7 @@ use Afzal\DynamicThrottle\Dashboard\Api\MetricsController;
 use Afzal\DynamicThrottle\Dashboard\Api\OffendersController;
 use Afzal\DynamicThrottle\Dashboard\Api\RuleController;
 use Afzal\DynamicThrottle\Dashboard\Api\SettingController;
+use Afzal\DynamicThrottle\Dashboard\Links\Links;
 use Afzal\DynamicThrottle\Http\DashboardPath;
 use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -62,7 +63,7 @@ final class DashboardRoutes
             'domain' => $domain,
             'middleware' => is_array($middleware) ? array_values(array_filter($middleware, is_string(...))) : ['web'],
             'as' => DynamicThrottleMiddleware::OWN_ROUTES,
-        ]), function (Router $router): void {
+        ]), function (Router $router) use ($config): void {
             // Named before it is added, so the router's name lookups know it at once.
             $router->name('api.me')->middleware(self::middleware('read'))->get('api/me', MeController::class);
 
@@ -80,6 +81,12 @@ final class DashboardRoutes
             $router->name('api.feed')->middleware(self::middleware('read'))->get('api/feed', FeedController::class);
             $router->name('api.audit')->middleware(self::middleware('read'))->get('api/audit', AuditController::class);
             $router->name('api.explain')->middleware(self::middleware('inspect'))->post('api/explain', ExplainController::class);
+
+            // With links on, the link's page and its use, which need no gate: the link is what lets its holder in (SPEC-034).
+            if (Links::enabled($config)) {
+                $router->name('link')->middleware([SecurityHeaders::class, 'throttle:'.self::LIMITER, ContentSecurityPolicy::class])->get('link', PageController::class);
+                $router->name('api.link')->middleware([SecurityHeaders::class, 'throttle:'.self::LIMITER])->post('api/link', LinkController::class);
+            }
 
             // Last, after the API: the shell for each page's path (SPEC-020).
             $router->name('page')->middleware([...self::middleware('read'), ContentSecurityPolicy::class])
