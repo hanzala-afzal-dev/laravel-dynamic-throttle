@@ -44,7 +44,7 @@ The maintainer vetoes any of these in this PR (ADR-0027). **(roadmap)** marks wh
 6. **The page waits for "Continue"** (roadmap), so a link preview, or a mail scanner that runs scripts, never uses the link.
 7. **Only a SHA-256 hash of the token is stored** (roadmap). The token is 256 random bits, so a fast hash is enough, as for Sanctum's tokens. The command prints the token once; nothing can show it again.
 8. **A link works once** (roadmap: "one-time"). Using it is one atomic update that sets `used_at` only while the link is unused, unrevoked and unexpired, so two tabs that press "Continue" at once cannot both use it. A holder who loses the session asks for a new link.
-9. **The session holds the link's id only,** under `dynamic-throttle.link`, and the session's id is regenerated when the link is used. The link is read from the table on each of the dashboard's requests, which is not the request path (ADR-0007).
+9. **The session holds the link's id and when it was used, never its token,** under `dynamic-throttle.link` and `dynamic-throttle.link-used-at`, and the session's id is regenerated when the link is used. Both must match the link, so a link that takes the same id later, after the table is made again, never lets an old session in (the review of PR 3). The link is read from the table on each of the dashboard's requests, which is not the request path (ADR-0007).
 10. **Links add to the gates** (recommended): `view` is what a gate or the link allows, and `manage` too. In `local`, with no gate defined, everyone gets in as before.
 11. **A change's actor is whoever allowed it** (recommended): the signed-in user when a gate allows the change, otherwise the link. A link's actor is `link:<id>:<name>`, such as `link:7:alice, incident 42`. The roadmap's example was `link:alice, incident 42`. The id is added because names are not unique, the same way a user's actor ends with their id.
 12. **Three audit actions,** written by `EmergencyControls`, which stays the log's only writer (SPEC-013 AC-23) (recommended):
@@ -135,6 +135,14 @@ A review subagent read PR 2's code before it opened. Its findings, each fixed te
 
 Left as they are: an `APP_URL` without a scheme, which Laravel itself cannot serve links from, and a `--manage` prompt answered after `--for` has passed, which makes a link that has already ended, as `dynamic-throttle:bypass` does with its end time.
 
+A second review read PR 3's code, on using a link. Its findings, each fixed test-first:
+
+- **AC-32** `POST {path}/api/link` answers in JSON whatever the request asks for, as the API does: a refused form post gets a 422, never a redirect back, which kept the posted token in the session as old input. A missing table gets a 503.
+- **AC-33** Both link routes answer 404 once links are off, checked on each request: cached routes keep them until `route:cache` runs again, and a link used then was used up for nothing.
+- **AC-34** When the database refuses a use, neither the response nor the error Laravel logs holds the token's hash: the driver's own message replaces the query's, which lists its values.
+- **AC-35** A session gets in only through the very link it used: its id and when it was used must both match (decision 9).
+- **AC-36** A link is used once on MySQL and PostgreSQL too, with its times in UTC, in the driver tests. Two uses at the very same moment are left to the databases: the use is one conditional update, which each of them runs atomically.
+
 ## Interfaces and files
 
 - `config/dynamic-throttle.php`: `dashboard.links`, from `DYNAMIC_THROTTLE_DASHBOARD_LINKS`, false by default.
@@ -151,7 +159,8 @@ Left as they are: an `APP_URL` without a scheme, which Laravel itself cannot ser
 - `src/Models/DashboardLink.php`: the model, on the package's connection, with times in UTC.
 - `src/Dashboard/Links/`, `@internal`:
   - `LinkToken.php`: makes a token and hashes one.
-  - `SessionLink.php`: the session's link, if it is still valid, and what it allows.
+  - `SessionLink.php`: the session's link, if it is still valid, and what it allows. It starts the session a link opens.
+  - `LinksEnabled.php`: a 404 on the link routes while links are off, on each request (AC-33).
 - `src/Console/LinkCommand.php`: `dynamic-throttle:link {--name=} {--for=60m} {--manage} {--list} {--revoke=} {--revoke-all} {--force}`, on `ChangeCommand` for the confirmation.
 - `src/Support/EmergencyControls.php`: `createLink()`, `useLink()`, `revokeLink()` and `revokeLinks()`, each with its audit entries in one transaction.
 - `src/Enums/AuditAction.php`: `link.create`, `link.use` and `link.revoke`.
@@ -212,7 +221,7 @@ Stacked on each other, each green on its own, every one against `develop` (ADR-0
 |---|---|---|---|---|
 | 1 | `beta/spec-034-1` | This spec, ADR-0031, ADR-0015's note, the ADR index and the roadmap's line | Decisions | 0 |
 | 2 | `feat/spec-034-2` | The config key, the migration, the model, the token, the audit actions, `EmergencyControls`' link changes and `dynamic-throttle:link` | AC-1 to AC-10, AC-27 to AC-31 | 450 |
-| 3 | `feat/spec-034-3` | The two routes, using a link, the session's link in the gates, `api/me` and the actor | AC-11 to AC-20 | 350 |
+| 3 | `feat/spec-034-3` | The two routes, using a link, the session's link in the gates, `api/me` and the actor | AC-11 to AC-20, AC-32 to AC-36 | 350 |
 | 4 | `feat/spec-034-4` | The link's page and the header's line, in the dashboard's frontend | AC-21 to AC-23 | 250 |
 | 5 | `feat/spec-034-5` | The health check, the arch tests, the docs, the changelog, the review's fixes, and the spec's close | AC-24 to AC-26 | 100 |
 

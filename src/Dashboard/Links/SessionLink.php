@@ -20,8 +20,14 @@ use Throwable;
  */
 final readonly class SessionLink
 {
-    /** The session key, which holds the link's id only, never its token (decision 9). */
+    /** The session key, which holds the link's id, never its token (decision 9). */
     public const string KEY = 'dynamic-throttle.link';
+
+    /**
+     * When the link was used, as stored, so a link that takes the same id later, after
+     * the table is made again, never lets this session in (the review).
+     */
+    public const string USED_AT = 'dynamic-throttle.link-used-at';
 
     /** Where the request keeps the link it read, so the gates and the page read it once. */
     private const string ATTRIBUTE = 'dynamic-throttle.session-link';
@@ -29,6 +35,18 @@ final readonly class SessionLink
     public function __construct(
         private Config $config,
     ) {}
+
+    /**
+     * Starts the session a link opens, once it is used: a new id, so a session id anyone
+     * saw before the link was used opens nothing, then the link's id and when it was used.
+     */
+    public function start(Request $request, DashboardLink $link): void
+    {
+        $request->session()->regenerate();
+        $request->session()->put(self::KEY, $link->id);
+        $request->session()->put(self::USED_AT, $link->getRawOriginal('used_at'));
+        $request->attributes->remove(self::ATTRIBUTE);
+    }
 
     public function of(Request $request): ?DashboardLink
     {
@@ -75,12 +93,14 @@ final readonly class SessionLink
             return null;
         }
 
-        if ($link instanceof DashboardLink && $link->used_at !== null && ! $link->ended()) {
+        $usedAt = $request->session()->get(self::USED_AT);
+
+        if ($link instanceof DashboardLink && is_string($usedAt) && $link->getRawOriginal('used_at') === $usedAt && ! $link->ended()) {
             return $link;
         }
 
-        // Ended: forget it, so the next requests read nothing.
-        $request->session()->forget(self::KEY);
+        // Ended, or another link's now: forget it, so the next requests read nothing.
+        $request->session()->forget([self::KEY, self::USED_AT]);
 
         return null;
     }

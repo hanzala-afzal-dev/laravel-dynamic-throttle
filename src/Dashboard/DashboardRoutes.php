@@ -15,6 +15,7 @@ use Afzal\DynamicThrottle\Dashboard\Api\OffendersController;
 use Afzal\DynamicThrottle\Dashboard\Api\RuleController;
 use Afzal\DynamicThrottle\Dashboard\Api\SettingController;
 use Afzal\DynamicThrottle\Dashboard\Links\Links;
+use Afzal\DynamicThrottle\Dashboard\Links\LinksEnabled;
 use Afzal\DynamicThrottle\Http\DashboardPath;
 use Afzal\DynamicThrottle\Http\Middleware\DynamicThrottleMiddleware;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -84,8 +85,8 @@ final class DashboardRoutes
 
             // With links on, the link's page and its use, which need no gate: the link is what lets its holder in (SPEC-034).
             if (Links::enabled($config)) {
-                $router->name('link')->middleware([SecurityHeaders::class, 'throttle:'.self::LIMITER, ContentSecurityPolicy::class])->get('link', PageController::class);
-                $router->name('api.link')->middleware([SecurityHeaders::class, 'throttle:'.self::LIMITER])->post('api/link', LinkController::class);
+                $router->name('link')->middleware([SecurityHeaders::class, LinksEnabled::class, 'throttle:'.self::LIMITER, ContentSecurityPolicy::class])->get('link', PageController::class);
+                $router->name('api.link')->middleware([SecurityHeaders::class, LinksEnabled::class, 'throttle:'.self::LIMITER])->post('api/link', LinkController::class);
             }
 
             // Last, after the API: the shell for each page's path (SPEC-020).

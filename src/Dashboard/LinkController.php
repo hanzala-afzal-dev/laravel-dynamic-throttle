@@ -4,21 +4,22 @@ declare(strict_types=1);
 
 namespace Afzal\DynamicThrottle\Dashboard;
 
+use Afzal\DynamicThrottle\Dashboard\Api\ApiErrors;
 use Afzal\DynamicThrottle\Dashboard\Links\LinkToken;
 use Afzal\DynamicThrottle\Dashboard\Links\SessionLink;
 use Afzal\DynamicThrottle\Models\DashboardLink;
 use Afzal\DynamicThrottle\Support\EmergencyControls;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Validator;
-use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
-use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
  * POST {path}/api/link, what the link's page posts when its holder presses "Continue"
  * (SPEC-034): uses the link the token names, once, then starts the session it opens.
  * The token comes in the body, never the address, so no server log or Referer header
- * holds it. It needs no gate: the link is what lets its holder in.
+ * holds it. It needs no gate: the link is what lets its holder in. It answers in JSON
+ * whatever the request asks for, as the API does, so a refused form post is never
+ * redirected back with its token kept in the session (the review).
  *
  * @internal
  */
@@ -29,28 +30,29 @@ final readonly class LinkController
 
     public function __construct(
         private EmergencyControls $controls,
+        private SessionLink $sessions,
     ) {}
 
-    public function __invoke(Request $request): Response
+    public function __invoke(Request $request): JsonResponse
     {
-        // From the body only, never the query: a token in an address ends up in server logs (decision 5).
-        $token = Validator::make(['token' => $request->post('token')], ['token' => ['required', 'string', 'regex:'.LinkToken::FORMAT]])->validate()['token'];
+        return ApiErrors::json(function () use ($request): JsonResponse {
+            // From the body only, never the query: a token in an address ends up in server logs (decision 5).
+            $token = Validator::make(['token' => $request->post('token')], ['token' => ['required', 'string', 'regex:'.LinkToken::FORMAT]])->validate()['token'];
 
-        // dashboard.middleware without the web group: no session to start, and the health check says so.
-        if (! $request->hasSession()) {
-            throw new HttpException(500, 'Links need a session: add the web group to dynamic-throttle.dashboard.middleware.');
-        }
+            // dashboard.middleware without the web group: no session to start, and the health check says so.
+            if (! $request->hasSession()) {
+                return new JsonResponse(['message' => 'Links need a session: add the web group to dynamic-throttle.dashboard.middleware.'], 500);
+            }
 
-        $link = $this->controls->useLink(LinkToken::hash($token), $request->ip(), $request->userAgent());
+            $link = $this->controls->useLink(LinkToken::hash($token), $request->ip(), $request->userAgent());
 
-        if (! $link instanceof DashboardLink) {
-            throw new AccessDeniedHttpException(self::NOT_VALID);
-        }
+            if (! $link instanceof DashboardLink) {
+                return new JsonResponse(['message' => self::NOT_VALID], 403);
+            }
 
-        // A new id, so a session id anyone saw before the link was used opens nothing (decision 9).
-        $request->session()->regenerate();
-        $request->session()->put(SessionLink::KEY, $link->id);
+            $this->sessions->start($request, $link);
 
-        return new Response(status: 204);
+            return new JsonResponse(null, 204);
+        });
     }
 }

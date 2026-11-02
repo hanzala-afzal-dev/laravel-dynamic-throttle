@@ -20,6 +20,7 @@ use Closure;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Date;
@@ -295,6 +296,16 @@ final readonly class EmergencyControls
         $this->requireTable(new DashboardLink);
         $this->requireTable(new AuditEntry);
 
+        try {
+            return $this->useLinkOnce($tokenHash, $ip, $userAgent);
+        } catch (QueryException $exception) {
+            // A query's message lists its values, the token's hash among them, and Laravel logs it: the driver's own has none (the review).
+            throw $exception->getPrevious() ?? $exception;
+        }
+    }
+
+    private function useLinkOnce(string $tokenHash, ?string $ip, ?string $userAgent): ?DashboardLink
+    {
         return (new DashboardLink)->getConnection()->transaction(function () use ($tokenHash, $ip, $userAgent): ?DashboardLink {
             $model = new DashboardLink;
             $used = DashboardLink::query()->where('token_hash', $tokenHash)->whereNull('used_at')->active()
