@@ -28,6 +28,27 @@ final class RuleSchema
         Artisan::call('migrate', ['--path' => self::MIGRATIONS, '--realpath' => true]);
     }
 
+    /**
+     * The tables the package's migrations create, newest first, for a test that drops
+     * them by hand. Read from the migrations, so a new table is never left behind: on
+     * the shared PostgreSQL, a leftover table keeps its unprefixed constraint names,
+     * and the next process to migrate fails on them.
+     *
+     * @return list<string>
+     */
+    public static function tables(): array
+    {
+        $tables = [];
+
+        foreach (glob(self::MIGRATIONS.'/*.php') ?: [] as $migration) {
+            if (preg_match_all("/Schema::create\\('([a-z_]+)'/", (string) file_get_contents($migration), $created) > 0) {
+                array_push($tables, ...$created[1]);
+            }
+        }
+
+        return array_reverse($tables);
+    }
+
     public static function rollback(): void
     {
         try {

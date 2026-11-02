@@ -1,6 +1,6 @@
 # SPEC-034: Dashboard links for apps without a login, and for incidents
 
-- Status: Draft
+- Status: In progress
 - ADRs: ADR-0031 (new, amends ADR-0015), ADR-0007, ADR-0011, ADR-0017, ADR-0027
 - Roadmap phase: after 0.1.0, in 0.2.0
 
@@ -61,19 +61,20 @@ The maintainer vetoes any of these in this PR (ADR-0027). **(roadmap)** marks wh
 
 - Links off: `Links are off: set DYNAMIC_THROTTLE_DASHBOARD_LINKS=true (dynamic-throttle.dashboard.links) to use them.`
 - Dashboard off: `The dashboard is off (dynamic-throttle.dashboard.enabled), so a link would open nothing.`
+- No dashboard path: `The dashboard has no path (dynamic-throttle.dashboard.path), so a link would open nothing.`
 - No name: `--name is required: who the link is for, such as "alice, incident 42".`
 - Too long: `--for can be at most 1d for a link, got "2d".`
 - More than one mode: `Pass one of --name, --list, --revoke or --revoke-all.`
 - Made, view only:
   ```
-  Link 7 for "alice, incident 42": view only, until 2026-10-30 11:30 UTC.
+  Link 7 for "alice, incident 42": view only, until 2026-10-30 11:30:00 UTC.
   https://example.com/dynamic-throttle/link#<token>
   It works once, in one browser. Send it privately: until it is used, anyone who has it can open the dashboard.
   End it early with: php artisan dynamic-throttle:link --revoke=7
   ```
   With `--manage`, "view only" reads "can view and change rules, exemptions and settings".
 - Over `http://`: `The link starts with http://, so anyone on the network can read it: set APP_URL to an https:// address.`
-- Confirming `--manage`: `The link lets whoever holds it change rules, exemptions and settings until 2026-10-30 11:30 UTC`
+- Confirming `--manage`: `The link lets whoever holds it change rules, exemptions and settings until 2026-10-30 11:30:00 UTC`
 - Revoked: `Link 7 for "alice, incident 42" has ended.` Already ended: `Link 7 has already ended.` Unknown: `No link has the id 99.`
 - Revoked all: `Ended 3 links.` None: `No link is active.`
 - A link that cannot be used: `This link is not valid: it was already used, it was revoked, or it has expired. Ask for a new one.`
@@ -121,6 +122,18 @@ The maintainer vetoes any of these in this PR (ADR-0027). **(roadmap)** marks wh
 - **AC-24** With links on, outside `local`, and no gate defined, the `dashboard` check is ok with the "links only" message, so `--strict` does not fail on it. With a gate defined, it adds "Links from dynamic-throttle:link open it too." With links off, it says what SPEC-033 says.
 - **AC-25** With links on, the `dashboard` check warns when the `dynamic_throttle_links` table is missing, and when the dashboard's middleware starts no session, with the exact messages.
 - **AC-26** The arch tests hold: the links' code is in `Dashboard`, `Console`, `Models` and `Support`, never used by `Http` or `Engine`, and `EmergencyControls` stays the audit log's only writer.
+
+### From the security review
+
+A review subagent read PR 2's code before it opened. Its findings, each fixed test-first:
+
+- **AC-27** The link's address follows how Laravel serves `dashboard.domain`: a domain written with `https://` or `http://` loses it, the link takes `APP_URL`'s scheme, and `APP_URL`'s port unless it is the scheme's default. `https://https://…` and a missing `:8000` broke the link.
+- **AC-28** When the database refuses a link, the error is the driver's own message. Laravel's message for a failed query lists its values, so it printed the new token's hash.
+- **AC-29** An option given without a value counts as its mode: `--name --revoke-all` is refused with the "Pass one of" message, instead of ending every link, and `--revoke` alone is refused for its id.
+- **AC-30** A name of only Unicode spaces, such as no-break spaces, is refused as empty, and spaces around a name are trimmed. The `http://` warning ignores the scheme's case.
+- **AC-31** An empty `dashboard.path` says the dashboard has no path, not that it is off.
+
+Left as they are: an `APP_URL` without a scheme, which Laravel itself cannot serve links from, and a `--manage` prompt answered after `--for` has passed, which makes a link that has already ended, as `dynamic-throttle:bypass` does with its end time.
 
 ## Interfaces and files
 
@@ -198,10 +211,10 @@ Stacked on each other, each green on its own, every one against `develop` (ADR-0
 | PR | Branch | Adds | Covers | `src` lines, about |
 |---|---|---|---|---|
 | 1 | `beta/spec-034-1` | This spec, ADR-0031, ADR-0015's note, the ADR index and the roadmap's line | Decisions | 0 |
-| 2 | `beta/spec-034-2` | The config key, the migration, the model, the token, the audit actions, `EmergencyControls`' link changes and `dynamic-throttle:link` | AC-1 to AC-10 | 450 |
-| 3 | `beta/spec-034-3` | The two routes, using a link, the session's link in the gates, `api/me` and the actor | AC-11 to AC-20 | 350 |
-| 4 | `beta/spec-034-4` | The link's page and the header's line, in the dashboard's frontend | AC-21 to AC-23 | 250 |
-| 5 | `beta/spec-034-5` | The health check, the arch tests, the docs, the changelog, the review's fixes, and the spec's close | AC-24 to AC-26 | 100 |
+| 2 | `feat/spec-034-2` | The config key, the migration, the model, the token, the audit actions, `EmergencyControls`' link changes and `dynamic-throttle:link` | AC-1 to AC-10, AC-27 to AC-31 | 450 |
+| 3 | `feat/spec-034-3` | The two routes, using a link, the session's link in the gates, `api/me` and the actor | AC-11 to AC-20 | 350 |
+| 4 | `feat/spec-034-4` | The link's page and the header's line, in the dashboard's frontend | AC-21 to AC-23 | 250 |
+| 5 | `feat/spec-034-5` | The health check, the arch tests, the docs, the changelog, the review's fixes, and the spec's close | AC-24 to AC-26 | 100 |
 
 ## Open questions
 
