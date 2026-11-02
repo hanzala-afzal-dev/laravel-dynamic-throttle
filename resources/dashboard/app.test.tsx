@@ -21,4 +21,13 @@ describe('App', () => {
         expect(screen.getByText('Dynamic Throttle')).toBeInTheDocument();
         expect(await screen.findByRole('heading', { level: 1, name: 'Overview' }, { timeout: 5_000 })).toBeInTheDocument();
     });
+
+    it('SPEC-034 AC-21: shows the link\'s page at /link, outside the frame, without asking who the user is', async () => {
+        const sent = mockApi(manager());
+        renderAt(<App linkToken="k3J9xQ2mN8vR4tY7wE1aS5dF6gH0jK2lZ9xC3vB7n_-" />, '/link');
+
+        expect(await screen.findByRole('button', { name: 'Continue' }, { timeout: 5_000 })).toBeInTheDocument();
+        expect(screen.queryByRole('navigation', { name: 'Pages' })).not.toBeInTheDocument();
+        expect(sent).toEqual([]);
+    });
 });
