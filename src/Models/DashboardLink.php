@@ -49,6 +49,15 @@ final class DashboardLink extends Model
     /** The hash never leaves the server, not even in an array of the model. */
     protected $hidden = ['token_hash'];
 
+    /**
+     * Who acts in the audit log through this link: link:<id>:<name>, with the id, as
+     * names are not unique (SPEC-034 decision 11).
+     */
+    public function actor(): string
+    {
+        return "link:{$this->id}:{$this->name}";
+    }
+
     public function ended(): bool
     {
         return $this->revoked_at !== null || $this->expires_at->lessThanOrEqualTo(Date::now());

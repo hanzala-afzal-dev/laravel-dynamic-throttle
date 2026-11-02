@@ -20,6 +20,7 @@ use Closure;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Date;
@@ -275,6 +276,47 @@ final readonly class EmergencyControls
                 'expires_at' => $link->expires_at->toIso8601String(),
                 'created_by' => $link->created_by,
             ]);
+
+            return $link;
+        }, self::ATTEMPTS);
+    }
+
+    /**
+     * Uses the link a token's hash names, with its link.use entry, which names the link
+     * as its actor, with the request's IP and user agent (SPEC-034). One update, which
+     * sets used_at only while the link is unused, unrevoked and unexpired, so two
+     * requests with the same token never both use it (decision 8).
+     *
+     * @return ?DashboardLink the link, or null when no link that token names can be used
+     *
+     * @throws TableMissing|Throwable from the database, with nothing written
+     */
+    public function useLink(string $tokenHash, ?string $ip, ?string $userAgent): ?DashboardLink
+    {
+        $this->requireTable(new DashboardLink);
+        $this->requireTable(new AuditEntry);
+
+        try {
+            return $this->useLinkOnce($tokenHash, $ip, $userAgent);
+        } catch (QueryException $exception) {
+            // A query's message lists its values, the token's hash among them, and Laravel logs it: the driver's own has none (the review).
+            throw $exception->getPrevious() ?? $exception;
+        }
+    }
+
+    private function useLinkOnce(string $tokenHash, ?string $ip, ?string $userAgent): ?DashboardLink
+    {
+        return (new DashboardLink)->getConnection()->transaction(function () use ($tokenHash, $ip, $userAgent): ?DashboardLink {
+            $model = new DashboardLink;
+            $used = DashboardLink::query()->where('token_hash', $tokenHash)->whereNull('used_at')->active()
+                ->update(['used_at' => $model->fromDateTime(Date::now())]);
+
+            if ($used !== 1) {
+                return null;
+            }
+
+            $link = DashboardLink::query()->where('token_hash', $tokenHash)->firstOrFail();
+            $this->audit(new Actor($link->actor(), $ip, $userAgent), AuditAction::LinkUse, "link:{$link->id}", ['used_at' => null], ['used_at' => $link->used_at?->toIso8601String()]);
 
             return $link;
         }, self::ATTEMPTS);
