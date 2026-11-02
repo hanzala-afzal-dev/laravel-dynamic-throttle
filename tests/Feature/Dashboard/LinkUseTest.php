@@ -357,3 +357,66 @@ it('AC-20: never limits the link\'s routes by a "*" rule', function (): void {
         ->and($uses)->toBe([403, 403])
         ->and($orders)->toBe([200, 429]);
 });
+
+/*
+| From the security review, each fixed test-first: AC-32 to AC-35, and AC-36 in
+| tests/Drivers/DashboardLinkTest.php.
+*/
+
+it('AC-32: answers a use that does not ask for JSON with JSON too, never a redirect that keeps the token in the session', function (): void {
+    [$link, $token] = dashboardLink();
+
+    $use = $this->withSession(['_token' => 'a-csrf-token'])
+        ->post('/dynamic-throttle/api/link', ['token' => $token.'x', '_token' => 'a-csrf-token']);
+
+    expect($use->status())->toBe(422)
+        ->and($use->headers->get('Content-Type'))->toContain('application/json')
+        ->and($use->json('errors'))->toHaveKey('token')
+        ->and(serialize(session()->all()))->not->toContain($token)
+        ->and(DashboardLink::query()->findOrFail($link->id)->used_at)->toBeNull();
+});
+
+it('AC-32: answers 503 when the links table is missing, as the API does for its other tables', function (): void {
+    [, $token] = dashboardLink();
+    Illuminate\Support\Facades\Schema::drop('dynamic_throttle_links');
+
+    $use = useDashboardLink($this, $token);
+
+    expect($use->status())->toBe(503)
+        ->and($use->json('message'))->toContain('The dynamic_throttle_links table does not exist.');
+});
+
+it('AC-33: answers 404 on both routes once links are off, though cached routes still hold them, and uses no link', function (): void {
+    [$link, $token] = dashboardLink();
+    // The routes stay, as route:cache keeps them, while the config says links are off.
+    config()->set('dynamic-throttle.dashboard.links', false);
+
+    expect([$this->get('/dynamic-throttle/link')->status(), useDashboardLink($this, $token)->status()])->toBe([404, 404])
+        ->and(DashboardLink::query()->findOrFail($link->id)->used_at)->toBeNull()
+        ->and(linkEntries('link.use'))->toBe(0);
+});
+
+it('AC-34: keeps the token\'s hash out of the response and the reported error when the database refuses a use', function (): void {
+    [, $token] = dashboardLink();
+    Illuminate\Support\Facades\DB::statement("CREATE TRIGGER links_use_down BEFORE UPDATE ON dynamic_throttle_links BEGIN SELECT RAISE(ABORT, 'The links table is down.'); END");
+    config()->set('app.debug', true);
+    Illuminate\Support\Facades\Exceptions::fake();
+
+    $use = useDashboardLink($this, $token);
+
+    expect($use->status())->toBe(500)
+        ->and((string) $use->getContent())->not->toContain(LinkToken::hash($token));
+    Illuminate\Support\Facades\Exceptions::assertReported(fn (Throwable $error): bool => str_contains($error->getMessage(), 'The links table is down.'));
+    Illuminate\Support\Facades\Exceptions::assertNotReported(fn (Throwable $error): bool => str_contains($error->getMessage(), LinkToken::hash($token)));
+});
+
+it('AC-35: lets a session in only through the very link it used, not one that took its id later', function (): void {
+    [$link, $token] = dashboardLink();
+    useDashboardLink($this, $token);
+    $before = DashboardApi::send($this, 'GET', 'me')->status();
+
+    // Another link with the same id, as after the table was made again: used at another time.
+    DashboardLink::query()->whereKey($link->id)->update(['used_at' => '2027-01-01 00:00:05', 'can_manage' => true]);
+
+    expect([$before, DashboardApi::send($this, 'GET', 'me')->status()])->toBe([200, 403]);
+});
