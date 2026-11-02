@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { dashboardBase } from '@/lib/api';
+import { ApiError, dashboardBase } from '@/lib/api';
 import { NO_TOKEN, openLink } from '@/lib/link';
 
 type Props = {
@@ -20,6 +20,8 @@ type Props = {
 export default function LinkPage({ token, onOpened = (url) => window.location.replace(url) }: Props) {
     const [sending, setSending] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // Once the server says the link cannot be used, pressing Continue again cannot help; after a network or server error, it can.
+    const [final, setFinal] = useState(false);
 
     async function open(used: string): Promise<void> {
         setSending(true);
@@ -30,6 +32,7 @@ export default function LinkPage({ token, onOpened = (url) => window.location.re
             onOpened(dashboardBase() === '' ? '/' : dashboardBase());
         } catch (failure) {
             setError(failure instanceof Error ? failure.message : String(failure));
+            setFinal(failure instanceof ApiError && [403, 419, 422].includes(failure.status));
             setSending(false);
         }
     }
@@ -50,9 +53,11 @@ export default function LinkPage({ token, onOpened = (url) => window.location.re
                                 <AlertDescription>{error}</AlertDescription>
                             </Alert>
                         )}
-                        <Button onClick={() => void open(token)} disabled={sending}>
-                            {sending ? 'Opening…' : 'Continue'}
-                        </Button>
+                        {!final && (
+                            <Button onClick={() => void open(token)} disabled={sending}>
+                                {sending ? 'Opening…' : 'Continue'}
+                            </Button>
+                        )}
                     </>
                 )}
             </section>
