@@ -94,7 +94,7 @@ it('AC-12: uses a valid link: 204, marks it used, and lets the session view, not
     $use = useDashboardLink($this, $token);
     $me = DashboardApi::send($this, 'GET', 'me');
     $read = DashboardApi::send($this, 'GET', 'rules');
-    $write = DashboardApi::send($this, 'POST', Dashboard::WRITE_PATH);
+    $write = DashboardApi::sendTo($this, 'POST', '/dynamic-throttle/'.Dashboard::WRITE_PATH);
 
     expect($use->status())->toBe(204)
         ->and(DashboardLink::query()->findOrFail($link->id)->used_at?->toIso8601String())->toBe('2027-01-01T00:00:00+00:00')
