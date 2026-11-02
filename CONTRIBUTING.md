@@ -32,7 +32,7 @@ If a spec would break an ADR, write a new ADR that supersedes the old one first.
 
 `main` holds the last release: its README, its docs and its changelog. The work collects in `develop`.
 
-- **Pull requests go to `develop`.** Start your branch from `develop`, and open the pull request against it. CI fails a pull request into `main` unless its branch is `release/<version>`.
+- **Pull requests go to `develop`.** Start your branch from `develop`, and open the pull request against it. Name the branch after its type of change, as its commits are: `feat/…`, `fix/…`, `docs/…`, `ci/…`, `chore/…`, `refactor/…` or `test/…`. CI fails a pull request into `main` unless its branch is `release/<version>`.
 - **A release goes through a release branch:**
   1. Merge `develop`'s open "chore: build dist" pull request, if there is one.
   2. Start `release/<version>` from `develop`. In `CHANGELOG.md`, move the Unreleased entries under a heading with the version and the day you will tag it. Open a pull request into `main`.
