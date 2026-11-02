@@ -49,4 +49,27 @@ describe('the link\'s page', () => {
         expect(screen.getByRole('alert')).toHaveTextContent('This address has no link in it. Open the link you were sent again.');
         expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument();
     });
+
+    it('AC-22: hides Continue once the server says the link cannot be used, since pressing it again cannot help', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ message: 'This link is not valid.' }), { status: 403 })));
+        renderAt(<LinkPage token={TOKEN} onOpened={vi.fn()} />, '/link');
+
+        await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+        expect(await screen.findByRole('alert')).toHaveTextContent('This link is not valid.');
+        expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument();
+    });
+
+    it('AC-22: keeps Continue after a failure that trying again can mend, such as an unreachable server', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => {
+            throw new TypeError('Failed to fetch');
+        }));
+        renderAt(<LinkPage token={TOKEN} onOpened={vi.fn()} />, '/link');
+
+        await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+        expect(await screen.findByRole('alert')).toHaveTextContent('The server could not be reached');
+        expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled();
+    });
 });
+
