@@ -10,9 +10,12 @@ use Afzal\DynamicThrottle\Tests\Support\Dashboard;
 use Afzal\DynamicThrottle\Tests\Support\DashboardApi;
 use Afzal\DynamicThrottle\Tests\Support\Settings;
 use Afzal\DynamicThrottle\Tests\Support\Throttling;
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Date;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Testing\TestResponse;
 use Orchestra\Testbench\TestCase;
 use Symfony\Component\HttpFoundation\Response;
@@ -378,7 +381,7 @@ it('AC-32: answers a use that does not ask for JSON with JSON too, never a redir
 
 it('AC-32: answers 503 when the links table is missing, as the API does for its other tables', function (): void {
     [, $token] = dashboardLink();
-    Illuminate\Support\Facades\Schema::drop('dynamic_throttle_links');
+    Schema::drop('dynamic_throttle_links');
 
     $use = useDashboardLink($this, $token);
 
@@ -398,11 +401,11 @@ it('AC-33: answers 404 on both routes once links are off, though cached routes s
 
 it('AC-34: keeps the token\'s hash out of the response and the reported error when the database refuses a use', function (): void {
     [, $token] = dashboardLink();
-    Illuminate\Support\Facades\DB::statement("CREATE TRIGGER links_use_down BEFORE UPDATE ON dynamic_throttle_links BEGIN SELECT RAISE(ABORT, 'The links table is down.'); END");
+    DB::statement("CREATE TRIGGER links_use_down BEFORE UPDATE ON dynamic_throttle_links BEGIN SELECT RAISE(ABORT, 'The links table is down.'); END");
     config()->set('app.debug', true);
     // Every message reported, whatever the exception's class: Exceptions::fake() matches a closure's exact class only.
     $reported = [];
-    app(Illuminate\Contracts\Debug\ExceptionHandler::class)->reportable(function (Throwable $error) use (&$reported): void {
+    app(ExceptionHandler::class)->reportable(function (Throwable $error) use (&$reported): void {
         $reported[] = $error->getMessage();
     });
 
