@@ -32,6 +32,7 @@ jobs:
       tests: ${{ steps.pick.outputs.tests }}
       mutation: ${{ steps.pick.outputs.mutation }}
       mutation_paths: ${{ steps.pick.outputs.mutation_paths }}
+      browser: ${{ steps.pick.outputs.browser }}
     steps:
       # Only pull requests need the code here, to see what they change in the engine. Their
       # checkout is their merge into the base branch, so HEAD^1 is the base.
@@ -115,6 +116,18 @@ jobs:
           fi
           echo "mutation=$mutation" >> "$GITHUB_OUTPUT"
           echo "mutation_paths=$paths" >> "$GITHUB_OUTPUT"
+
+          # SPEC-036: the browser smoke test runs whenever the full matrix does, and on a
+          # pull request into develop only when it changes the test or what the test runs on.
+          browser=false
+          if [ "$EVENT" = "pull_request" ] && [ "$BASE" != "main" ]; then
+            if [ -n "$(git diff --name-only HEAD^1 HEAD -- e2e workbench docker/workbench testbench.yaml package-lock.json .github/workflows/ci.yml)" ]; then
+              browser=true
+            fi
+          elif [ "$run" = "true" ]; then
+            browser=true
+          fi
+          echo "browser=$browser" >> "$GITHUB_OUTPUT"
 
   tests:
     name: PHP ${{ matrix.php }} · Laravel ${{ matrix.laravel }} · ${{ matrix.stability }}
@@ -545,6 +558,65 @@ jobs:
       - name: Known vulnerabilities in what ships
         run: npm audit --omit=dev --audit-level=high
 
+  # SPEC-036: the dashboard in Chromium, against the Workbench app counting in Redis: a
+  # rule made in the dashboard blocks, Activity shows it, and every page opens.
+  browser:
+    name: Browser smoke test
+    needs: matrix
+    if: needs.matrix.outputs.browser == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The newest PHP and Laravel the package supports, as a new app gets them (decision 9).
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.5'
+          extensions: bcmath, intl, pdo_sqlite, redis
+          coverage: none
+          tools: composer:v2
+
+      - name: Install PHP dependencies
+        run: composer update --with "laravel/framework:^13.0" --prefer-dist --no-interaction --no-progress
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      # The dashboard as its sources build it. On a release, the frontend job checks that
+      # dist/ is this build, so the test covers what ships (decision 8).
+      - name: Build the dashboard
+        run: npm run build
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run the browser smoke test
+        run: npm run smoke
+
+      - name: Keep the report and the traces
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-smoke-test
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          retention-days: 7
+
   install:
     name: Install into fresh Laravel ${{ matrix.laravel }}
     needs: matrix
@@ -610,7 +682,7 @@ jobs:
   ci-passed:
     name: CI passed
     if: always()
-    needs: [matrix, tests, drivers, mutation-stores, mutation-engine, mutation-changed, static-analysis, code-style, frontend, install, security]
+    needs: [matrix, tests, drivers, mutation-stores, mutation-engine, mutation-changed, static-analysis, code-style, frontend, browser, install, security]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any job failed or was cancelled
