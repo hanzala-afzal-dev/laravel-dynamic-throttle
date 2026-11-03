@@ -227,17 +227,17 @@ arch('only EmergencyControls writes the audit log (SPEC-013 AC-23)')
 
 /*
 | SPEC-034 AC-26: the dashboard links' code stays with the dashboard, the CLI and the
-| dashboard's health check, so request handling never reaches it, nor the database
-| through it.
+| dashboard's health check, which reads whether links are on but never their table,
+| so request handling never reaches it, nor the database through it.
 */
 
 arch('the dashboard links\' code is used only by the dashboard, the CLI and the health checks (SPEC-034 AC-26)')
     ->expect('Afzal\\DynamicThrottle\\Dashboard\\Links')
     ->toOnlyBeUsedIn(['Afzal\\DynamicThrottle\\Dashboard', 'Afzal\\DynamicThrottle\\Console', 'Afzal\\DynamicThrottle\\Support\\Health']);
 
-arch('a dashboard link is read and written only by the dashboard, the CLI, the health checks and EmergencyControls (SPEC-034 AC-26)')
+arch('a dashboard link is read and written only by the dashboard, the CLI and EmergencyControls (SPEC-034 AC-26)')
     ->expect(DashboardLink::class)
-    ->toOnlyBeUsedIn(['Afzal\\DynamicThrottle\\Dashboard', 'Afzal\\DynamicThrottle\\Console', 'Afzal\\DynamicThrottle\\Support\\Health', EmergencyControls::class]);
+    ->toOnlyBeUsedIn(['Afzal\\DynamicThrottle\\Dashboard', 'Afzal\\DynamicThrottle\\Console', EmergencyControls::class]);
 
 /*
 | SPEC-014: dynamic-throttle:explain changes nothing (AC-9). It reads the
