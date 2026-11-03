@@ -3,15 +3,15 @@
 declare(strict_types=1);
 
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
-use Afzal\DynamicThrottle\Support\TableMissing;
 use Afzal\DynamicThrottle\Tests\Support\Dashboard;
 use Afzal\DynamicThrottle\Tests\Support\Health;
 use Afzal\DynamicThrottle\Tests\Support\Throttling;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Schema;
 
 /*
-| SPEC-034 AC-24 and AC-25: the dashboard check knows about links. Every other check
+| SPEC-034 AC-24 and AC-25: the dashboard check knows about links. It never reads the
+| database (SPEC-016 AC-21), so a missing links table is for the command and the
+| link's page to say, not this check. Every other check
 | passes before each test changes one thing (Health::passing()), no gate is defined,
 | links are on, and the app runs in production.
 */
@@ -19,8 +19,9 @@ use Illuminate\Support\Facades\Schema;
 beforeEach(function (): void {
     Throttling::prepare();
     $this->travelTo(Carbon::parse('2027-01-15 11:00:30', 'UTC'));
-    Health::passing(gates: false);
+    // Booted first: booting again would drop the route Health::passing() attaches the middleware to.
     Dashboard::boot(['links' => true]);
+    Health::passing(gates: false);
     Dashboard::environment('production');
 });
 
@@ -59,15 +60,6 @@ it('AC-24: keeps the local environment\'s message, where anyone gets in anyway',
     Dashboard::environment('local');
 
     expect(Health::check('dashboard'))->toBe(['ok', 'In the local environment, anyone can open the dashboard, guests too. Elsewhere, nobody can until the app defines viewDynamicThrottle or manageDynamicThrottle.']);
-});
-
-it('AC-25: warns when links are on but their table is missing, and --strict fails', function (): void {
-    Schema::drop('dynamic_throttle_links');
-
-    [$exitCode] = Health::report(['--strict' => true]);
-
-    expect(Health::check('dashboard'))->toBe(['warning', 'Links are on, but '.lcfirst(TableMissing::named('dynamic_throttle_links')->getMessage())])
-        ->and($exitCode)->toBe(1);
 });
 
 it('AC-25: warns when links are on but the dashboard\'s middleware starts no session', function (array $middleware): void {
