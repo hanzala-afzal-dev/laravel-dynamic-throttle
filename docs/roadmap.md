@@ -201,7 +201,7 @@ A dashboard that ships with the package, as Laravel Horizon's does: served at it
 
 **Exit criteria**
 - Every page has component tests (Vitest), and the shell and the routes have Pest tests, including the CSP header, the nonce and no inline code (ADR-0028).
-- The end-to-end smoke test passes in a real browser: create a rule → send requests → see the block in Activity.
+- The end-to-end smoke test passes in a real browser: create a rule → send requests → see the block in Activity. Done after `0.1.0`, by [SPEC-036](specs/036-browser-smoke-test.md), which runs on each release's pull request.
 - CI rebuilds `dist/` and finds it identical, the first page's JavaScript stays under 300 KB gzipped, and `npm audit` finds no high or critical advisory in what ships.
 - Screenshots of both themes are in the README.
 - The dashboard works under the strict CSP in the Workbench app.

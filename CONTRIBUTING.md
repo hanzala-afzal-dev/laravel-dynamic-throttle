@@ -36,7 +36,7 @@ If a spec would break an ADR, write a new ADR that supersedes the old one first.
 - **A release goes through a release branch:**
   1. Merge `develop`'s open "chore: build dist" pull request, if there is one.
   2. Start `release/<version>` from `develop`. In `CHANGELOG.md`, move the Unreleased entries under a heading with the version and the day you will tag it. Open a pull request into `main`.
-  3. CI runs the integration run on it: the full matrix, the driver tests on every store, mutation testing of the whole engine, installs into fresh Laravel 12 and 13 apps, and a check that `dist/` is what the sources build.
+  3. CI runs the integration run on it: the full matrix, the driver tests on every store, mutation testing of the whole engine, installs into fresh Laravel 12 and 13 apps, a check that `dist/` is what the sources build, and the browser smoke test.
   4. Fix any problem on the release branch, with a pull request against it.
   5. Once it is green, the maintainer merges it, tags the merge commit on `main` as `v<version>`, and publishes the GitHub release. Packagist updates on its own.
   6. Open a pull request from `main` into `develop`, so `develop` gets the release's changelog heading.
@@ -128,6 +128,34 @@ With PHP 8.3 or later installed instead, `composer serve` builds, seeds and serv
 As a guest you are a manager. To see the dashboard as a viewer, open `/_workbench/login/viewer@example.com`. `/_workbench/logout` signs you out again.
 
 After pulling changes, restart the demo. `npm run build` changes take effect on the next page load.
+
+### The browser smoke test
+
+`npm run smoke` runs the dashboard in Chromium, with Playwright, against the Workbench app ([SPEC-036](docs/specs/036-browser-smoke-test.md)). It makes a rule in the Rules form, sends requests until the rule blocks, finds the block in Activity, and deletes the rule. Then it opens every page of the sidebar. A test fails when a page logs an error, breaks the Content Security Policy, or gets an error answer from the dashboard. It needs Redis, as the live feed does.
+
+Install Chromium for Playwright once. On Linux, add `--with-deps` the first time, for the browser's system libraries.
+
+```bash
+npx playwright install chromium
+```
+
+With Docker, start the demo, then run the test against it:
+
+```bash
+docker compose up -d workbench
+npm run smoke
+```
+
+With PHP 8.3 or later and its redis extension, start Redis, and the test serves the Workbench app itself, with a fresh database each time:
+
+```bash
+docker compose up -d redis
+npm run smoke
+```
+
+The test uses the `dist/` in your checkout. To test a change to the dashboard, run `npm run build` first, and put `dist/` back before you commit. The Docker demo keeps the dashboard's own limit of 120 requests a minute, and one run uses most of it: if a second run within the minute fails with a 429, wait a minute.
+
+CI runs the test on each release's pull request, on pushes to `develop` and `main`, nightly, and on pull requests that change the test, the Workbench app or the npm lock file. When it fails there, the run's `browser-smoke-test` artifact holds Playwright's report and a trace of each failed test, which `npx playwright show-trace` opens.
 
 ## Writing for users ([ADR-0033](docs/adr/0033-public-docs-for-users.md))
 
