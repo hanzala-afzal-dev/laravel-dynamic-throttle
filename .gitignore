@@ -36,3 +36,7 @@ benchmarks/results/*.xml
 # The documentation site's build and cache (ADR-0029).
 /docs/.vitepress/dist/
 /docs/.vitepress/cache/
+
+# The browser smoke test's results and report (SPEC-036).
+/e2e/test-results/
+/e2e/playwright-report/
