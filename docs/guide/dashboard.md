@@ -31,10 +31,32 @@ Gate::define('viewDynamicThrottle', fn (User $user) => $user->is_support || $use
 Gate::define('manageDynamicThrottle', fn (User $user) => $user->is_admin);
 ```
 
-- **Until you define a gate, only the `local` environment gets in**, guests too, as with Horizon. In production, nobody does, and `php artisan dynamic-throttle:health` warns about it (the `dashboard` check), unless you turn the dashboard off there with `DYNAMIC_THROTTLE_DASHBOARD=false`. So never run a public server with `APP_ENV=local`. Once you define one gate, the gates decide in `local` too, so sign in to open the dashboard there, and a gate you left out denies.
+- **Until you define a gate, only the `local` environment gets in**, guests too, as with Horizon. In production, nobody does, and `php artisan dynamic-throttle:health` warns about it (the `dashboard` check), unless you turn the dashboard off there with `DYNAMIC_THROTTLE_DASHBOARD=false`, or turn [links](#links) on. So never run a public server with `APP_ENV=local`. Once you define one gate, the gates decide in `local` too, so sign in to open the dashboard there, and a gate you left out denies.
 - **Managing includes viewing,** so defining `manageDynamicThrottle` alone is enough for a team of admins.
 - **Guests never get in** through a gate you define, unless its callback accepts a null user (`?User $user`).
 - **A denied request gets a 403,** never a redirect to a login page your app may not have. To send guests to your login page first, add `auth`: `'middleware' => ['web', 'auth']`.
+
+### Links
+
+An app without a user login has nobody a gate can let in. And during an incident, you may want to show the dashboard to someone without the right account, for an hour. A link opens the dashboard without a gate:
+
+```bash
+php artisan dynamic-throttle:link --name="alice, incident 42"              # views, for 60 minutes
+php artisan dynamic-throttle:link --name="bob, on call" --for=4h --manage  # can change things too
+php artisan dynamic-throttle:link --list                                   # the links that have not ended
+php artisan dynamic-throttle:link --revoke=7                               # ends link 7 now
+php artisan dynamic-throttle:link --revoke-all                             # ends every link
+```
+
+- **Turn them on first.** Links are off until you set `DYNAMIC_THROTTLE_DASHBOARD_LINKS=true`. They need a table of their own: publish the package's newest migrations and run `php artisan migrate`. If your gates are all you need, leave links off: nothing changes then.
+- **A link works once, in one browser,** for 60 minutes, or as long as `--for` says, up to `1d`. It only views, unless you pass `--manage`, which asks to confirm in production (`--force` in a script).
+- **Its holder presses "Continue".** The link opens a page that waits for that, so a chat app's preview never uses the link. The browser then has a session, which ends when the link does: at its end time, or at the next request after `--revoke`. The dashboard's header shows whose link it is, and until when.
+- **Send it privately.** The command prints the link once, and only a hash of it is stored, so nothing can show it again. Until it is used, anyone who has it can open the dashboard.
+- **Set `APP_URL` to your site's `https://` address.** The command builds the link from it, or from `dashboard.domain` when you set one, and warns about a link that starts with `http://`.
+- **The audit log names the link,** such as `link:7:alice, incident 42`, as the actor of what its holder changes. It also records each link made, used and ended, and who made it.
+- **Links add to your gates.** A signed-in user still gets what the gates allow. A change is credited to the user when a gate allowed it, and to the link otherwise.
+- **A link needs a session.** The default `['web']` middleware starts one. If you change `dashboard.middleware`, keep a group that starts a session, or `dynamic-throttle:health` warns.
+- **Your app's session lifetime** can end a link's session before the link ends. Its holder then needs a new link.
 
 ## The Overview
 
