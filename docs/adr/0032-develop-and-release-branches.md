@@ -22,7 +22,7 @@
    - mutation testing of the whole engine;
    - installs into fresh Laravel 12 and 13 apps;
    - a check that `dist/` is what the sources build;
-   - a browser test of the dashboard, once one exists (the maintainer asked for it on 2026-10-31).
+   - a browser test of the dashboard (the maintainer asked for it on 2026-10-31): SPEC-036's smoke test.
 
    Other pull requests keep their smaller run (ADR-0016).
 4. **A problem found on a release's pull request** is fixed on its release branch, by a pull request against that branch.
