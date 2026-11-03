@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { AppLayout } from '@/components/layout/app-layout';
 import { Pages } from '@/pages';
+import { formatTime } from '@/lib/time';
 import { manager, mockApi, renderAt, viewer } from '@/test/render';
 import logo from '../../../../art/logo.svg?url';
 
@@ -109,3 +110,27 @@ describe('the layout', () => {
         expect(screen.getByRole('button', { name: 'Theme: dark' })).toBeInTheDocument();
     });
 });
+
+/* SPEC-034 AC-23: in a link's session, the header names the link and when it ends. */
+describe('the header in a link\'s session', () => {
+    const link = { name: 'alice, incident 42', manage: false, expires_at: '2027-01-01T01:00:00+00:00' };
+
+    it('AC-23: names the link, and when it ends in the browser\'s time zone', async () => {
+        mockApi(viewer({ 'GET me': { body: { can: { view: true, manage: false }, environment: 'production', link } } }));
+        dashboardAt('/');
+
+        const line = await screen.findByText(/^Link for alice, incident 42, until/);
+
+        expect(line.querySelector('time')).toHaveAttribute('dateTime', link.expires_at);
+        expect(line.querySelector('time')).toHaveTextContent(formatTime(link.expires_at).local);
+    });
+
+    it('AC-23: says nothing of a link in a session without one', async () => {
+        mockApi(manager({ 'GET me': { body: { can: { view: true, manage: true }, environment: 'production', link: null } } }));
+        dashboardAt('/');
+
+        expect(await screen.findByText('Manager')).toBeInTheDocument();
+        expect(screen.queryByText(/^Link for/)).not.toBeInTheDocument();
+    });
+});
+

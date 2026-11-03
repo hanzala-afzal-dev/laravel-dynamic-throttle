@@ -13,6 +13,11 @@ export function configureApi(options: { base: string }): void {
     base = options.base;
 }
 
+/** The dashboard's base path, such as /dynamic-throttle, which its API is under. */
+export function dashboardBase(): string {
+    return base;
+}
+
 export class ApiError extends Error {
     constructor(
         readonly status: number,
@@ -76,7 +81,8 @@ export async function api<T>(method: Method, path: string, body?: unknown): Prom
     throw new ApiError(response.status, shown, fieldsOf(data));
 }
 
-function csrfToken(): string {
+/** The session's CSRF token, from the shell's <meta> tag. */
+export function csrfToken(): string {
     return document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? '';
 }
 

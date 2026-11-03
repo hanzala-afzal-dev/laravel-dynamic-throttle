@@ -18,6 +18,10 @@ export const AUDIT_ACTIONS: Record<string, string> = {
     'exemption.delete': 'Exemption removed',
     'settings.bypass': 'Bypass',
     'settings.scale': 'Scale factor',
+    // SPEC-034's dashboard links.
+    'link.create': 'Link made',
+    'link.use': 'Link used',
+    'link.revoke': 'Link ended',
 };
 
 /**

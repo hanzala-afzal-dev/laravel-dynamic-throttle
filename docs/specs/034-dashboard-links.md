@@ -115,7 +115,7 @@ The maintainer vetoes any of these in this PR (ADR-0027). **(roadmap)** marks wh
 
 - **AC-21** At `{path}/link#<token>`, the page removes the fragment from the address bar before anything else, so the history entry has no token, and shows "Continue". It makes no request to `api/link` until "Continue" is pressed.
 - **AC-22** "Continue" posts the token, and on 204 replaces the address with `{path}`. On 403 or 422, it shows the server's message. With no token in the address, such as after a reload, it says: "This address has no link in it. Open the link you were sent again."
-- **AC-23** In a link's session, the header shows "Link for alice, incident 42, until 11:30", in the browser's time zone, as the dashboard's other times are.
+- **AC-23** In a link's session, the header shows "Link for alice, incident 42, until" and the link's end time, as the dashboard shows every time: its date and time in the browser's time zone, with UTC on hover.
 
 ### Health and the hard rules
 

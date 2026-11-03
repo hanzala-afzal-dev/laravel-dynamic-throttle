@@ -8,7 +8,10 @@ export const LIVE = { refetchInterval: 5_000, refetchIntervalInBackground: false
 /** Data that changes slowly, or costs more to read, refreshes every minute (SPEC-021 decision 4). */
 export const EVERY_MINUTE = { refetchInterval: 60_000, refetchIntervalInBackground: false } as const;
 
-export type Me = { can: { view: boolean; manage: boolean }; environment: string };
+/** The link the session was started with, if any (SPEC-034), with its end as ISO 8601. */
+export type SessionLink = { name: string; manage: boolean; expires_at: string };
+
+export type Me = { can: { view: boolean; manage: boolean }; environment: string; link?: SessionLink | null };
 
 export type Settings = {
     bypass: { on: boolean; until: string | null };

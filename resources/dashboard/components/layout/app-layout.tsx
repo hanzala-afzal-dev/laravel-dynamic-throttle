@@ -7,6 +7,7 @@ import { Logo } from '@/components/logo';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useMe } from '@/lib/queries';
+import { Time } from '@/lib/time';
 import { useTheme } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import tabIcon from '../../../../art/logo.svg?url';
@@ -97,6 +98,12 @@ function Header() {
 
     return (
         <header className="flex h-14 items-center justify-end gap-2 border-b px-4 md:px-8">
+            {me?.link && (
+                // In a link's session, who it is for and when it ends (SPEC-034 AC-23).
+                <span className="mr-auto truncate text-sm text-muted-foreground">
+                    Link for {me.link.name}, until <Time value={me.link.expires_at} />
+                </span>
+            )}
             {me !== undefined && (
                 <>
                     <Badge variant={me.environment === 'production' ? 'destructive' : 'secondary'}>{me.environment}</Badge>
