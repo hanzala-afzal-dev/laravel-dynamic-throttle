@@ -87,7 +87,7 @@ php artisan dynamic-throttle:compile
 
 A new Laravel app has no API routes until you run `php artisan install:api`. The dashboard's own routes are never limited.
 
-**4. Before you deploy, say who may use the dashboard**, in a service provider's `boot()`. On your machine, this can wait: in the `local` environment, anyone can open the dashboard. Once you define the gates, they decide there too, so sign in to open it. Until you do, `php artisan dynamic-throttle:health` warns everywhere but `local`.
+**4. Before you deploy, say who may use the dashboard**, in a service provider's `boot()`. On your machine, this can wait: in the `local` environment, anyone can open the dashboard. Once you define the gates, they decide there too, so sign in to open it. Until you do, `php artisan dynamic-throttle:health` warns everywhere but `local`. An app without a user login can use one-time [links](docs/guide/dashboard.md#links) instead.
 
 ```php
 use App\Models\User;

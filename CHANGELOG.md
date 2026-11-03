@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Links that open the dashboard without a gate, for an app without a user login, or for a helper during an incident. `php artisan dynamic-throttle:link --name="alice, incident 42"` prints a link that works once, in one browser, for 60 minutes, or as long as `--for` says, up to a day. It lets its holder view, or with `--manage` also change rules, exemptions and settings. `--list` shows the links, and `--revoke` and `--revoke-all` end them. The audit log records each link made, used and ended, and names the link as the actor of what its holder changes. Links are off until you set `DYNAMIC_THROTTLE_DASHBOARD_LINKS=true`, and they need a new table: publish the package's newest migrations and run `php artisan migrate` ([links](docs/guide/dashboard.md#links)).
+- With links on, the `dashboard` health check is ok without a gate, since links open the dashboard, and warns when the dashboard's middleware starts no session for a link.
+
 ## [0.1.0] - 2026-10-29
 
 The first stable release, after two betas: `composer require hanzala-afzal/laravel-dynamic-throttle` installs it, without `@beta`. From a beta, `composer update` brings it, since `^0.1@beta` allows it, and your app needs no change. But check two things. A rule for a `web` route, such as one from the Login, Password reset or Sign-up template, applies only once `dynamic.throttle` runs on the `web` group too, as the README now shows. And `dynamic-throttle:health --strict` fails on a new warning, `unreached`, for a rule that matches only routes that do not run the middleware, so a deploy script that runs it may stop on one.

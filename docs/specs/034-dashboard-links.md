@@ -1,6 +1,6 @@
 # SPEC-034: Dashboard links for apps without a login, and for incidents
 
-- Status: In progress
+- Status: Done
 - ADRs: ADR-0031 (new, amends ADR-0015), ADR-0007, ADR-0011, ADR-0017, ADR-0027
 - Roadmap phase: after 0.1.0, in 0.2.0
 
@@ -30,7 +30,7 @@ With `dashboard.links` on, `php artisan dynamic-throttle:link --name="alice, inc
   - `--revoke=<id>` ends one link, used or not. `--revoke-all` ends every link that has not ended.
   - `--list` shows the links that have not ended, without their tokens.
 - **The audit log** has an entry for each link made (`link.create`, by `cli:<system user>`), used (`link.use`, with the IP and user agent) and ended (`link.revoke`). A change made through a link names it as the actor, `link:7:alice, incident 42`.
-- **The `dashboard` health check** (SPEC-033) knows about links. Outside `local`, with no gate defined and links on, it is ok: only links open the dashboard. It warns when links are on but their table is missing, or the dashboard's middleware starts no session.
+- **The `dashboard` health check** (SPEC-033) knows about links. Outside `local`, with no gate defined and links on, it is ok: only links open the dashboard. It warns when links are on but the dashboard's middleware starts no session.
 
 ## Decisions
 
@@ -80,7 +80,6 @@ The maintainer vetoes any of these in this PR (ADR-0027). **(roadmap)** marks wh
 - A link that cannot be used: `This link is not valid: it was already used, it was revoked, or it has expired. Ask for a new one.`
 - Health, links only: `Only links from dynamic-throttle:link open the dashboard: the app defines neither viewDynamicThrottle nor manageDynamicThrottle.`
 - Health, with a gate: the gate's message of SPEC-033, then `Links from dynamic-throttle:link open it too.`
-- Health, no table: `Links are on, but ` then `TableMissing`'s message for `dynamic_throttle_links`.
 - Health, no session: `Links are on, but the dashboard's middleware starts no session, so a link cannot sign anyone in: add the web group to dynamic-throttle.dashboard.middleware.`
 
 ## Acceptance criteria
@@ -120,7 +119,7 @@ The maintainer vetoes any of these in this PR (ADR-0027). **(roadmap)** marks wh
 ### Health and the hard rules
 
 - **AC-24** With links on, outside `local`, and no gate defined, the `dashboard` check is ok with the "links only" message, so `--strict` does not fail on it. With a gate defined, it adds "Links from dynamic-throttle:link open it too." With links off, it says what SPEC-033 says.
-- **AC-25** With links on, the `dashboard` check warns when the `dynamic_throttle_links` table is missing, and when the dashboard's middleware starts no session, with the exact messages.
+- **AC-25** With links on, the `dashboard` check warns when the dashboard's middleware starts no session, with the exact message. A missing `dynamic_throttle_links` table is not its to report: a health check never reads the database (SPEC-016 AC-21), so the command (AC-9) and the link's use (AC-32) say so instead. PR 5 found the conflict, and dropped the table from this criterion.
 - **AC-26** The arch tests hold: the links' code is in `Dashboard`, `Console`, `Models` and `Support`, never used by `Http` or `Engine`, and `EmergencyControls` stays the audit log's only writer.
 
 ### From the security review
