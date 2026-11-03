@@ -16,6 +16,7 @@ use Afzal\DynamicThrottle\Http\RequestIdentityResolver;
 use Afzal\DynamicThrottle\Http\Untouched;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Models\AuditEntry;
+use Afzal\DynamicThrottle\Models\DashboardLink;
 use Afzal\DynamicThrottle\Support\ApcuFailureMemory;
 use Afzal\DynamicThrottle\Support\ApcuManifestCache;
 use Afzal\DynamicThrottle\Support\EmergencyControls;
@@ -223,6 +224,20 @@ arch('the manifest read path reaches APCu only through LocalManifestCache (SPEC-
 arch('only EmergencyControls writes the audit log (SPEC-013 AC-23)')
     ->expect(AuditEntry::class)
     ->toOnlyBeUsedIn([EmergencyControls::class]);
+
+/*
+| SPEC-034 AC-26: the dashboard links' code stays with the dashboard, the CLI and the
+| dashboard's health check, so request handling never reaches it, nor the database
+| through it.
+*/
+
+arch('the dashboard links\' code is used only by the dashboard, the CLI and the health checks (SPEC-034 AC-26)')
+    ->expect('Afzal\\DynamicThrottle\\Dashboard\\Links')
+    ->toOnlyBeUsedIn(['Afzal\\DynamicThrottle\\Dashboard', 'Afzal\\DynamicThrottle\\Console', 'Afzal\\DynamicThrottle\\Support\\Health']);
+
+arch('a dashboard link is read and written only by the dashboard, the CLI, the health checks and EmergencyControls (SPEC-034 AC-26)')
+    ->expect(DashboardLink::class)
+    ->toOnlyBeUsedIn(['Afzal\\DynamicThrottle\\Dashboard', 'Afzal\\DynamicThrottle\\Console', 'Afzal\\DynamicThrottle\\Support\\Health', EmergencyControls::class]);
 
 /*
 | SPEC-014: dynamic-throttle:explain changes nothing (AC-9). It reads the
