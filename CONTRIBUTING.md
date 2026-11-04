@@ -107,6 +107,8 @@ npm run budget      # the first page stays under 300 KB gzipped
 
 `npm run dev` rebuilds on every change. Both rewrite `dist/` in your checkout, so put it back before you commit: `git checkout -- dist && git clean -fdq dist`. CI fails a pull request that changes `dist/`, and never edit it by hand. Add shadcn/ui components by copying them into `components/ui/`.
 
+`package.json` overrides `minimatch` with 11.0.4. ESLint 10 and typescript-eslint 8 bring minimatch 10, which has a known advisory (GHSA-g3hv-75wg-m249) that no minimatch 10 release fixes. It affects the lint tools only, never what ships. Remove the override once ESLint and typescript-eslint bring a fixed minimatch.
+
 ### Trying the dashboard
 
 The Workbench app is a demo of the dashboard. It has four rules, an exemption, a week of made-up hourly numbers, and routes for the rules to limit. Node is not needed: `dist/` is committed.
