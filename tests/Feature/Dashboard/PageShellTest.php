@@ -185,7 +185,34 @@ it('AC-14: answers the shell on a stack without a session, with an empty CSRF to
         ->and($response->getContent())->toContain('<meta name="csrf-token" content="">');
 });
 
-it('AC-15: keeps the base path on the site, whatever path the request names', function (): void {
+it('AC-15: keeps the base path on the site, whatever base URL the request reports', function (): void {
+    // A base URL that starts with two slashes, as Symfony's HttpFoundation reported for a
+    // path such as //evil.example/app/index.php/dynamic-throttle before 7.4.23 and 8.1.11,
+    // and as a trusted proxy's X-Forwarded-Prefix still can. The request reports it
+    // itself, so the test holds on every version.
+    $request = new class extends Request
+    {
+        public function getBaseUrl(): string
+        {
+            return '//evil.example/app/index.php';
+        }
+
+        public function getPathInfo(): string
+        {
+            return '/dynamic-throttle';
+        }
+    };
+    $request = $request::create('http://localhost/app/index.php/dynamic-throttle');
+    $this->actingAs(DashboardApi::viewer());
+
+    $html = (string) app(Kernel::class)->handle($request)->getContent();
+
+    expect($html)->toContain('data-base="/evil.example/app/index.php/dynamic-throttle"')
+        ->toContain('<script type="module" src="/evil.example/app/index.php/dynamic-throttle/assets/main-abc123.js"></script>')
+        ->not->toContain('"//');
+});
+
+it('AC-15: never links to another host for a request path that starts with two slashes', function (): void {
     // An app in a subdirectory, and a request whose path starts with two slashes.
     $request = Request::create('http://localhost//evil.example/app/index.php/dynamic-throttle', 'GET', server: [
         'SCRIPT_NAME' => '/app/index.php',
@@ -195,11 +222,12 @@ it('AC-15: keeps the base path on the site, whatever path the request names', fu
     $request->server->set('REQUEST_URI', '//evil.example/app/index.php/dynamic-throttle');
     $this->actingAs(DashboardApi::viewer());
 
-    $html = (string) app(Kernel::class)->handle($request)->getContent();
+    $response = app(Kernel::class)->handle($request);
 
-    expect($html)->toContain('data-base="/evil.example/app/index.php/dynamic-throttle"')
-        ->toContain('<script type="module" src="/evil.example/app/index.php/dynamic-throttle/assets/main-abc123.js"></script>')
-        ->not->toContain('"//');
+    // Symfony's HttpFoundation 7.4.23 and 8.1.11 give such a path no base URL, so no
+    // route matches it. Earlier versions serve the dashboard under the subdirectory.
+    expect($response->getStatusCode())->toBeIn([Response::HTTP_OK, Response::HTTP_NOT_FOUND])
+        ->and((string) $response->getContent())->not->toContain('"//');
 });
 
 it('AC-16: forbids framing with X-Frame-Options too, which outlasts an app\'s own policy', function (): void {
