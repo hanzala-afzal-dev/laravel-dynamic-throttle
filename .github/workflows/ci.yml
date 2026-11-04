@@ -262,7 +262,8 @@ jobs:
         include:
           - { store: Redis store, path: src/Engine/Stores/RedisLimiterStore.php }
           - { store: cache store, path: src/Engine/Stores/CacheLimiterStore.php }
-    # The stores are only exercised against real services, as in the driver job.
+          - { store: Redis telemetry buffer, path: src/Engine/Telemetry/RedisTelemetryBuffer.php }
+    # The stores and the Redis telemetry buffer are only exercised against real services, as in the driver job.
     services:
       redis:
         image: redis:7.4-alpine
@@ -319,9 +320,9 @@ jobs:
           MUTATE_PATH: ${{ matrix.path }}
         run: vendor/bin/pest --exclude-group=concurrency --mutate --everything --path="$MUTATE_PATH" --min=85 --parallel
 
-  # Everything but the two stores, without the services, as `composer test` runs: the
-  # driver tests, which only cover the stores, are left out, and the contract suite uses
-  # its in-memory stores. The score is the same as with the services.
+  # Everything but the two stores and the Redis telemetry buffer, without the services, as
+  # `composer test` runs: the driver tests, which cover those three files, are left out,
+  # and the contract suite uses its in-memory stores.
   mutation-engine:
     name: Mutation testing · the rest of the engine
     needs: matrix
@@ -346,7 +347,7 @@ jobs:
       - name: Mutation score of at least 85% for the rest of src/Engine
         # One --exclude-group only: Pest 4, which PHP 8.3 installs, ignores a second one. The
         # concurrency tests are all in tests/Drivers, so they are left out with the rest.
-        run: vendor/bin/pest --exclude-group=drivers --mutate --everything --path=src/Engine --ignore=src/Engine/Stores/RedisLimiterStore.php,src/Engine/Stores/CacheLimiterStore.php --min=85 --parallel
+        run: vendor/bin/pest --exclude-group=drivers --mutate --everything --path=src/Engine --ignore=src/Engine/Stores/RedisLimiterStore.php,src/Engine/Stores/CacheLimiterStore.php,src/Engine/Telemetry/RedisTelemetryBuffer.php --min=85 --parallel
 
   # ADR-0016: a pull request's mutation run, of the engine files it changes and those its
   # changed tests cover, with the driver tests and their services. An engine file's own
