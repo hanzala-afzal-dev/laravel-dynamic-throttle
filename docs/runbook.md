@@ -59,7 +59,7 @@ It still exits 0, and prints the driver, such as `redis, connection default`. Wh
      ```
 
    - **If the manifest is in that Redis too,** bypass cannot reach your servers: it is saved, but the manifest cannot be written, and the command exits 1. Use the kill switch instead: set `DYNAMIC_THROTTLE_ENABLED=false`, then reload the config (`php artisan config:cache`, then reload PHP-FPM, or run `php artisan octane:reload`). The middleware then does nothing.
-3. **Know what a restart does.** A process keeps the rules it read before the outage, and on PHP-FPM with APCu, so does the server. A process that starts during the outage, on a server that kept none, applies no rule at all, so its fail-closed routes let requests through too ([ADR-0010](adr/0010-failure-policy.md) point 3).
+3. **Know what a restart does.** A process keeps the rules it read before the outage, and on PHP-FPM with APCu, so does the server. A process that starts during the outage, on a server that kept none, applies no rule at all, so its fail-closed routes let requests through too.
 4. **Bring Redis back,** or fail over to a replica.
 
 ### After

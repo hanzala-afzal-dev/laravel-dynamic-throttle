@@ -1,6 +1,6 @@
 # Why a request is limited
 
-`dynamic-throttle:explain` shows what the middleware does with a request, and why, without counting it ([ADR-0008](../adr/0008-rule-matching.md)):
+`dynamic-throttle:explain` shows what the middleware does with a request, and why, without counting it:
 
 ```bash
 php artisan dynamic-throttle:explain GET /api/orders --ip=203.0.113.7 --user=42 --header="X-Api-Key: abc"

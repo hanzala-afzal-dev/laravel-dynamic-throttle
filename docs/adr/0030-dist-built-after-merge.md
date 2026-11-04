@@ -4,6 +4,7 @@
 - Date: 2026-10-30
 - Roadmap phase: after 0.1.0
 - Amends: ADR-0028 (point 2: who commits `dist/`, and how CI checks it)
+- Amended: 2026-10-31 by [ADR-0032](0032-develop-and-release-branches.md): the build goes to `develop` and to release branches, not `main`, and a release's pull request checks it.
 
 ## Context
 

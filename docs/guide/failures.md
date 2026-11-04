@@ -1,6 +1,6 @@
 # When something fails
 
-A rule's `on_failure` decides what happens when its counter cannot be checked: the counter store fails, or the rule cannot tell who the client is, such as when your custom scope resolver throws ([ADR-0010](../adr/0010-failure-policy.md)).
+A rule's `on_failure` decides what happens when its counter cannot be checked: the counter store fails, or the rule cannot tell who the client is, such as when your custom scope resolver throws.
 
 - **`open`, the default.** The request goes through. Only the rules that counted it before the failure set rate-limit headers.
 - **`closed`.** The request gets a 503 (`ServiceUnavailableHttpException`), which your exception handler renders as it renders `abort(503)`, with a `Retry-After`. Use it for a rule that must hold during an outage, such as one on a login route. A dry-run rule never answers 503. While the cache cannot be read, the rules still apply from the last manifest the process read, or on PHP-FPM with APCu, the last one the server read. Only with none is no rule known, so none answers 503.

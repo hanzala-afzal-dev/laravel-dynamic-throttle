@@ -32,6 +32,13 @@ class WorkbenchServiceProvider extends ServiceProvider
                 'dynamic-throttle.redis_connection' => 'throttle',
             ]);
         }
+
+        // The browser smoke test's server (e2e/serve.sh) loads pages faster than a person
+        // does, and may run the test again within the minute, so the dashboard's own limit
+        // of 120 requests a minute is off there (SPEC-036). Pest covers that limit.
+        if (env('WORKBENCH_SMOKE') === true) {
+            config(['dynamic-throttle.dashboard.rate_limit' => 0]);
+        }
     }
 
     /**
@@ -48,6 +55,9 @@ class WorkbenchServiceProvider extends ServiceProvider
             Route::get('api/orders', fn (): array => ['orders' => []]);
             Route::get('api/search', fn (): array => ['results' => []]);
             Route::get('api/export', fn (): array => ['export' => 'queued']);
+
+            // The browser smoke test's paths (SPEC-036): each run makes a rule for one of its own.
+            Route::get('api/smoke/{run}', fn (): array => ['smoke' => 'ok']);
         });
 
         if ($this->app->runningInConsole()) {

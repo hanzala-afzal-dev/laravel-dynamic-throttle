@@ -7,6 +7,7 @@
 - Amended by: [ADR-0018](0018-minimal-dashboard.md) (Vitest and Playwright replaced by Pest feature tests)
 - Amended: 2026-09-25, mutation testing waits for a PR to leave draft and runs in parallel parts (see the decision record)
 - Amended: 2026-10-08, a PR mutates only the engine files it changes, and a weekly run mutates the whole engine (see the decision record)
+- Amended: 2026-10-31 by [ADR-0032](0032-develop-and-release-branches.md): a release's pull request into `main` runs the full matrix and mutation testing of the whole engine, and pushes to `develop` run the full matrix as pushes to `main` do.
 
 ## Context
 

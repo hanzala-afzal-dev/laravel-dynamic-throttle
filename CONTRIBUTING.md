@@ -28,6 +28,20 @@ Tiny changes can skip the spec. Bug fixes always start with a failing regression
 
 If a spec would break an ADR, write a new ADR that supersedes the old one first.
 
+## Branches and releases ([ADR-0032](docs/adr/0032-develop-and-release-branches.md))
+
+`main` holds the last release: its README, its docs and its changelog. The work collects in `develop`.
+
+- **Pull requests go to `develop`.** Start your branch from `develop`, and open the pull request against it. Name the branch after its type of change, as its commits are: `feat/…`, `fix/…`, `docs/…`, `ci/…`, `chore/…`, `refactor/…` or `test/…`. CI fails a pull request into `main` unless its branch is `release/<version>`.
+- **A release goes through a release branch:**
+  1. Merge `develop`'s open "chore: build dist" pull request, if there is one.
+  2. Start `release/<version>` from `develop`. In `CHANGELOG.md`, move the Unreleased entries under a heading with the version and the day you will tag it. Open a pull request into `main`.
+  3. CI runs the integration run on it: the full matrix, the driver tests on every store, mutation testing of the whole engine, installs into fresh Laravel 12 and 13 apps, a check that `dist/` is what the sources build, and the browser smoke test.
+  4. Fix any problem on the release branch, with a pull request against it.
+  5. Once it is green, the maintainer merges it, tags the merge commit on `main` as `v<version>`, and publishes the GitHub release. Packagist updates on its own.
+  6. Open a pull request from `main` into `develop`, so `develop` gets the release's changelog heading.
+- **There are no hotfix branches:** a fix for a released version ships with the next release from `develop`.
+
 ## Local setup
 
 The test suite runs in Docker, so you do not need PHP 8.3 installed:
@@ -46,6 +60,17 @@ docker compose down -v
 ```
 
 `docker compose run --rm php scripts/verify-install.sh 13` installs the package into a fresh Laravel app and checks that it boots.
+
+The comparison on the guide's [performance page](docs/guide/performance.md), with no limiter, Laravel's `throttle` and Dynamic Throttle, runs like this ([the recorded results](benchmarks/results/phase-6-comparison.md)):
+
+```bash
+docker compose up -d redis
+vendor/bin/phpbench run benchmarks/Http/ComparisonBench.php --report=engine --dump-file=run.xml
+php benchmarks/percentiles.php run.xml
+php -d apc.enable_cli=1 benchmarks/round-trips.php
+```
+
+The first command takes about 20 minutes: each request runs in a process of its own, so the 200 per case give the spread of single requests.
 
 ## Style
 
@@ -69,7 +94,7 @@ A PR that changes any of them must say so, and a breaking change needs an upgrad
 
 ## Working on the dashboard ([ADR-0028](docs/adr/0028-dashboard-react-shadcn.md), [ADR-0030](docs/adr/0030-dist-built-after-merge.md))
 
-The dashboard is React with shadcn/ui, in `resources/dashboard/`. Vite builds it into `dist/`, which is committed: users get the build and install nothing. Pull requests leave `dist/` alone: after each merge, the Build dist workflow builds it and opens a pull request with it, "chore: build dist". You need Node 22.
+The dashboard is React with shadcn/ui, in `resources/dashboard/`. Vite builds it into `dist/`, which is committed: users get the build and install nothing. Pull requests leave `dist/` alone: after each merge into `develop`, the Build dist workflow builds it and opens a pull request with it, "chore: build dist". You need Node 22.
 
 ```bash
 npm ci
@@ -103,6 +128,41 @@ With PHP 8.3 or later installed instead, `composer serve` builds, seeds and serv
 As a guest you are a manager. To see the dashboard as a viewer, open `/_workbench/login/viewer@example.com`. `/_workbench/logout` signs you out again.
 
 After pulling changes, restart the demo. `npm run build` changes take effect on the next page load.
+
+### The browser smoke test
+
+`npm run smoke` runs the dashboard in Chromium, with Playwright, against the Workbench app ([SPEC-036](docs/specs/036-browser-smoke-test.md)). It makes a rule in the Rules form, sends requests until the rule blocks, finds the block in Activity, and deletes the rule. Then it opens every page of the sidebar. A test fails when a page logs an error, breaks the Content Security Policy, or gets an error answer from the dashboard. It needs Redis, as the live feed does.
+
+Install Chromium for Playwright once. On Linux, add `--with-deps` the first time, for the browser's system libraries.
+
+```bash
+npx playwright install chromium
+```
+
+With Docker, start the demo, then run the test against it:
+
+```bash
+docker compose up -d workbench
+npm run smoke
+```
+
+With PHP 8.3 or later and its redis extension, start Redis, and the test serves the Workbench app itself, with a fresh database each time:
+
+```bash
+docker compose up -d redis
+npm run smoke
+```
+
+The test uses the `dist/` in your checkout. To test a change to the dashboard, run `npm run build` first, and put `dist/` back before you commit. The Docker demo keeps the dashboard's own limit of 120 requests a minute, and one run uses most of it: if a second run within the minute fails with a 429, wait a minute.
+
+CI runs the test on each release's pull request, on pushes to `develop` and `main`, nightly, and on pull requests that change the test, the Workbench app or the npm lock file. When it fails there, the run's `browser-smoke-test` artifact holds Playwright's report and a trace of each failed test, which `npx playwright show-trace` opens.
+
+## Writing for users ([ADR-0033](docs/adr/0033-public-docs-for-users.md))
+
+The README, the guide, the runbook, the docs site and the changelog are for the package's users. They say what it does, how to use it, what is new and what is fixed.
+
+- **Nothing about developing the package goes there,** and no link to it: no ADRs, specs, roadmap, tests, CI, benchmark commands, branches or pull requests. A guide page says what a decision means for the user, in its own words. That material belongs in this file, `CLAUDE.md`, `docs/adr/`, `docs/specs/` and `docs/roadmap.md`.
+- **The changelog lists what users notice,** under **Added** and **Fixed**. When a release needs a change in an app, its first paragraph says what to do. Dependency updates, CI, tests, the docs site and changes to the repository get no entry.
 
 ## The documentation site ([ADR-0029](docs/adr/0029-documentation-site.md))
 

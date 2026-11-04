@@ -1,6 +1,6 @@
 # During an incident
 
-Two runtime settings change every rule at once, without a deploy, and end by themselves ([ADR-0011](../adr/0011-emergency-controls.md)). They need the package's newest migrations: publish them and run `php artisan migrate`.
+Two runtime settings change every rule at once, without a deploy, and end by themselves. They need the package's newest migrations: publish them and run `php artisan migrate`.
 
 ```bash
 php artisan dynamic-throttle:bypass on --for=30m   # every request goes through, unlimited
@@ -12,6 +12,7 @@ php artisan dynamic-throttle:scale off
 
 - **End times.** `--for` takes `90s`, `30m`, `2h` or `1d`, up to 365 days. Without it, a change ends after one hour, and `--forever` sets no end time. Servers stop applying a setting at its end time, by their own clock, even when nothing compiles in between.
 - **Scaling.** The factor goes from 0.1 to 10, with at most two decimals. A rule's limit becomes `max(1, ceil(max_attempts × factor))`, a dry-run rule's too, and the counts made before the change still count.
+- **A helper without an account.** `php artisan dynamic-throttle:link --name="alice, incident 42" --for=1h` prints a link that opens the dashboard once, in one browser, for an hour. Add `--manage` to let them change things. Links must be turned on beforehand: see [links](dashboard.md#links).
 - **One bad rule.** `php artisan dynamic-throttle:list` shows every rule with its id. `dynamic-throttle:disable-rule 12` switches rule 12 off, and `enable-rule 12` brings it back.
 - **Confirmation.** In production, turning bypass on, a factor below 1 and disabling an enforcing rule ask first. Scripts pass `--force`.
 - **Propagation.** Each change compiles the manifest, and servers apply it within `manifest.refresh_seconds`. If the manifest cannot be written, the change stays saved, the command exits 1, and servers keep the previous manifest until a compile succeeds.

@@ -13,7 +13,6 @@
 
 <p align="center">
   <a href="https://packagist.org/packages/hanzala-afzal/laravel-dynamic-throttle"><img src="https://img.shields.io/packagist/v/hanzala-afzal/laravel-dynamic-throttle.svg?style=flat-square&label=packagist" alt="Latest version on Packagist"></a>
-  <a href="https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/actions/workflows/ci.yml"><img src="https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/actions/workflows/ci.yml/badge.svg" alt="Tests"></a>
   <a href="https://packagist.org/packages/hanzala-afzal/laravel-dynamic-throttle"><img src="https://img.shields.io/packagist/dt/hanzala-afzal/laravel-dynamic-throttle.svg?style=flat-square" alt="Total downloads"></a>
   <img src="https://img.shields.io/badge/php-8.3%20%7C%208.4%20%7C%208.5-777BB4?style=flat-square&logo=php&logoColor=white" alt="PHP 8.3, 8.4 and 8.5">
   <img src="https://img.shields.io/badge/laravel-12%20%7C%2013-FF2D20?style=flat-square&logo=laravel&logoColor=white" alt="Laravel 12 and 13">
@@ -88,7 +87,7 @@ php artisan dynamic-throttle:compile
 
 A new Laravel app has no API routes until you run `php artisan install:api`. The dashboard's own routes are never limited.
 
-**4. Before you deploy, say who may use the dashboard**, in a service provider's `boot()`. On your machine, this can wait: in the `local` environment, anyone can open the dashboard. Once you define the gates, they decide there too, so sign in to open it. Until you do, `php artisan dynamic-throttle:health` warns everywhere but `local`.
+**4. Before you deploy, say who may use the dashboard**, in a service provider's `boot()`. On your machine, this can wait: in the `local` environment, anyone can open the dashboard. Once you define the gates, they decide there too, so sign in to open it. Until you do, `php artisan dynamic-throttle:health` warns everywhere but `local`. An app without a user login can use one-time [links](docs/guide/dashboard.md#links) instead.
 
 ```php
 use App\Models\User;
@@ -162,6 +161,6 @@ Report bugs in [issues](https://github.com/hanzala-afzal-dev/laravel-dynamic-thr
 
 ## License
 
-MIT, © 2026 [Hanzala Afzal](https://github.com/hanzala-afzal-dev). See [LICENSE](LICENSE), [CONTRIBUTING.md](CONTRIBUTING.md) and the [changelog](CHANGELOG.md).
+MIT, © 2026 [Hanzala Afzal](https://github.com/hanzala-afzal-dev). See [LICENSE](LICENSE) and the [changelog](CHANGELOG.md).
 
 An independent package, not affiliated with or endorsed by Laravel. "Laravel" is a trademark of its respective owner.

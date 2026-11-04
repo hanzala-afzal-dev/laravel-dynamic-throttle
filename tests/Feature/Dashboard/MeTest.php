@@ -24,5 +24,6 @@ it('AC-8: says what the user may do, and the app\'s environment', function (stri
 
     $response = DashboardApi::send($this, 'GET', 'me', user: DashboardApi::manager());
 
-    expect($response->json())->toBe(['can' => ['view' => true, 'manage' => true], 'environment' => $environment]);
+    // link: the dashboard link the session was started with (SPEC-034), none here.
+    expect($response->json())->toBe(['can' => ['view' => true, 'manage' => true], 'environment' => $environment, 'link' => null]);
 })->with(['production', 'staging']);

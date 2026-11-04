@@ -14,6 +14,7 @@ use Afzal\DynamicThrottle\Console\EnableRuleCommand;
 use Afzal\DynamicThrottle\Console\ExplainCommand;
 use Afzal\DynamicThrottle\Console\FlushMetricsCommand;
 use Afzal\DynamicThrottle\Console\HealthCommand;
+use Afzal\DynamicThrottle\Console\LinkCommand;
 use Afzal\DynamicThrottle\Console\ListCommand;
 use Afzal\DynamicThrottle\Console\PruneCommand;
 use Afzal\DynamicThrottle\Console\ScaleCommand;
@@ -424,6 +425,7 @@ final class DynamicThrottleServiceProvider extends ServiceProvider
             CompileCommand::class,
             StatusCommand::class,
             BypassCommand::class,
+            LinkCommand::class,
             ScaleCommand::class,
             ListCommand::class,
             DisableRuleCommand::class,

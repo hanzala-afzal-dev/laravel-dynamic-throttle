@@ -43,6 +43,9 @@
 /components.json export-ignore
 /.nvmrc export-ignore
 
+# The browser smoke test (SPEC-036).
+/e2e export-ignore
+
 # The build is generated: diffs and merges take it whole, and it is never edited by hand.
 /dist/** -diff linguist-generated=true
 

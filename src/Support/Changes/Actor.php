@@ -17,6 +17,13 @@ use Illuminate\Http\Request;
  */
 final readonly class Actor
 {
+    /**
+     * Set on a request that a dashboard link let through where no gate did, to the
+     * link's actor, link:<id>:<name>: a change's actor is whoever allowed it (SPEC-034
+     * decision 11).
+     */
+    public const string ALLOWED_BY_LINK = 'dynamic-throttle.allowed-by-link';
+
     public function __construct(
         public string $name,
         public ?string $ip = null,
@@ -32,12 +39,19 @@ final readonly class Actor
     }
 
     /**
-     * The request's user, named as exemptions and the user scope name one,
+     * The dashboard link that let the request through, when no gate did (SPEC-034).
+     * Otherwise the request's user, named as exemptions and the user scope name one,
      * user:App\Models\User:42, so one user has one name in every table (decision 5),
      * or guest where an undefined gate lets a guest in locally.
      */
     public static function of(Request $request): self
     {
+        $link = $request->attributes->get(self::ALLOWED_BY_LINK);
+
+        if (is_string($link)) {
+            return new self($link, $request->ip(), $request->userAgent());
+        }
+
         $user = $request->user();
         $id = $user instanceof Authenticatable ? $user->getAuthIdentifier() : null;
 

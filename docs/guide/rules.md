@@ -118,7 +118,7 @@ Rule::create([
 
 If guests can reach the route, the default `on_missing_identity`, `ip`, counts each of them by IP. The `response_override` is always sent as JSON, which suits an API. On a route that serves web pages, leave it out: your exception handler then renders the 429 as it renders `abort(429)`, a page for a browser and JSON for an API client.
 
-**2. A limit per plan,** in place of the per-user rule. Give each plan a rule with a custom scope that finds only that plan's users. The resolver returns `null` for the others, and `on_missing_identity` `skip` makes the rule ignore them ([ADR-0022](../adr/0022-skip-rules-without-identity.md)):
+**2. A limit per plan,** in place of the per-user rule. Give each plan a rule with a custom scope that finds only that plan's users. The resolver returns `null` for the others, and `on_missing_identity` `skip` makes the rule ignore them:
 
 ```php
 // In a service provider's boot()

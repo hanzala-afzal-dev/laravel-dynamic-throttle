@@ -32,7 +32,7 @@ The dashboard's path now answers 404, and the package's Artisan commands and sch
 
 | What | Where | Effect |
 |---|---|---|
-| Your rules, exemptions, settings, audit log and hourly traffic numbers | Five tables, `dynamic_throttle_*` | None. They come back into use if you install the package again. |
+| Your rules, exemptions, settings, audit log, hourly traffic numbers and dashboard links | Six tables, `dynamic_throttle_*` | None. They come back into use if you install the package again. |
 | The migrations you published | `database/migrations` | None. They use only Laravel's classes, so `migrate`, `migrate:fresh` and `migrate:rollback` still work. |
 | The config file you published | `config/dynamic-throttle.php` | None. It uses only Laravel's classes. |
 | `DYNAMIC_THROTTLE_*` variables, and the gates `viewDynamicThrottle` and `manageDynamicThrottle` | `.env`, your service provider | None. Nothing reads them. |
@@ -64,7 +64,7 @@ return new class extends Migration
     public function up(): void
     {
         // The exemptions first: they reference the rules.
-        foreach (['dynamic_throttle_exemptions', 'dynamic_throttle_rules', 'dynamic_throttle_settings', 'dynamic_throttle_audit_log', 'dynamic_throttle_metrics_hourly'] as $table) {
+        foreach (['dynamic_throttle_exemptions', 'dynamic_throttle_rules', 'dynamic_throttle_settings', 'dynamic_throttle_audit_log', 'dynamic_throttle_metrics_hourly', 'dynamic_throttle_links'] as $table) {
             Schema::dropIfExists($table);
         }
     }

@@ -1,6 +1,6 @@
 # Health checks
 
-The package lets requests through when something is wrong ([ADR-0010](../adr/0010-failure-policy.md)), so a mistake in its setup can switch limits off without a sound. `dynamic-throttle:health` looks for those mistakes:
+The package lets requests through when something is wrong, so a mistake in its setup can switch limits off without a sound. `dynamic-throttle:health` looks for those mistakes:
 
 ```bash
 php artisan dynamic-throttle:health            # a line per check
@@ -18,7 +18,7 @@ Each check is `ok`, `warning`, `error` or `skipped`, with what it found and what
 | `redis-timeouts` | A Redis connection requests use, for the counters or the manifest, without a timeout, or with one above a second, so a Redis that hangs holds requests that long or more. Without timeouts, phpredis waits PHP's `default_socket_timeout`, 60 seconds by default ([timeouts](storage-and-runtimes.md#timeouts)). |
 | `app-key` | No `APP_KEY`, so identities are hashed without a key. |
 | `apcu` | PHP-FPM without APCu, so every request reads the rules from the cache first, and an outage costs every request a try. The command line cannot see the web server's PHP, so there it is skipped: the dashboard's Settings page runs the checks in the web server, and shows the answer. |
-| `dashboard` | No `viewDynamicThrottle` or `manageDynamicThrottle` gate outside the `local` environment, so nobody can open the dashboard, and visitors get a 403 that says nothing about why ([who gets in](dashboard.md#who-gets-in)). A `Gate::before` callback alone does not count, as for the dashboard itself. |
+| `dashboard` | No `viewDynamicThrottle` or `manageDynamicThrottle` gate outside the `local` environment, so nobody can open the dashboard, and visitors get a 403 that says nothing about why ([who gets in](dashboard.md#who-gets-in)). A `Gate::before` callback alone does not count, as for the dashboard itself. With [links](dashboard.md#links) on, no gate is fine, since links open the dashboard, but dashboard middleware that starts no session warns: a link has nothing to sign in to. |
 | `attached` | `dynamic.throttle` on no route, and not global middleware, so no rule applies. |
 | `unreached` | Rules that match only routes `dynamic.throttle` never limits, so they never apply: routes without it, such as a login rule while only the `api` group runs it, or paths `except` covers. A rule that matches no route is not named, since its pattern may name a route parameter's value. |
 | `except` | Horizon, Telescope, Pulse, Nova or Sanctum at a path `except` does not cover, so a rule can limit them. |
