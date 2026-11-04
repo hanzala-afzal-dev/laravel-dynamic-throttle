@@ -169,7 +169,7 @@ it('AC-15: keeps the 429 when a release fails, and reports that failure once (AD
 
 it('AC-16: leaves an exception the route throws to the app\'s handler, reports nothing of its own, and still counts the request', function (): void {
     Throttling::rule(['max_attempts' => 1]);
-    Route::middleware('dynamic.throttle')->get('api/x', fn () => throw new RuntimeException('The route failed.'));
+    Route::middleware('dynamic.throttle')->get('api/x', fn (): never => throw new RuntimeException('The route failed.'));
     Exceptions::fake();
 
     $statuses = [$this->get('api/x')->status(), $this->get('api/x')->status()];
