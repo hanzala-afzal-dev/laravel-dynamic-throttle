@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-04
+
+Links that open the dashboard without a gate, for an app without a user login, or for a helper during an incident. To upgrade from 0.1, run `composer require hanzala-afzal/laravel-dynamic-throttle:^0.2`: the `^0.1` that Composer saved in your app stops before 0.2. Nothing else changes for an app that leaves links off, which is the default. To turn them on, see the first entry below.
+
 ### Added
 
 - Links that open the dashboard without a gate, for an app without a user login, or for a helper during an incident. `php artisan dynamic-throttle:link --name="alice, incident 42"` prints a link that works once, in one browser, for 60 minutes, or as long as `--for` says, up to a day. It lets its holder view, or with `--manage` also change rules, exemptions and settings. `--list` shows the links, and `--revoke` and `--revoke-all` end them. The audit log records each link made, used and ended, and names the link as the actor of what its holder changes. Links are off until you set `DYNAMIC_THROTTLE_DASHBOARD_LINKS=true`, and they need a new table: publish the package's newest migrations and run `php artisan migrate` ([links](docs/guide/dashboard.md#links)).
@@ -170,7 +174,8 @@ The first public beta.
   - It exits 1 when a check errs, and with `--strict` when one warns too. It changes nothing.
 - Telemetry also records, per rule and minute, the guests a user rule counted, the requests a rule skipped for want of an identity, and those it was ignored for over the cap. On Redis and Valkey, it also counts each hour's requests per client. The health checks read them, and the hourly table does not change.
 
-[Unreleased]: https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/releases/tag/v0.2.0
 [0.1.0]: https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/releases/tag/v0.1.0
 [0.1.0-beta.2]: https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/releases/tag/v0.1.0-beta.2
 [0.1.0-beta.1]: https://github.com/hanzala-afzal-dev/laravel-dynamic-throttle/releases/tag/v0.1.0-beta.1
