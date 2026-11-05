@@ -455,7 +455,7 @@ it('SPEC-028 AC-9, as amended: rejects groups that do not hold each exemption ex
         return $groups;
     }],
     'a network of the wrong length' => [function (array $groups): array {
-        $groups['']['ip'][4][8] = ['10.0' => [0]];
+        $groups['']['ip'][4][8] = ['abc' => [0]];
 
         return $groups;
     }],
