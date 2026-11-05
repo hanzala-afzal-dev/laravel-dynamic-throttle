@@ -375,7 +375,8 @@ it('SPEC-028 AC-18: from L1\'s groups, or from the store\'s fields, frees the sa
 });
 
 it('SPEC-028 AC-16: gives its groups and its exemptions\' fields as plain values, and comes back from them', function (): void {
-    $built = exemptionSet([['match' => '10.0.0.0/8'], ['rule' => '2', 'subject' => 'user', 'match' => exemptionHash('alice')], ['subject' => 'custom', 'parameter' => 'tenant', 'match' => exemptionHash('acme')]]);
+    // IPv4 and IPv6 ranges, the whole of each address space included.
+    $built = exemptionSet([['match' => '10.0.0.0/8'], ['match' => '0.0.0.0/0'], ['match' => '2001:db8::/32'], ['match' => '::/0'], ['rule' => '2', 'subject' => 'user', 'match' => exemptionHash('alice')], ['subject' => 'custom', 'parameter' => 'tenant', 'match' => exemptionHash('acme')]]);
 
     $back = ExemptionSet::fromParts($built->toArray(), $built->arrays());
 
@@ -392,11 +393,11 @@ it('SPEC-028 AC-16 and AC-17: builds no exemption a check does not reach, and fa
 
     expect($set->match('5', EXEMPTION_NOW, requestSubjects(ip: '10.1.2.3', user: exemptionHash('alice'))))->toBe('1')
         ->and($set->match('1', EXEMPTION_NOW, requestSubjects(ip: '192.0.2.1', user: exemptionHash('alice'))))->toBeNull()
-        ->and(fn () => $set->match('5', EXEMPTION_NOW, requestSubjects(ip: '192.0.2.1', user: exemptionHash('alice'))))->toThrow(InvalidManifest::class, 'An exemption is invalid: id must be');
+        ->and(fn (): ?string => $set->match('5', EXEMPTION_NOW, requestSubjects(ip: '192.0.2.1', user: exemptionHash('alice'))))->toThrow(InvalidManifest::class, 'An exemption is invalid: id must be');
 })->with(['L1' => ['L1'], 'the store' => ['the store']]);
 
 it('SPEC-028 AC-17: rejects the store\'s fields it cannot group', function (mixed $fields): void {
-    expect(fn () => ExemptionSet::fromArrays([$fields]))->toThrow(InvalidManifest::class);
+    expect(fn (): ExemptionSet => ExemptionSet::fromArrays([$fields]))->toThrow(InvalidManifest::class);
 })->with([
     'an exemption that is not an object' => ['203.0.113.0/24'],
     'an unknown subject' => [ManifestFixtures::exemption(['subject' => 'device'])],
@@ -409,7 +410,7 @@ it('SPEC-028 AC-17: rejects the store\'s fields it cannot group', function (mixe
 it('SPEC-028 AC-9, as amended: rejects groups that do not hold each exemption exactly once, in order, or have the wrong types', function (Closure $spoil): void {
     $built = exemptionSet([['match' => '10.0.0.0/8'], ['rule' => '2', 'subject' => 'user', 'match' => exemptionHash('alice')], ['rule' => '2', 'subject' => 'user', 'match' => exemptionHash('alice')]]);
 
-    expect(fn () => ExemptionSet::fromParts($spoil($built->toArray()), $built->arrays()))->toThrow(InvalidArgumentException::class);
+    expect(fn (): ExemptionSet => ExemptionSet::fromParts($spoil($built->toArray()), $built->arrays()))->toThrow(InvalidArgumentException::class);
 })->with([
     'a position past its exemptions' => [function (array $groups): array {
         $groups[2]['user'][exemptionHash('alice')] = [1, 3];
@@ -454,12 +455,57 @@ it('SPEC-028 AC-9, as amended: rejects groups that do not hold each exemption ex
 
         return $groups;
     }],
+    'a negative prefix length' => [function (array $groups): array {
+        $groups['']['ip'][4][-1] = $groups['']['ip'][4][8];
+        unset($groups['']['ip'][4][8]);
+
+        return $groups;
+    }],
+    'a prefix length that is not an integer' => [function (array $groups): array {
+        $groups['']['ip'][4]['8a'] = $groups['']['ip'][4][8];
+        unset($groups['']['ip'][4][8]);
+
+        return $groups;
+    }],
+    'positions that are not a list' => [function (array $groups): array {
+        $groups[2]['user'][exemptionHash('alice')] = ['first' => 1, 'second' => 2];
+
+        return $groups;
+    }],
+    'an empty list of positions' => [function (array $groups): array {
+        $groups[2]['user'][exemptionHash('alice')] = [];
+        $groups[2]['user'][exemptionHash('bob')] = [1, 2];
+
+        return $groups;
+    }],
+    'a negative position' => [function (array $groups): array {
+        $groups[2]['user'][exemptionHash('alice')] = [-1, 2];
+        $groups[2]['user'][exemptionHash('bob')] = [1];
+
+        return $groups;
+    }],
     'a network of the wrong length' => [function (array $groups): array {
         $groups['']['ip'][4][8] = ['abc' => [0]];
 
         return $groups;
     }],
 ]);
+
+it('SPEC-028 AC-9 and AC-17: names what is wrong in the groups or the fields', function (): void {
+    $built = exemptionSet([['match' => '10.0.0.0/8']]);
+    $groups = $built->toArray();
+    $device = $groups;
+    $device['']['device'] = $device['']['ip'];
+    unset($device['']['ip']);
+    $prefix = $groups;
+    $prefix['']['ip'][4][33] = $prefix['']['ip'][4][8];
+    unset($prefix['']['ip'][4][8]);
+
+    expect(fn (): ExemptionSet => ExemptionSet::fromParts($device, $built->arrays()))->toThrow(InvalidArgumentException::class, 'A group\'s subject must be ip, user or custom, got "device".')
+        ->and(fn (): ExemptionSet => ExemptionSet::fromParts($prefix, $built->arrays()))->toThrow(InvalidArgumentException::class, 'A prefix length of a 4-byte address is from 0 to 32, got 33.')
+        ->and(fn (): ExemptionSet => ExemptionSet::fromArrays([ManifestFixtures::exemption(['match' => 'not a range'])]))
+        ->toThrow(InvalidManifest::class, 'Exemption #0 in the manifest cannot be grouped: "not a range" is not an IP address or a CIDR range.');
+});
 
 it('SPEC-028 AC-19: counts its exemptions without building them', function (): void {
     $set = ExemptionSet::fromArrays([ManifestFixtures::exemption(['id' => 'NOT AN ID']), ManifestFixtures::exemption(['id' => '2', 'match' => '198.51.100.0/24'])]);

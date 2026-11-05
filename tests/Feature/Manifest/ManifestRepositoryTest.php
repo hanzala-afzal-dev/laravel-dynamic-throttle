@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
+use Afzal\DynamicThrottle\Manifest\CompiledRule;
 use Afzal\DynamicThrottle\Manifest\Contracts\ManifestRebuilder;
 use Afzal\DynamicThrottle\Manifest\InvalidManifest;
 use Afzal\DynamicThrottle\Manifest\Manifest;
@@ -318,6 +319,6 @@ it('SPEC-028 AC-17: serves the store\'s manifest though a rule and an exemption 
     app()->terminate();
 
     expect([$manifest->state, $manifest->version, $manifest->rule(0)->id, $manifest->exemptions->count(), $rebuilder->calls])->toBe([ManifestState::Fresh, 4, '1', 1, 0])
-        ->and(fn () => $manifest->rule(1))->toThrow(InvalidManifest::class);
+        ->and(fn (): CompiledRule => $manifest->rule(1))->toThrow(InvalidManifest::class);
     Exceptions::assertNothingReported();
 });

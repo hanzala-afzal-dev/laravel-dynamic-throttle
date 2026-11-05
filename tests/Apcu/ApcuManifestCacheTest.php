@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use Afzal\DynamicThrottle\Engine\Exemptions\ExemptionSet;
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
+use Afzal\DynamicThrottle\Manifest\ManifestExemptions;
 use Afzal\DynamicThrottle\Manifest\ManifestSnapshot;
 use Afzal\DynamicThrottle\Manifest\ManifestState;
 use Afzal\DynamicThrottle\Support\ApcuManifestCache;
@@ -33,7 +35,8 @@ it('AC-2: keeps a snapshot where the other processes of the server read it, its 
 
     LocalManifests::cache()->store($snapshot);
 
-    expect(LocalManifests::cache()->fetch())->toEqual($snapshot);
+    // Compared by its plain values: from an entry, the exemptions are built only when read (SPEC-028 AC-16).
+    expect(LocalManifests::cache()->fetch()?->toArray())->toBe($snapshot->toArray());
 })->with([
     'fresh' => [false],
     'stale' => [true],
@@ -131,7 +134,7 @@ it('AC-10: keeps nothing, and throws nothing, when APCu cannot store the entry',
         version: 7,
         index: LocalManifests::snapshot(7)->index,
         rules: [str_repeat('x', (int) apcu_sma_info(true)['seg_size'])],
-        exemptions: [],
+        exemptions: new ExemptionSet,
         state: ManifestState::Fresh,
         readAt: FakeClock::T0 * 1_000_000,
     )],
@@ -140,7 +143,7 @@ it('AC-10: keeps nothing, and throws nothing, when APCu cannot store the entry',
         version: 7,
         index: LocalManifests::snapshot(7)->index,
         rules: LocalManifests::snapshot(7)->rules,
-        exemptions: [['id' => fn (): string => '1']],
+        exemptions: new ExemptionSet(ManifestExemptions::fromArrays([['id' => fn (): string => '1']]), []),
         state: ManifestState::Fresh,
         readAt: FakeClock::T0 * 1_000_000,
     )],

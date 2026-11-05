@@ -328,7 +328,7 @@ it('AC-9: reads the store over an entry that cannot build a manifest, replaces t
     expect([$manifest->version, $manifest->state, LocalManifests::cache()->fetch()?->version])->toBe([8, ManifestState::Fresh, 8]);
 })->with([
     'an index that points past its rules' => [['index' => ['literal' => [], 'wildcard' => ['*' => [0, 1]], 'patterns' => ['api/*']]]],
-    'an exemption that is not an exemption' => [['exemptions' => [ManifestFixtures::exemption(['match' => 'not a range'])]]],
+    'exemption groups that hold a position past its exemptions' => [['exemption_groups' => [9 => ['user' => [str_repeat('b', 64) => [5]]]]]],
 ]);
 
 it('AC-9: serves no rules, and throws nothing, when the store fails and L1\'s entry cannot build a manifest', function (): void {
@@ -373,6 +373,6 @@ it('AC-11: keeps in L1 the index built from the rules, and builds from it the ma
 
     expect($store->reads('dt:m:3'))->toBe(1)
         ->and(apcu_fetch(LocalManifests::key())['index'] ?? null)->toBe(RuleIndex::of($decoded->rules())->toArray())
-        ->and([$fromL1->version, $fromL1->state, $fromL1->rules(), $fromL1->index, $fromL1->exemptions])
-        ->toEqual([$decoded->version, $decoded->state, $decoded->rules(), $decoded->index, $decoded->exemptions]);
+        ->and([$fromL1->version, $fromL1->state, $fromL1->rules(), $fromL1->index, $fromL1->exemptions->all()])
+        ->toEqual([$decoded->version, $decoded->state, $decoded->rules(), $decoded->index, $decoded->exemptions->all()]);
 });

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Afzal\DynamicThrottle\Engine\Contracts\ExemptionSubjects;
 use Afzal\DynamicThrottle\Engine\Matching\RuleMatcher;
 use Afzal\DynamicThrottle\Enums\ExemptionSubject;
 use Afzal\DynamicThrottle\Enums\FailurePolicy;
@@ -216,12 +217,12 @@ it('SPEC-028 AC-17: reads the store\'s manifest for requests, building each rule
     $manifest = ManifestCodec::read($json);
 
     expect([$manifest->version, $manifest->state, $manifest->exemptions->count(), $manifest->rule(0)->id])->toBe([7, ManifestState::Fresh, 2, '1'])
-        ->and(fn () => $manifest->rule(1))->toThrow(InvalidManifest::class, 'A rule is invalid: max_attempts must be at least 1')
-        ->and(fn () => $manifest->exemptions->all())->toThrow(InvalidManifest::class, 'An exemption is invalid: id must be');
+        ->and(fn (): CompiledRule => $manifest->rule(1))->toThrow(InvalidManifest::class, 'A rule is invalid: max_attempts must be at least 1')
+        ->and(fn (): array => $manifest->exemptions->all())->toThrow(InvalidManifest::class, 'An exemption is invalid: id must be');
 });
 
 it('SPEC-028 AC-17: still rejects a manifest it cannot index or group', function (string $json): void {
-    expect(fn () => ManifestCodec::read($json))->toThrow(InvalidManifest::class);
+    expect(fn (): Manifest => ManifestCodec::read($json))->toThrow(InvalidManifest::class);
 })->with([
     'not JSON' => ['{'],
     'another format' => ['{"format":2,"version":1,"rules":[],"exemptions":[]}'],
@@ -256,9 +257,9 @@ it('SPEC-028 AC-18: reads a manifest that matches the same rules and frees the s
     $decoded = ManifestCodec::decode($json);
     $read = ManifestCodec::read($json);
     $matches = fn (Manifest $manifest, string $method, string $path): array => array_map(fn (CompiledRule $rule): string => $rule->id, (new RuleMatcher)->match($manifest, $method, $path)->rules);
-    $subjects = fn (string $ip): object => new class($ip) implements Afzal\DynamicThrottle\Engine\Contracts\ExemptionSubjects
+    $subjects = fn (string $ip): object => new readonly class($ip) implements ExemptionSubjects
     {
-        public function __construct(private readonly string $address) {}
+        public function __construct(private string $address) {}
 
         public function ip(): string
         {

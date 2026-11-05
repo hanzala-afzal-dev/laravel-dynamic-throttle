@@ -179,9 +179,9 @@ it('AC-14: builds only the rules a request matches, so a rule\'s JSON nobody mat
 it('AC-16: is a snapshot with an exemption that cannot be built, and builds it only when a check reaches it', function (): void {
     $entry = ManifestSnapshot::of(snapshotManifest(), FakeClock::T0 * 1_000_000)->toArray();
     $entry['exemptions'][1]['id'] = 'NOT AN ID';
-    $subjects = fn (string $ip): ExemptionSubjects => new class($ip) implements ExemptionSubjects
+    $subjects = fn (string $ip): ExemptionSubjects => new readonly class($ip) implements ExemptionSubjects
     {
-        public function __construct(private readonly string $address) {}
+        public function __construct(private string $address) {}
 
         public function ip(): string
         {
@@ -204,5 +204,5 @@ it('AC-16: is a snapshot with an exemption that cannot be built, and builds it o
     expect($manifest)->toBeInstanceOf(Manifest::class)
         ->and($manifest?->exemptions->count())->toBe(2)
         ->and($manifest?->exemptions->match('2', FakeClock::T0 * 1_000_000, $subjects('203.0.113.5')))->toBe('1')
-        ->and(fn () => $manifest?->exemptions->match('2', FakeClock::T0 * 1_000_000, $subjects('192.0.2.1')))->toThrow(InvalidManifest::class, 'An exemption is invalid');
+        ->and(fn (): ?string => $manifest?->exemptions->match('2', FakeClock::T0 * 1_000_000, $subjects('192.0.2.1')))->toThrow(InvalidManifest::class, 'An exemption is invalid');
 });

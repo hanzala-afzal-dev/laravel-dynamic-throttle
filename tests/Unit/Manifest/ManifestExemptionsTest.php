@@ -33,7 +33,7 @@ it('SPEC-028 AC-16: builds an exemption from its fields only when it is read, th
 
     expect($first)->toEqual(CompiledExemption::fromArray(ManifestFixtures::exemption()))
         ->and($list->get(0))->toBe($first)
-        ->and(fn () => $list->get(1))->toThrow(InvalidManifest::class, 'An exemption is invalid: id must be');
+        ->and(fn (): CompiledExemption => $list->get(1))->toThrow(InvalidManifest::class, 'An exemption is invalid: id must be');
 });
 
 it('SPEC-028 AC-16: builds every exemption from its fields, in order, when all are read', function (): void {
@@ -60,5 +60,5 @@ it('SPEC-028 AC-16: has no exemption past its last', function (string $from): vo
         ? ManifestExemptions::fromArrays([ManifestFixtures::exemption()])
         : ManifestExemptions::of([CompiledExemption::fromArray(ManifestFixtures::exemption())]);
 
-    expect(fn () => $list->get(1))->toThrow(OutOfRangeException::class, 'The manifest has no exemption at position 1.');
+    expect(fn (): CompiledExemption => $list->get(1))->toThrow(OutOfRangeException::class, 'The manifest has no exemption at position 1.');
 })->with(['built' => ['built'], 'fields' => ['fields']]);
