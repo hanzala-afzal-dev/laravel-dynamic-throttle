@@ -46,9 +46,14 @@ export function useRuleCounts() {
     return useQuery({ queryKey: ['rules', 'counts'], queryFn: () => api<RuleCounts>('GET', 'rules/counts'), ...EVERY_MINUTE });
 }
 
-/** The counter store's hour polls with the live data; the day and the week come from the hourly table (SPEC-021 decision 4). */
-export function useMetrics(period: Period) {
-    return useQuery({ queryKey: ['metrics', period], queryFn: () => api<Metrics>('GET', `metrics?period=${period}`), ...(period === 'hour' ? LIVE : EVERY_MINUTE) });
+/**
+ * The counter store's hour polls with the live data; the day and the week come from the hourly table (SPEC-021 decision 4).
+ * With a rule's id, only that rule's numbers, as its page needs (SPEC-017 AC-27).
+ */
+export function useMetrics(period: Period, ruleId?: number) {
+    const path = ruleId === undefined ? `metrics?period=${period}` : `metrics?period=${period}&rule=${ruleId}`;
+
+    return useQuery({ queryKey: ['metrics', period, ruleId], queryFn: () => api<Metrics>('GET', path), ...(period === 'hour' ? LIVE : EVERY_MINUTE) });
 }
 
 /** The clients a rule blocked most this hour or the last, by identity hash (SPEC-017 AC-7); null where the store keeps none. */

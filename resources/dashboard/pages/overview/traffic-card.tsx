@@ -53,7 +53,7 @@ export function TrafficCard({ period, onPeriodChange, ruleId, className }: { per
 
 /** Every rule's numbers, or one rule's alone, as a rule's page shows them (SPEC-022). */
 function Traffic({ period, ruleId }: { period: Period; ruleId?: number }) {
-    const all = useMetrics(period);
+    const all = useMetrics(period, ruleId);
     const metrics = ruleId === undefined || all.data === undefined ? all : { ...all, data: { ...all.data, rules: all.data.rules.filter((rule) => rule.id === ruleId) } };
 
     if (metrics.isError) {
