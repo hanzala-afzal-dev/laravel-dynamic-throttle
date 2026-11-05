@@ -64,7 +64,7 @@ final readonly class Explanation implements JsonSerializable
             'manifest' => $this->manifest instanceof Manifest ? [
                 'version' => $this->manifest->version,
                 'rules' => count($this->manifest->rules()),
-                'exemptions' => count($this->manifest->exemptions->all()),
+                'exemptions' => $this->manifest->exemptions->count(),
             ] : null,
             'settings' => [
                 'bypass' => $this->settings->bypass ? ['until' => $this->time($this->settings->bypassUntil)] : null,
