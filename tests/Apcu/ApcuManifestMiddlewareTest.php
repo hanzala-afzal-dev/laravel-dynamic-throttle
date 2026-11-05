@@ -11,6 +11,7 @@ use Afzal\DynamicThrottle\Facades\DynamicThrottle;
 use Afzal\DynamicThrottle\Manifest\InvalidManifest;
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Manifest\ManifestSnapshot;
+use Afzal\DynamicThrottle\Models\Exemption;
 use Afzal\DynamicThrottle\Support\ApcuManifestCache;
 use Afzal\DynamicThrottle\Tests\Support\CountingCacheStore;
 use Afzal\DynamicThrottle\Tests\Support\FailingStore;
@@ -146,6 +147,30 @@ it('AC-14: builds from L1 only the rules a request matches, and reports a matche
         ->and([$web->status(), Throttling::headers($web)])->toBe([200, []]);
     Exceptions::assertReportedCount(1);
     Exceptions::assertReported(fn (InvalidManifest $exception): bool => str_starts_with($exception->getMessage(), 'A rule is not JSON'));
+});
+
+it('AC-16: builds from L1 only the exemptions a request\'s checks reach, and reports one it cannot build', function (): void {
+    Exceptions::fake();
+    Throttling::rule(['pattern' => 'api/*', 'max_attempts' => 5]);
+    $web = Throttling::rule(['pattern' => 'web/*', 'max_attempts' => 5]);
+    Exemption::forIp('127.0.0.0/8')->forRule($web)->save();
+    Throttling::route('api/x');
+    Throttling::route('web/x');
+    $this->get('api/x');
+
+    // Something other than the package spoils the web rule's exemption in L1.
+    $entry = apcu_fetch(providerManifestKey());
+    $entry['exemptions'][0]['id'] = 'NOT AN ID';
+    apcu_store(providerManifestKey(), $entry);
+    nextPhpFpmRequest();
+    $api = $this->get('api/x');
+    nextPhpFpmRequest();
+    $web = $this->get('web/x');
+
+    expect([$api->status(), Throttling::headers($api)['X-RateLimit-Remaining'] ?? null])->toBe([200, '3'])
+        ->and([$web->status(), Throttling::headers($web)])->toBe([200, []]);
+    Exceptions::assertReportedCount(1);
+    Exceptions::assertReported(fn (InvalidManifest $exception): bool => str_starts_with($exception->getMessage(), 'An exemption is invalid'));
 });
 
 it('AC-8: writes nothing to APCu, and reads the store on every request, with refresh_seconds 0', function (): void {

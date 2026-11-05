@@ -5,9 +5,13 @@ declare(strict_types=1);
 use Afzal\DynamicThrottle\Engine\Contracts\ExemptionSubjects;
 use Afzal\DynamicThrottle\Engine\Exceptions\IdentityUnavailableException;
 use Afzal\DynamicThrottle\Engine\Exemptions\ExemptionSet;
+use Afzal\DynamicThrottle\Engine\Exemptions\IpRange;
 use Afzal\DynamicThrottle\Manifest\CompiledExemption;
+use Afzal\DynamicThrottle\Manifest\InvalidManifest;
 use Afzal\DynamicThrottle\Tests\Support\FakeClock;
 use Afzal\DynamicThrottle\Tests\Support\ManifestFixtures;
+use Random\Engine\Mt19937;
+use Random\Randomizer;
 
 covers(ExemptionSet::class);
 
@@ -314,4 +318,151 @@ it('lists the exemptions it was built from', function (): void {
 
     expect((new ExemptionSet($exemptions))->all())->toBe($exemptions)
         ->and((new ExemptionSet)->all())->toBe([]);
+});
+
+/*
+| SPEC-028 AC-16 to AC-19, as amended for #194 and #195: the set from L1's
+| groups, or from the store's fields, builds an exemption only when a check
+| reaches it, and frees the same requests as the set from compiled exemptions.
+*/
+
+/**
+ * Seeded exemptions of every subject, for the rules 1 to 3 and for every rule,
+ * some expired, as the compiler writes their fields: ids 1, 2, 3... in order.
+ *
+ * @return list<array<string, mixed>>
+ */
+function seededExemptionFields(Randomizer $random, int $count): array
+{
+    $fields = [];
+
+    for ($id = 1; $id <= $count; $id++) {
+        $common = [
+            'id' => (string) $id,
+            'rule' => [null, '1', '2', '3'][$random->getInt(0, 3)],
+            'expires_at' => [null, FakeClock::T0 - 1, FakeClock::T0 + 60][$random->getInt(0, 2)],
+        ];
+
+        $fields[] = match ($random->getInt(0, 2)) {
+            0 => ManifestFixtures::exemption([...$common, 'match' => (string) IpRange::parse('10.0.'.$random->getInt(0, 3).'.'.$random->getInt(0, 3).'/'.[16, 24, 32][$random->getInt(0, 2)])]),
+            1 => ManifestFixtures::exemption([...$common, 'subject' => 'user', 'match' => exemptionHash('user'.$random->getInt(0, 3))]),
+            default => ManifestFixtures::exemption([...$common, 'subject' => 'custom', 'parameter' => ['tenant', 'team'][$random->getInt(0, 1)], 'match' => exemptionHash('value'.$random->getInt(0, 3))]),
+        };
+    }
+
+    return $fields;
+}
+
+it('SPEC-028 AC-18: from L1\'s groups, or from the store\'s fields, frees the same requests as the set built from compiled exemptions, on 2,000 seeded requests', function (): void {
+    $random = new Randomizer(new Mt19937(20_261_105));
+    $fields = seededExemptionFields($random, 60);
+    $built = new ExemptionSet(array_map(CompiledExemption::fromArray(...), $fields));
+    $sets = [ExemptionSet::fromParts($built->toArray(), $built->arrays()), ExemptionSet::fromArrays($fields)];
+    $expected = [];
+    $actual = [];
+
+    for ($request = 0; $request < 2_000; $request++) {
+        $rule = (string) $random->getInt(1, 4);
+        $ip = '10.0.'.$random->getInt(0, 3).'.'.$random->getInt(0, 3);
+        $user = exemptionHash('user'.$random->getInt(0, 4));
+        $custom = ['tenant' => exemptionHash('value'.$random->getInt(0, 4)), 'team' => exemptionHash('value'.$random->getInt(0, 4))];
+        $expected[] = $built->match($rule, EXEMPTION_NOW, requestSubjects(ip: $ip, user: $user, custom: $custom));
+        $actual[] = array_map(fn (ExemptionSet $set): ?string => $set->match($rule, EXEMPTION_NOW, requestSubjects(ip: $ip, user: $user, custom: $custom)), $sets);
+    }
+
+    expect($actual)->toBe(array_map(fn (?string $id): array => [$id, $id], $expected))
+        ->and(array_filter($expected))->not->toBeEmpty();
+});
+
+it('SPEC-028 AC-16: gives its groups and its exemptions\' fields as plain values, and comes back from them', function (): void {
+    $built = exemptionSet([['match' => '10.0.0.0/8'], ['rule' => '2', 'subject' => 'user', 'match' => exemptionHash('alice')], ['subject' => 'custom', 'parameter' => 'tenant', 'match' => exemptionHash('acme')]]);
+
+    $back = ExemptionSet::fromParts($built->toArray(), $built->arrays());
+
+    expect([$back->toArray(), $back->arrays(), $back->all()])->toEqual([$built->toArray(), $built->arrays(), $built->all()]);
+});
+
+it('SPEC-028 AC-16 and AC-17: builds no exemption a check does not reach, and fails the check that reaches one it cannot build', function (string $from): void {
+    $fields = [
+        ManifestFixtures::exemption(['id' => '1', 'match' => '10.0.0.0/8']),
+        ManifestFixtures::exemption(['id' => 'NOT AN ID', 'rule' => '5', 'subject' => 'user', 'match' => exemptionHash('alice')]),
+    ];
+    $built = new ExemptionSet([CompiledExemption::fromArray($fields[0]), CompiledExemption::fromArray([...$fields[1], 'id' => '2'])]);
+    $set = $from === 'the store' ? ExemptionSet::fromArrays($fields) : ExemptionSet::fromParts($built->toArray(), $fields);
+
+    expect($set->match('5', EXEMPTION_NOW, requestSubjects(ip: '10.1.2.3', user: exemptionHash('alice'))))->toBe('1')
+        ->and($set->match('1', EXEMPTION_NOW, requestSubjects(ip: '192.0.2.1', user: exemptionHash('alice'))))->toBeNull()
+        ->and(fn () => $set->match('5', EXEMPTION_NOW, requestSubjects(ip: '192.0.2.1', user: exemptionHash('alice'))))->toThrow(InvalidManifest::class, 'An exemption is invalid: id must be');
+})->with(['L1' => ['L1'], 'the store' => ['the store']]);
+
+it('SPEC-028 AC-17: rejects the store\'s fields it cannot group', function (mixed $fields): void {
+    expect(fn () => ExemptionSet::fromArrays([$fields]))->toThrow(InvalidManifest::class);
+})->with([
+    'an exemption that is not an object' => ['203.0.113.0/24'],
+    'an unknown subject' => [ManifestFixtures::exemption(['subject' => 'device'])],
+    'an ip range that is no range' => [ManifestFixtures::exemption(['match' => 'not a range'])],
+    'a match that is not a string' => [ManifestFixtures::exemption(['subject' => 'user', 'match' => 42])],
+    'a custom exemption without its scope\'s name' => [ManifestFixtures::exemption(['subject' => 'custom', 'match' => exemptionHash('acme')])],
+    'a rule that is not a string' => [ManifestFixtures::exemption(['rule' => 5])],
+]);
+
+it('SPEC-028 AC-9, as amended: rejects groups that do not hold each exemption exactly once, in order, or have the wrong types', function (Closure $spoil): void {
+    $built = exemptionSet([['match' => '10.0.0.0/8'], ['rule' => '2', 'subject' => 'user', 'match' => exemptionHash('alice')], ['rule' => '2', 'subject' => 'user', 'match' => exemptionHash('alice')]]);
+
+    expect(fn () => ExemptionSet::fromParts($spoil($built->toArray()), $built->arrays()))->toThrow(InvalidArgumentException::class);
+})->with([
+    'a position past its exemptions' => [function (array $groups): array {
+        $groups[2]['user'][exemptionHash('alice')] = [1, 3];
+
+        return $groups;
+    }],
+    'a position held twice, and one by no group' => [function (array $groups): array {
+        $groups[2]['user'][exemptionHash('alice')] = [1, 1];
+
+        return $groups;
+    }],
+    'positions out of order' => [function (array $groups): array {
+        $groups[2]['user'][exemptionHash('alice')] = [2, 1];
+
+        return $groups;
+    }],
+    'a position that is not an integer' => [function (array $groups): array {
+        $groups[2]['user'][exemptionHash('alice')] = ['1', 2];
+
+        return $groups;
+    }],
+    'a subject the set does not know' => [function (array $groups): array {
+        $groups[2]['device'] = $groups[2]['user'];
+        unset($groups[2]['user']);
+
+        return $groups;
+    }],
+    'a rule\'s groups that are not an array' => [function (array $groups): array {
+        $groups[2] = 'user';
+
+        return $groups;
+    }],
+    'an address length of no IP version' => [function (array $groups): array {
+        $groups['']['ip'][5] = $groups['']['ip'][4];
+        unset($groups['']['ip'][4]);
+
+        return $groups;
+    }],
+    'a prefix longer than the address' => [function (array $groups): array {
+        $groups['']['ip'][4][33] = $groups['']['ip'][4][8];
+        unset($groups['']['ip'][4][8]);
+
+        return $groups;
+    }],
+    'a network of the wrong length' => [function (array $groups): array {
+        $groups['']['ip'][4][8] = ['10.0' => [0]];
+
+        return $groups;
+    }],
+]);
+
+it('SPEC-028 AC-19: counts its exemptions without building them', function (): void {
+    $set = ExemptionSet::fromArrays([ManifestFixtures::exemption(['id' => 'NOT AN ID']), ManifestFixtures::exemption(['id' => '2', 'match' => '198.51.100.0/24'])]);
+
+    expect([$set->count(), (new ExemptionSet)->count()])->toBe([2, 0]);
 });

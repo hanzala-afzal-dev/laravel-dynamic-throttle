@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Afzal\DynamicThrottle\Engine\Contracts\ExemptionSubjects;
 use Afzal\DynamicThrottle\Engine\Matching\MatchResult;
 use Afzal\DynamicThrottle\Engine\Matching\RuleIndex;
 use Afzal\DynamicThrottle\Engine\Matching\RuleMatcher;
@@ -54,13 +55,13 @@ it('SPEC-028: turns a manifest into a snapshot and back, its state included', fu
 
     expect([$snapshot->version, $snapshot->state, $snapshot->readAt])->toBe([7, $manifest->state, FakeClock::T0 * 1_000_000])
         ->and([$back->version, $back->state])->toBe([7, $manifest->state])
-        ->and([$back->rules(), $back->index, $back->exemptions])->toEqual([$manifest->rules(), $manifest->index, $manifest->exemptions]);
+        ->and([$back->rules(), $back->index, $back->exemptions->all()])->toEqual([$manifest->rules(), $manifest->index, $manifest->exemptions->all()]);
 })->with([
     'fresh' => [false],
     'stale' => [true],
 ]);
 
-it('AC-11: holds the index built from the rules, each rule\'s JSON and the exemptions, as plain values', function (): void {
+it('AC-11 and AC-16: holds the index built from the rules, each rule\'s JSON, the exemptions and their groups, as plain values', function (): void {
     $manifest = snapshotManifest();
 
     $entry = ManifestSnapshot::of($manifest, FakeClock::T0 * 1_000_000)->toArray();
@@ -70,6 +71,7 @@ it('AC-11: holds the index built from the rules, each rule\'s JSON and the exemp
         'index' => RuleIndex::of($manifest->rules())->toArray(),
         'rules' => array_map(ManifestCodec::encodeRule(...), $manifest->rules()),
         'exemptions' => array_map(fn (CompiledExemption $exemption): array => $exemption->toArray(), $manifest->exemptions->all()),
+        'exemption_groups' => $manifest->exemptions->toArray(),
         'settings' => [],
         'state' => 'fresh',
         'read_at' => FakeClock::T0 * 1_000_000,
@@ -79,7 +81,7 @@ it('AC-11: holds the index built from the rules, each rule\'s JSON and the exemp
 it('SPEC-028: comes back from its plain values unchanged', function (bool $stale): void {
     $snapshot = ManifestSnapshot::of($stale ? snapshotManifest()->stale() : snapshotManifest(), FakeClock::T0 * 1_000_000);
 
-    expect(ManifestSnapshot::fromArray($snapshot->toArray()))->toEqual($snapshot);
+    expect(ManifestSnapshot::fromArray($snapshot->toArray())?->toArray())->toBe($snapshot->toArray());
 })->with([
     'fresh' => [false],
     'stale' => [true],
@@ -106,6 +108,8 @@ it('AC-9: is no snapshot without a snapshot\'s fields and types', function (mixe
         'an index that is not an array' => [[...$entry, 'index' => 'api/*']],
         'exemptions that are not a list' => [[...$entry, 'exemptions' => ['a' => $entry['exemptions'][0]]]],
         'an exemption that is not an array' => [[...$entry, 'exemptions' => ['203.0.113.0/24']]],
+        'exemption groups that are not an array' => [[...$entry, 'exemption_groups' => '203.0.113.0/24']],
+        'exemption groups that hold a position past its exemptions' => [[...$entry, 'exemption_groups' => [...$entry['exemption_groups'], 9 => ['user' => [str_repeat('b', 64) => [2]]]]]],
     ];
 });
 
@@ -114,7 +118,6 @@ it('AC-9: is no snapshot with an index or exemptions that cannot be built, so th
 })->with([
     'an index that points past its rules' => [['index' => ['literal' => [], 'wildcard' => ['*' => [0, 1, 2]], 'patterns' => ['api/*', 'web/*']]]],
     'an index with a pattern for a rule it does not have' => [['index' => ['literal' => [], 'wildcard' => ['*' => [0, 1]], 'patterns' => ['api/*', 'web/*', 'x/*']]]],
-    'an exemption that is not an exemption' => [['exemptions' => [ManifestFixtures::exemption(['match' => 'not a range'])]]],
     'settings that are not settings (SPEC-013 AC-24)' => [['settings' => ['scale_factor' => ['percent' => 9, 'until' => null]]]],
 ]);
 
@@ -171,4 +174,35 @@ it('AC-14: builds only the rules a request matches, so a rule\'s JSON nobody mat
     expect($manifest)->toBeInstanceOf(Manifest::class)
         ->and(snapshotMatches($manifest ?? Manifest::missing(), 'GET', 'api/users'))->toBe(['1'])
         ->and(fn (): MatchResult => (new RuleMatcher)->match($manifest ?? Manifest::missing(), 'GET', 'web/home'))->toThrow(InvalidManifest::class, 'A rule is not JSON');
+});
+
+it('AC-16: is a snapshot with an exemption that cannot be built, and builds it only when a check reaches it', function (): void {
+    $entry = ManifestSnapshot::of(snapshotManifest(), FakeClock::T0 * 1_000_000)->toArray();
+    $entry['exemptions'][1]['id'] = 'NOT AN ID';
+    $subjects = fn (string $ip): ExemptionSubjects => new class($ip) implements ExemptionSubjects
+    {
+        public function __construct(private readonly string $address) {}
+
+        public function ip(): string
+        {
+            return $this->address;
+        }
+
+        public function user(): string
+        {
+            return str_repeat('a', 64);
+        }
+
+        public function custom(string $scope): ?string
+        {
+            return null;
+        }
+    };
+
+    $manifest = ManifestSnapshot::fromArray($entry)?->manifest();
+
+    expect($manifest)->toBeInstanceOf(Manifest::class)
+        ->and($manifest?->exemptions->count())->toBe(2)
+        ->and($manifest?->exemptions->match('2', FakeClock::T0 * 1_000_000, $subjects('203.0.113.5')))->toBe('1')
+        ->and(fn () => $manifest?->exemptions->match('2', FakeClock::T0 * 1_000_000, $subjects('192.0.2.1')))->toThrow(InvalidManifest::class, 'An exemption is invalid');
 });
