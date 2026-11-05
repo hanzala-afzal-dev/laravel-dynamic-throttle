@@ -15,8 +15,8 @@ const EXEMPTION = { id: 8, rule_id: 3, subject: 'ip', subject_parameter: null, v
 function answers(rule = LOGIN, extra: Record<string, Answer | ((body: unknown) => Answer)> = {}) {
     return {
         'GET rules/3': { body: { rule, exemptions: [EXEMPTION] } },
-        'GET metrics?period=hour': { body: metricsOf('hour', []) },
-        'GET metrics?period=day': { body: metricsOf('day', [seriesOf(3, rule.name, [700, 500], [0, 0], [40, 20]), seriesOf(4, 'Other', [9_000, 9_000], [0, 0], [900, 900])], 2) },
+        'GET metrics?period=hour&rule=3': { body: metricsOf('hour', []) },
+        'GET metrics?period=day&rule=3': { body: metricsOf('day', [seriesOf(3, rule.name, [700, 500], [0, 0], [40, 20]), seriesOf(4, 'Other', [9_000, 9_000], [0, 0], [900, 900])], 2) },
         'GET rules/3/offenders?hour=current': { body: { hour: '2027-01-15T12:00:00+00:00', offenders: [], clients: 0 } },
         'GET audit?target=rule%3A3': { body: { data: [], next_cursor: null, per_page: 100 } },
         ...extra,

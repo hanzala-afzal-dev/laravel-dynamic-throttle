@@ -76,3 +76,19 @@ describe('the Overview\'s queries', () => {
         expect(reads()).toBe(2);
     });
 });
+
+/* SPEC-017 AC-27, amended for #197: a rule's page asks for its own rule's numbers only. */
+
+describe('one rule\'s numbers', () => {
+    it.each([
+        ['metrics?period=hour&rule=3', () => useMetrics('hour', 3)],
+        ['metrics?period=week&rule=3', () => useMetrics('week', 3)],
+    ])('AC-27: asks %s', async (path, use) => {
+        const sent = mockApi({ [`GET ${path}`]: { body: {} } });
+        renderAt(<Poll use={use} />);
+
+        await act(() => Promise.resolve());
+
+        expect(sent).toContainEqual(['GET', path, undefined]);
+    });
+});
