@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- Requests are faster with many exemptions. Each request now builds only the exemptions it checks, and, on a server without APCu, only the rules it matches. With 4,000 exemptions and 3,000 rules, the rules and exemptions took 9 ms of each request with APCu, and 29 ms without it. They now take 3 ms and 10 ms. An exemption that something other than the package spoiled in the cache now fails only the requests that check it, as a spoiled rule does: the error is reported, and the request goes through.
+- The dashboard is faster with many rules. A rule's page loads that rule's numbers only, instead of every rule's, and the Overview's week chart loads in half the time.
+
 ## [0.2.0] - 2026-11-04
 
 Links that open the dashboard without a gate, for an app without a user login, or for a helper during an incident. To upgrade from 0.1, run `composer require hanzala-afzal/laravel-dynamic-throttle:^0.2`: the `^0.1` that Composer saved in your app stops before 0.2. Nothing else changes for an app that leaves links off, which is the default. To turn them on, see the first entry below.
