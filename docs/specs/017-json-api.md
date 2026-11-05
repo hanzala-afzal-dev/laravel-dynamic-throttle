@@ -81,6 +81,7 @@ Every endpoint lives in SPEC-018's route group, under `{path}/api` (`/dynamic-th
 A review subagent read the whole spec's code before it closed. Its findings, each fixed test-first or written down below:
 - **AC-25** Behind `dashboard.middleware` with `auth:<guard>`, which makes that guard the default for the rest of the request, a user id alone still means a user of the app's own default guard, as it stood once every provider booted: in a user exemption, and in explain's lookup and identities.
 - **AC-26** `api/metrics?period=hour` asks the counter store for the enabled rules only, at most 500, so a driver that cannot list its own reads a bounded number of keys. `GET api/rules/{id}` shows the rule's newest 100 exemptions; `GET api/exemptions?rule={id}` pages through all of them.
+- **AC-27** (amended on 2026-11-05, #197) `api/metrics?rule={id}` gives only that rule's series, for each period: from the counter store, only that rule is read, and only while it is enabled, as AC-26 says. A `rule` that is not a whole number above 0 answers 422. The dashboard's rule page asks for its own rule only.
 
 ### Hard rules
 - **AC-23** The arch tests hold: the API's code is in `src/Dashboard`, outside the request path's namespaces, which never use it (SPEC-018 AC-19).
