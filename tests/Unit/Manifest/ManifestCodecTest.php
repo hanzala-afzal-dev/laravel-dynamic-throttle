@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Afzal\DynamicThrottle\Engine\Contracts\ExemptionSubjects;
+use Afzal\DynamicThrottle\Engine\Matching\RuleMatcher;
 use Afzal\DynamicThrottle\Enums\ExemptionSubject;
 use Afzal\DynamicThrottle\Enums\FailurePolicy;
 use Afzal\DynamicThrottle\Enums\MissingIdentity;
@@ -17,6 +19,8 @@ use Afzal\DynamicThrottle\Manifest\ManifestSettings;
 use Afzal\DynamicThrottle\Manifest\ManifestState;
 use Afzal\DynamicThrottle\Tests\Support\FakeClock;
 use Afzal\DynamicThrottle\Tests\Support\ManifestFixtures;
+use Random\Engine\Mt19937;
+use Random\Randomizer;
 
 /*
 | SPEC-006: the manifest's JSON. Decoding is strict, because a manifest that
@@ -183,3 +187,107 @@ it('SPEC-013 AC-24: rejects a manifest whose settings are not settings', functio
     'a factor with more than two decimals' => [['scale_factor' => ['percent' => 150.5, 'until' => null]]],
     'an end time that is not an integer' => [['bypass_all' => ['until' => '2027-01-01 00:30:00']]],
 ]);
+
+/*
+| SPEC-028 AC-17 and AC-18, as amended for #195: read() reads the store's
+| manifest for requests. It checks the manifest's shape as decode() does, and
+| builds the index and the exemptions' groups, but builds each rule and
+| exemption only when a request reads it.
+*/
+
+/**
+ * A manifest's JSON that ManifestFixtures::json() would refuse to write, spoiled
+ * after it was encoded, as only something other than the package spoils it.
+ *
+ * @param  Closure(array<string, mixed>): array<string, mixed>  $spoil
+ */
+function spoiledManifest(Closure $spoil, array $rules = [[]], array $exemptions = []): string
+{
+    return json_encode($spoil(json_decode(ManifestFixtures::json(7, $rules, $exemptions), true)), JSON_THROW_ON_ERROR);
+}
+
+it('SPEC-028 AC-17: reads the store\'s manifest for requests, building each rule and exemption only when it is read', function (): void {
+    $json = spoiledManifest(function (array $data): array {
+        $data['rules'][1]['max_attempts'] = 0;
+        $data['exemptions'][1]['id'] = 'NOT AN ID';
+
+        return $data;
+    }, [['id' => '1'], ['id' => '2', 'pattern' => 'web/*']], [[], ['id' => '2', 'rule' => '2', 'subject' => 'user', 'match' => str_repeat('a', 64)]]);
+
+    $manifest = ManifestCodec::read($json);
+
+    expect([$manifest->version, $manifest->state, $manifest->exemptions->count(), $manifest->rule(0)->id])->toBe([7, ManifestState::Fresh, 2, '1'])
+        ->and(fn (): CompiledRule => $manifest->rule(1))->toThrow(InvalidManifest::class, 'A rule is invalid: max_attempts must be at least 1')
+        ->and(fn (): array => $manifest->exemptions->all())->toThrow(InvalidManifest::class, 'An exemption is invalid: id must be');
+});
+
+it('SPEC-028 AC-17: still rejects a manifest it cannot index or group', function (string $json): void {
+    expect(fn (): Manifest => ManifestCodec::read($json))->toThrow(InvalidManifest::class);
+})->with([
+    'not JSON' => ['{'],
+    'another format' => ['{"format":2,"version":1,"rules":[],"exemptions":[]}'],
+    'a rule that is not an object' => [spoiledManifest(fn (array $data): array => [...$data, 'rules' => ['api/*']])],
+    'a rule whose method cannot be indexed' => [spoiledManifest(function (array $data): array {
+        $data['rules'][0]['method'] = 'FETCH';
+
+        return $data;
+    })],
+    'a rule whose pattern is not a string' => [spoiledManifest(function (array $data): array {
+        $data['rules'][0]['pattern'] = 5;
+
+        return $data;
+    })],
+    'an exemption that is not an object' => [spoiledManifest(fn (array $data): array => [...$data, 'exemptions' => ['203.0.113.0/24']])],
+    'an ip exemption whose range is no range' => [spoiledManifest(function (array $data): array {
+        $data['exemptions'][0]['match'] = 'not a range';
+
+        return $data;
+    }, exemptions: [[]])],
+    'settings that are not settings' => [spoiledManifest(fn (array $data): array => [...$data, 'settings' => ['scale_factor' => ['percent' => 9, 'until' => null]]])],
+]);
+
+it('SPEC-028 AC-18: reads a manifest that matches the same rules and frees the same requests as the decoded one, on 2,000 seeded requests', function (): void {
+    $random = new Randomizer(new Mt19937(20_261_105));
+    $parts = ['api', 'web', 'v1', 'users', '42', '*', 'ap*'];
+    $segments = fn (): string => implode('/', array_map(fn (): string => $parts[$random->getInt(0, count($parts) - 1)], range(1, $random->getInt(1, 3))));
+    $methods = ['*', 'GET', 'HEAD', 'POST', 'DELETE'];
+    $rules = array_map(fn (int $id): array => ['id' => (string) $id, 'method' => $methods[$random->getInt(0, 4)], 'pattern' => $random->getInt(1, 5) === 1 ? '/'.$segments() : $segments()], range(1, 120));
+    $exemptions = array_map(fn (int $id): array => ['id' => (string) $id, 'rule' => [null, '1', '2'][$random->getInt(0, 2)], 'match' => '10.0.'.$random->getInt(0, 3).'.0/24'], range(1, 40));
+    $json = ManifestFixtures::json(7, $rules, $exemptions);
+    $decoded = ManifestCodec::decode($json);
+    $read = ManifestCodec::read($json);
+    $matches = fn (Manifest $manifest, string $method, string $path): array => array_map(fn (CompiledRule $rule): string => $rule->id, (new RuleMatcher)->match($manifest, $method, $path)->rules);
+    $subjects = fn (string $ip): object => new readonly class($ip) implements ExemptionSubjects
+    {
+        public function __construct(private string $address) {}
+
+        public function ip(): string
+        {
+            return $this->address;
+        }
+
+        public function user(): ?string
+        {
+            return null;
+        }
+
+        public function custom(string $scope): ?string
+        {
+            return null;
+        }
+    };
+    $expected = [];
+    $actual = [];
+
+    foreach (range(1, 2_000) as $ignored) {
+        $method = ['GET', 'HEAD', 'POST', 'PUT', 'DELETE'][$random->getInt(0, 4)];
+        $path = str_replace('*', 'x', $segments());
+        $rule = (string) $random->getInt(1, 3);
+        $ip = '10.0.'.$random->getInt(0, 4).'.9';
+        $expected[] = [$decoded->index->candidates($method, $path), $matches($decoded, $method, $path), $decoded->exemptions->match($rule, FakeClock::T0 * 1_000_000, $subjects($ip))];
+        $actual[] = [$read->index->candidates($method, $path), $matches($read, $method, $path), $read->exemptions->match($rule, FakeClock::T0 * 1_000_000, $subjects($ip))];
+    }
+
+    expect($actual)->toBe($expected)
+        ->and(array_filter(array_column($expected, 1)))->not->toBeEmpty();
+});

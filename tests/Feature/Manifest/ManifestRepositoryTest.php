@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Afzal\DynamicThrottle\Engine\KeyBuilder;
+use Afzal\DynamicThrottle\Manifest\CompiledRule;
 use Afzal\DynamicThrottle\Manifest\Contracts\ManifestRebuilder;
 use Afzal\DynamicThrottle\Manifest\InvalidManifest;
 use Afzal\DynamicThrottle\Manifest\Manifest;
@@ -303,4 +304,21 @@ it('calls a store that throws once, without taking the rebuild lock, so a Redis 
 
     // The lock's add() is a get() and a put() on this store, so a second read would be the lock.
     expect([$manifest->state, $store->reads, $rebuilder->calls])->toBe([ManifestState::Missing, 1, 0]);
+});
+
+it('SPEC-028 AC-17: serves the store\'s manifest though a rule and an exemption no request read cannot be built, and builds them when read', function (): void {
+    Exceptions::fake();
+    $data = json_decode(ManifestFixtures::json(4, [['id' => '1'], ['id' => '2', 'pattern' => 'web/*']], [['id' => '1', 'rule' => '2']]), true);
+    $data['rules'][1]['max_attempts'] = 0;
+    $data['exemptions'][0]['id'] = 'NOT AN ID';
+    $cache = new Repository(manifestStore());
+    $cache->forever('dt:m:3', json_encode($data, JSON_THROW_ON_ERROR));
+    $rebuilder = fakeRebuilder();
+
+    $manifest = manifestRepository($cache, new FakeClock, $rebuilder)->current();
+    app()->terminate();
+
+    expect([$manifest->state, $manifest->version, $manifest->rule(0)->id, $manifest->exemptions->count(), $rebuilder->calls])->toBe([ManifestState::Fresh, 4, '1', 1, 0])
+        ->and(fn (): CompiledRule => $manifest->rule(1))->toThrow(InvalidManifest::class);
+    Exceptions::assertNothingReported();
 });

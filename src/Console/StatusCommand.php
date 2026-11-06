@@ -86,7 +86,7 @@ final class StatusCommand extends Command
         }
 
         $rules = count($manifest->rules());
-        $exemptions = count($manifest->exemptions->all());
+        $exemptions = $manifest->exemptions->count();
         $this->components->twoColumnDetail('Manifest', "version {$manifest->version}: {$rules} ".Str::plural('rule', $rules).", {$exemptions} ".Str::plural('exemption', $exemptions));
 
         return $manifest;

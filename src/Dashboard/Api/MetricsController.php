@@ -10,6 +10,8 @@ use Afzal\DynamicThrottle\Models\HourlyMetric;
 use Afzal\DynamicThrottle\Models\Rule;
 use Afzal\DynamicThrottle\Support\TableMissing;
 use Illuminate\Contracts\Validation\Factory as ValidationFactory;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
@@ -20,6 +22,7 @@ use Illuminate\Support\Facades\Date;
  * (period=hour), or per hour for the last 24 hours (day) or 168 hours (week)
  * from the hourly table. Each series ends with the current minute or hour, and
  * lists only the rules with numbers, a rule deleted since with its name null.
+ * With rule={id}, it lists that rule only, as a rule's page asks (AC-27, #197).
  *
  * @internal
  */
@@ -37,18 +40,22 @@ final readonly class MetricsController
     public function __invoke(Request $request): JsonResponse
     {
         return ApiErrors::json(function () use ($request): JsonResponse {
-            $period = $this->validation->make($request->query(), ['period' => ['sometimes', 'string', 'in:'.implode(',', array_keys(self::PERIODS))]])->validate()['period'] ?? 'hour';
-            $period = is_string($period) ? $period : 'hour';
+            $input = $this->validation->make($request->query(), [
+                'period' => ['sometimes', 'string', 'in:'.implode(',', array_keys(self::PERIODS))],
+                'rule' => ['sometimes', 'integer', 'min:1'],
+            ])->validate();
+            $period = is_string($input['period'] ?? null) ? $input['period'] : 'hour';
+            $rule = is_numeric($input['rule'] ?? null) ? (int) $input['rule'] : null;
             [$step, $count] = self::PERIODS[$period];
             $current = intdiv(intdiv($this->clock->microseconds(), 1_000_000), $step);
             $first = $current - $count + 1;
-            $names = Rule::query()->pluck('name', 'id')->all();
+            $names = Rule::query()->when($rule !== null, fn (Builder $query): Builder => $query->whereKey($rule))->pluck('name', 'id')->all();
             // At most 500, so a buffer that cannot list its own reads a bounded number of keys (AC-26).
             $enabled = $period === 'hour'
-                ? array_values(Rule::query()->where('enabled', true)->orderBy('id')->pluck('id')->map(fn (mixed $id): string => is_scalar($id) ? (string) $id : '')->all())
+                ? array_values(Rule::query()->where('enabled', true)->when($rule !== null, fn (Builder $query): Builder => $query->whereKey($rule))->orderBy('id')->pluck('id')->map(fn (mixed $id): string => is_scalar($id) ? (string) $id : '')->all())
                 : [];
 
-            $numbers = $period === 'hour' ? $this->minutes($first, $count, $enabled) : $this->hours($first, $count);
+            $numbers = $period === 'hour' ? $this->minutes($first, $count, $enabled) : $this->hours($first, $count, $rule);
 
             return new JsonResponse([
                 'period' => $period,
@@ -79,13 +86,13 @@ final readonly class MetricsController
     }
 
     /**
-     * The hourly table's hours, by rule id and hour's index.
+     * The hourly table's hours, by rule id and hour's index: of one rule, or of all.
      *
      * @return array<int, array<int, array{int, int, int}>>
      *
      * @throws TableMissing
      */
-    private function hours(int $first, int $count): array
+    private function hours(int $first, int $count, ?int $rule): array
     {
         $model = new HourlyMetric;
 
@@ -95,11 +102,15 @@ final readonly class MetricsController
 
         $rows = HourlyMetric::query()->toBase()
             ->where('hour', '>=', Date::createFromTimestamp($first * 3_600, 'UTC')->format('Y-m-d H:i:s'))
+            ->when($rule !== null, fn (QueryBuilder $query): QueryBuilder => $query->where('rule_id', $rule))
             ->get(['rule_id', 'hour', 'hits', 'blocks', 'would_blocks']);
         $numbers = [];
+        // Each row's hour is one of at most 168, so each is parsed once: parsing every
+        // row took 324 of 690 ms for a week of 500 rules (#196).
+        $indexes = [];
 
         foreach ($rows as $row) {
-            $index = is_string($row->hour) ? intdiv(Date::parse($row->hour, 'UTC')->getTimestamp(), 3_600) - $first : -1;
+            $index = is_string($row->hour) ? $indexes[$row->hour] ??= intdiv(Date::parse($row->hour, 'UTC')->getTimestamp(), 3_600) - $first : -1;
 
             if ($index >= 0 && $index < $count && is_numeric($row->rule_id)) {
                 $numbers[(int) $row->rule_id][$index] = [(int) $row->hits, (int) $row->blocks, (int) $row->would_blocks];

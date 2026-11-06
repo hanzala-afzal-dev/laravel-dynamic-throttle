@@ -35,18 +35,29 @@ final readonly class RuleIndex
      */
     public static function of(array $rules): self
     {
+        return self::ofPatterns(array_map(fn (CompiledRule $rule): array => [$rule->method, $rule->pattern], $rules));
+    }
+
+    /**
+     * From each rule's method and pattern alone, so the store's read path indexes the
+     * rules without building them (SPEC-028 AC-17, as amended for #195).
+     *
+     * @param  list<array{RequestMethod, string}>  $rules  in manifest order
+     */
+    public static function ofPatterns(array $rules): self
+    {
         $literal = [];
         $wildcard = [];
         $patterns = [];
 
-        foreach ($rules as $position => $rule) {
-            $pattern = self::normalize($rule->pattern);
+        foreach ($rules as $position => [$method, $pattern]) {
+            $pattern = self::normalize($pattern);
             $segment = self::firstSegment($pattern);
 
             if (str_contains($segment, '*')) {
-                $wildcard[$rule->method->value][] = $position;
+                $wildcard[$method->value][] = $position;
             } else {
-                $literal[$rule->method->value][$segment][] = $position;
+                $literal[$method->value][$segment][] = $position;
             }
 
             $patterns[] = $pattern;

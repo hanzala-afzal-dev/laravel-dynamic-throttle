@@ -1,6 +1,7 @@
 # SPEC-028: The manifest's APCu cache on PHP-FPM
 
 - Status: Done
+- Amended: 2026-11-05, exemptions are built when a request reads them, from L1 and from the store (issues #194 and #195): see "Amendment" at the end
 - ADRs: ADR-0007, ADR-0010, ADR-0016, ADR-0023
 - Roadmap phase: 3
 
@@ -55,7 +56,7 @@ APCu may be full or fail, a fetch may throw, or an entry may not have the shape 
 
 An entry holding an object anywhere is not a snapshot either. APCu reads it back, so it is released and deleted inside the fetch, where even an object whose destructor throws cannot escape. A manifest that cannot be written to L1 is still served.
 
-A rule's JSON is only checked when a request matches the rule and builds it. A rule that cannot be built fails that request's matching, which the middleware reports, and the request goes through, as for any error of the manifest (ADR-0010), in strict mode too. Only something other than the package can write such an entry.
+A rule's JSON is only checked when a request matches the rule and builds it. A rule that cannot be built fails that request's matching, which the middleware reports, and the request goes through, as for any error of the manifest (ADR-0010), in strict mode too. Only something other than the package can write such an entry. Since the amendment, an exemption is checked the same way, when a request's check reaches it (AC-16).
 
 ## Acceptance criteria
 The APCu tests run in `tests/Apcu` with `apc.enable_cli=1` (`composer test:apcu`), with a FakeClock at T0.
@@ -80,7 +81,7 @@ The APCu tests run in `tests/Apcu` with `apc.enable_cli=1` (`composer test:apcu`
   - an object that throws when APCu reads it;
   - an entry whose index, rules or exemptions have the wrong types;
   - an entry whose index points past its rules, or has a pattern for a rule it does not have;
-  - an entry whose exemptions cannot be built;
+  - an entry whose exemptions' groups have the wrong types, or do not hold each of its exemptions exactly once (amended: an exemption itself is checked when a request's check reaches it, AC-16);
   - an object anywhere in the entry, even one whose destructor throws.
 - **AC-10 (APCu full)** When APCu cannot store the entry, the request still gets the store's rules, and nothing throws. So does a manifest that cannot be written to L1, such as one whose response override holds a number JSON cannot encode.
 - **AC-11 (the index)** An L1 entry holds the index built from its rules. For seeded random rules and requests, a manifest built from L1 offers the same candidates and matches the same rules as the decoded manifest.
@@ -92,7 +93,7 @@ The APCu tests run in `tests/Apcu` with `apc.enable_cli=1` (`composer test:apcu`
 ## Interfaces and files
 - `src/Manifest/ManifestSnapshot.php` (new, internal): what L1 holds.
   - Fields: the manifest's version, index, each rule's JSON, its exemptions, its state, and the read time in microseconds.
-  - It turns into a `Manifest` and into the entry's plain values, and comes from either. From an entry, it builds the index and the exemptions at once, so an entry that cannot build them is no snapshot.
+  - It turns into a `Manifest` and into the entry's plain values, and comes from either. From an entry, it checks the index and the exemptions' groups at once, so an entry that cannot build them is no snapshot. Since the amendment, it builds each exemption when a request's check reaches it (AC-16).
 - `src/Manifest/ManifestRules.php` (new, internal): a manifest's rules by position. Decoded from the store, they are all built. From L1, each one is built from its JSON the first time it is read, then kept.
 - `src/Manifest/Manifest.php`: `rule(int $position)` and `rules()` take the place of the public `$rules` array. The constructor takes the rules as a list or as `ManifestRules`, and an index stored with them.
 - `src/Manifest/ManifestCodec.php`: `encodeRule()` and `decodeRule()`, one rule's JSON, as the manifest writes it.
@@ -168,3 +169,28 @@ Recorded as recommended (ADR-0027), except the first, second and sixth, which th
    - ADR-0007's table gives L1 a TTL of `refresh_seconds`, and its "Missing manifest" section uses a last known manifest from L0 or L1. An entry that expired after `refresh_seconds` would hold no last known manifest 2 seconds into an outage.
    - So the table's TTL is L1's freshness, and the entry is kept a day after it is last written. A write-back during an outage keeps the last known manifest another day, as L0 keeps its manifest in a long-running worker. ADR-0007's decision record notes this reading.
 7. **The last known manifest is the newer of L0's and L1's.** Taking L0's first, as the draft said, could let a long-running worker write its older manifest over a newer one in L1, which every other worker would then use.
+
+## Amendment, 2026-11-05: exemptions built when a request reads them (#194, #195)
+
+### Problem
+A request built every exemption of the manifest, though its checks read one or two. Measured on 0.2.0 with OPcache, at 4,001 exemptions and 3,014 rules:
+- from L1, 9.0 ms per request, 5.1 ms of it to build the exemptions (#194);
+- from the store, without APCu, 29.5 ms per request: 12.4 ms to parse the JSON, 9.2 ms to build the rules, 15.0 ms the exemptions (#195).
+
+An app with a few dozen exemptions paid little, but the cost grew with each one.
+
+### Behavior
+- **L1** holds the exemptions' groups, the lookup tables the request path uses (SPEC-009), with the exemptions' fields. A request checks the groups, as it checks the index, and builds an exemption only when its check reaches it, as it builds a rule only when it matches it.
+- **The store's manifest** is read for requests by `ManifestCodec::read()`. It checks the manifest's shape as `decode()` does, builds the index from each rule's method and pattern, and groups the exemptions from their fields. It builds each rule and exemption when a request reads it. `decode()` stays strict, and builds everything, for the compiler and the commands.
+- **An exemption that cannot be built** fails the matching of a request whose check reaches it. The middleware reports it, and the request goes through, in strict mode too, as for a rule (AC-14). Only something other than the package can write one.
+- **Counts** of exemptions, in `status`, `health`, `explain` and the request path's check for none, are read without building any.
+
+### Acceptance criteria
+- **AC-16 (L1)** An L1 entry holds the exemptions' groups and fields. From it, a request builds only the exemptions its checks reach. An exemption that cannot be built fails only the requests whose check reaches it: the error is reported, and the request goes through, in strict mode too.
+- **AC-17 (the store)** From the store, a request builds only the rules it matches and the exemptions its checks reach, with the same failures as AC-16. A manifest of the wrong shape, a rule whose method or pattern cannot be indexed, or an exemption whose fields cannot be grouped, such as an ip range that is no range, is still corrupt (SPEC-006 AC-16).
+- **AC-18 (the same results)** For seeded exemptions and requests, a set from L1's groups, and one from the store's fields, free the same requests as the set built from compiled exemptions. For seeded rules and requests, a manifest from `read()` matches the same rules as one from `decode()`.
+- **AC-19 (counts)** Counting a manifest's exemptions builds none.
+
+### Decisions
+8. **Lazy, as the rules are** (chosen by the maintainer on 2026-11-05). Rejected: building every exemption, only faster. It kept AC-9's check of each exemption, but the measured floor was still about half of today's cost.
+9. **`decode()` stays strict**, so the compiler and the commands still reject any manifest that a request could not use in full. Only the request path reads lazily.

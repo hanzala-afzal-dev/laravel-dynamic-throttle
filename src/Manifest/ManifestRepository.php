@@ -131,7 +131,7 @@ final readonly class ManifestRepository
             $json = $this->cache->get($this->keys->manifest());
 
             return is_string($json)
-                ? ManifestCodec::decode($json)
+                ? ManifestCodec::read($json)
                 : new ManifestUnavailable('The manifest is missing from the cache. One request will rebuild it after its response.');
         } catch (InvalidManifest $exception) {
             return $exception;

@@ -26,21 +26,21 @@ final readonly class Manifest
 
     /**
      * @param  list<CompiledRule>|ManifestRules  $rules  sorted by priority, then id
-     * @param  list<CompiledExemption>  $exemptions  sorted by id
+     * @param  list<CompiledExemption>|ExemptionSet  $exemptions  sorted by id, or already a set, as from L1 or the store's read path (SPEC-028, as amended)
      * @param  ?RuleIndex  $index  the index L1 stores with the rules (SPEC-028), or null to build it from them
      * @param  ?ManifestSettings  $settings  the runtime settings (SPEC-013), or null for none
      */
     public function __construct(
         public int $version,
         array|ManifestRules $rules,
-        array $exemptions = [],
+        array|ExemptionSet $exemptions = [],
         public ManifestState $state = ManifestState::Fresh,
         ?RuleIndex $index = null,
         ?ManifestSettings $settings = null,
     ) {
         $this->rules = $rules instanceof ManifestRules ? $rules : ManifestRules::of($rules);
         $this->index = $index ?? RuleIndex::of($this->rules->all());
-        $this->exemptions = new ExemptionSet($exemptions);
+        $this->exemptions = $exemptions instanceof ExemptionSet ? $exemptions : new ExemptionSet($exemptions);
         $this->settings = $settings ?? ManifestSettings::none();
     }
 
@@ -84,12 +84,12 @@ final readonly class Manifest
     }
 
     /**
-     * The same manifest, marked stale. Its rules and index carry over, so a manifest
-     * from L1 builds no rule to go stale, and so do its settings, so a bypass holds
-     * through an outage until its end time (SPEC-013).
+     * The same manifest, marked stale. Its rules, exemptions and index carry over, so a
+     * manifest from L1 builds no rule or exemption to go stale, and so do its settings,
+     * so a bypass holds through an outage until its end time (SPEC-013).
      */
     public function stale(): self
     {
-        return new self($this->version, $this->rules, $this->exemptions->all(), ManifestState::Stale, $this->index, $this->settings);
+        return new self($this->version, $this->rules, $this->exemptions, ManifestState::Stale, $this->index, $this->settings);
     }
 }

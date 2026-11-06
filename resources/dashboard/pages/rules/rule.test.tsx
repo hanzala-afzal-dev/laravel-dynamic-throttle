@@ -15,7 +15,7 @@ const HASH = 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9';
 function answers(extra: Record<string, Answer | ((body: unknown) => Answer)> = {}) {
     return {
         'GET rules/3': { body: { rule: LOGIN, exemptions: [EXEMPTION] } },
-        'GET metrics?period=hour': { body: metricsOf('hour', [seriesOf(3, 'Login', [20, 40], [2, 10], [0, 0]), seriesOf(4, 'Other', [900, 900], [90, 90], [0, 0])], 2) },
+        'GET metrics?period=hour&rule=3': { body: metricsOf('hour', [seriesOf(3, 'Login', [20, 40], [2, 10], [0, 0]), seriesOf(4, 'Other', [900, 900], [90, 90], [0, 0])], 2) },
         'GET rules/3/offenders?hour=current': { body: { hour: '2027-01-15T12:00:00+00:00', offenders: [{ hash: HASH, count: 9 }], clients: 3 } },
         'GET rules/3/offenders?hour=previous': { body: { hour: '2027-01-15T11:00:00+00:00', offenders: [], clients: 0 } },
         'GET audit?target=rule%3A3': {

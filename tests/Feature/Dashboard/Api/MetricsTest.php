@@ -157,6 +157,50 @@ it('AC-6: refuses another period with a 422', function (): void {
     expect([$response->status(), array_keys($response->json('errors'))])->toBe([422, ['period']]);
 });
 
+/*
+| AC-27, amended for #197: one rule's numbers, which a rule's page asks for.
+*/
+
+it('AC-27: gives only one rule\'s series with ?rule=, for the hour, the day and the week', function (): void {
+    $api = Throttling::rule(['name' => 'API']);
+    $other = Throttling::rule(['name' => 'Other', 'pattern' => 'other']);
+    Telemetry::buffer()->record($this->minute, 1, [Telemetry::blocked((string) $api->id)]);
+    Telemetry::buffer()->record($this->minute, 1, [Telemetry::blocked((string) $other->id)]);
+    hourlyRow($api->id, '2027-01-15 12:00:00', 10);
+    hourlyRow($other->id, '2027-01-15 12:00:00', 20);
+    $series = fn (string $period): array => DashboardApi::send($this, 'GET', "metrics?period={$period}&rule={$api->id}", user: DashboardApi::viewer())->json('rules');
+
+    expect(array_map(fn (string $period): array => array_column($series($period), 'id'), ['hour', 'day', 'week']))->toBe([[$api->id], [$api->id], [$api->id]])
+        ->and($series('day')[0]['hits'])->toBe([...zeros(23), 10]);
+});
+
+it('AC-27: asks the counter store for that rule only, and for none when it is disabled', function (): void {
+    $enabled = Throttling::rule(['name' => 'API']);
+    Throttling::rule(['name' => 'Other', 'pattern' => 'other']);
+    $off = Throttling::rule(['name' => 'Off', 'pattern' => 'off', 'enabled' => false]);
+    $asked = [];
+    $this->mock(TelemetryBuffer::class, function (MockInterface $mock) use (&$asked): void {
+        $mock->shouldReceive('counts')->andReturnUsing(function (int $minute, array $ruleIds) use (&$asked): array {
+            $asked[] = $ruleIds;
+
+            return [];
+        });
+    });
+
+    DashboardApi::send($this, 'GET', "metrics?rule={$enabled->id}", user: DashboardApi::viewer())->assertOk();
+    $forEnabled = array_values(array_unique(array_merge(...$asked)));
+    $asked = [];
+    DashboardApi::send($this, 'GET', "metrics?rule={$off->id}", user: DashboardApi::viewer())->assertOk();
+
+    expect([$forEnabled, array_merge(...$asked)])->toBe([[(string) $enabled->id], []]);
+});
+
+it('AC-27: refuses a rule that is not a whole number above 0 with a 422', function (string $rule): void {
+    $response = DashboardApi::send($this, 'GET', "metrics?period=day&rule={$rule}", user: DashboardApi::viewer());
+
+    expect([$response->status(), array_keys($response->json('errors'))])->toBe([422, ['rule']]);
+})->with(['0' => ['0'], 'negative' => ['-1'], 'a fraction' => ['1.5'], 'a word' => ['api']]);
+
 it('AC-6: answers 503 with the way out when the hourly table is missing', function (): void {
     Schema::connection((new HourlyMetric)->getConnectionName())->drop((new HourlyMetric)->getTable());
 

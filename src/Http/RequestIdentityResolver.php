@@ -70,7 +70,7 @@ final class RequestIdentityResolver implements ExemptionSubjects, IdentityResolv
     public function exemption(CompiledRule $rule): ?string
     {
         // Most apps have no exemptions: they pay nothing, not even a clock read.
-        if ($this->exemptions->all() === []) {
+        if ($this->exemptions->count() === 0) {
             return null;
         }
 

@@ -155,7 +155,7 @@ function PromoteDialog({ rule, change }: { rule: Rule; change: ConfirmedChange }
 
 /** What a dry-run rule would have done in the last 24 hours, from the hourly table. */
 function LastDay({ ruleId }: { ruleId: number }) {
-    const metrics = useMetrics('day');
+    const metrics = useMetrics('day', ruleId);
 
     if (metrics.isError) {
         return <QueryError error={metrics.error} />;

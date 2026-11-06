@@ -121,7 +121,7 @@ final class ExplainCommand extends Command
         $this->line($this->requestLine($explanation));
         $manifest = $explanation->manifest;
         $this->line('Manifest: '.($manifest instanceof Manifest
-            ? "version {$manifest->version}, ".$this->counted(count($manifest->rules()), 'rule').', '.$this->counted(count($manifest->exemptions->all()), 'exemption')
+            ? "version {$manifest->version}, ".$this->counted(count($manifest->rules()), 'rule').', '.$this->counted($manifest->exemptions->count(), 'exemption')
             : Printable::text((string) $explanation->manifestError)));
         $this->settings($explanation->settings);
         $this->route($explanation->route, $explanation->global);

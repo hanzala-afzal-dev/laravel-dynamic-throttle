@@ -49,7 +49,7 @@ final readonly class ManifestCheck implements Check
         $age = max(0, $context->now() - $compiled);
         $minutes = intdiv($age, 60);
         $rules = count($manifest->rules());
-        $exemptions = count($manifest->exemptions->all());
+        $exemptions = $manifest->exemptions->count();
         $summary = "Version {$manifest->version}, compiled at ".HealthContext::time($compiled).", {$minutes} ".Str::plural('minute', $minutes).' ago: '
             .number_format($rules).' '.Str::plural('rule', $rules).', '.number_format($exemptions).' '.Str::plural('exemption', $exemptions).'.';
         $problems = [];
