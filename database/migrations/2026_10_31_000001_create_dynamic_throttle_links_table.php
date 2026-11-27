@@ -26,6 +26,16 @@ return new class extends Migration
         return is_string($connection) && $connection !== '' ? $connection : null;
     }
 
+    /**
+     * Skipped when the table already exists: publishing the migrations again copies
+     * them all under new dates, also those the app has run. Laravel never records a
+     * skipped migration, so a rollback never drops the table through this copy.
+     */
+    public function shouldRun(): bool
+    {
+        return ! Schema::connection($this->getConnection())->hasTable('dynamic_throttle_links');
+    }
+
     public function up(): void
     {
         Schema::create('dynamic_throttle_links', function (Blueprint $table): void {
