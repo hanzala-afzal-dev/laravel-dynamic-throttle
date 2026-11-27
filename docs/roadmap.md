@@ -276,7 +276,7 @@ These were the open decisions of the original roadmap.
 - **License:** MIT, copyright Hanzala Afzal. Contributions are accepted under the same license (inbound = outbound, see `CONTRIBUTING.md`).
 - **Docs hosting:** README + `docs/` folder until 1.0.
 - **PHP floor:** PHP 8.2 support was requested and declined. ADR-0002 stands (`^8.3`).
-- **Laravel floor:** `^12.69.0 || ^13.30.0`, the lowest versions CI tests (ADR-0019, amends ADR-0002). Raised from `^12.61.1 || ^13.12.0` on 2026-09-30, when a security advisory kept CI from installing the older versions.
+- **Laravel floor:** `^12.71.0 || ^13.40.0`, the lowest versions CI tests (ADR-0019, amends ADR-0002). Raised from `^12.61.1 || ^13.12.0` on 2026-09-30, and from `^12.69.0 || ^13.30.0` on 2026-11-27, each time when a security advisory kept CI from installing the older versions.
 - **Repository:** private until the first release, which ships with the dashboard (Phase 5). Public since 2026-10-18, for `0.1.0-beta.1`. Nightly CI is skipped while private, to save Actions minutes. GitHub offers these three settings only on public repositories, or with GitHub Pro. Turn them on when the repository goes public:
   - private vulnerability reporting (`SECURITY.md` links to it)
   - branch protection on `main` requiring the `CI passed` check

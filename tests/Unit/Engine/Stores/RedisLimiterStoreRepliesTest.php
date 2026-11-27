@@ -187,6 +187,8 @@ it('AC-6: never falls back to EVAL for another predis error, and names it', func
     // The ServerException itself is the previous exception.
     'with exceptions (a ServerException)' => [new PredisServerException('ERR Error running script, NOSCRIPT is not the cause'), 'ERR Error running script'],
     'with exceptions off (an error reply)' => [new PredisError('ERR Error running script, NOSCRIPT is not the cause'), 'Redis rejected the limiter script: ERR Error running script'],
+    // Not a server error at all, such as a lost connection: never EVAL, and it is the previous exception.
+    'another exception' => [new RuntimeException('Connection lost'), 'Connection lost'],
 ]);
 
 it('AC-18: reports a reply that is not four integers as unavailable', function (mixed $reply): void {
