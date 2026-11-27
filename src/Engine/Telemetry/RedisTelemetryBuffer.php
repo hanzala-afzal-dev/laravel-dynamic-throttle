@@ -493,8 +493,10 @@ final readonly class RedisTelemetryBuffer implements TelemetryBuffer
 
         try {
             $reply = $connection->command('evalsha', [$sha, ...$parameters]);
-        } catch (PredisServerException $exception) {
-            if ($exception->getErrorType() !== 'NOSCRIPT') {
+        } catch (Throwable $exception) {
+            // Throwable, not ServerException: Laravel 13.44 declares that command() throws
+            // only a ConnectionException, but predis still throws its server errors through it.
+            if (! $exception instanceof PredisServerException || $exception->getErrorType() !== 'NOSCRIPT') {
                 throw $exception;
             }
 
