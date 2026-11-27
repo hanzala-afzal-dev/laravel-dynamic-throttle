@@ -19,6 +19,8 @@ The package follows semantic versioning. Before 1.0:
    composer require hanzala-afzal/laravel-dynamic-throttle:^0.3          # a new minor version
    ```
 
+   A new version can need a newer Laravel, such as one that fixes a security issue. If Composer keeps your app on the version it has, update Laravel first: `composer update laravel/framework`.
+
 3. **Add the new tables,** if the release brings one: see [new tables](#new-tables).
 4. **Deploy as usual,** and run `php artisan dynamic-throttle:compile` once the new code is in place, as the install steps do. Servers then never wait for the rules to be rebuilt, even after a version that stores them in a new way.
 5. **Check your setup** with `php artisan dynamic-throttle:health`. A new version can add a check, so a deploy script that runs it with `--strict` may stop on a new warning: the release notes name each new check.
