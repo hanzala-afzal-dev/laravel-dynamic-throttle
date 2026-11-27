@@ -73,7 +73,7 @@
 7. **Distinctive table names and a configurable connection**, as Telescope and Pulse do:
    - The tables become `dynamic_throttle_rules`, `dynamic_throttle_exemptions`, `dynamic_throttle_settings`, `dynamic_throttle_audit_log` and `dynamic_throttle_metrics_hourly`.
    - Config `database.connection` (default `null`: the app's default connection) chooses the connection they use.
-   - Migrations are published with `publishesMigrations()`, which gives them fresh timestamps, and are never loaded automatically. The app owns its schema, and published migrations are never edited (ADR-0017).
+   - Migrations are published with `publishesMigrations()`, which gives them fresh timestamps, and are never loaded automatically. The app owns its schema, and a released migration never changes the schema it creates (ADR-0017).
 8. **Multi-tenancy in v1: one set of rules per app.**
    - Rules live on the configured connection (point 7). Counters live on the configured cache store or Redis connection.
    - The docs show how to keep both out of tenancy bootstrappers.

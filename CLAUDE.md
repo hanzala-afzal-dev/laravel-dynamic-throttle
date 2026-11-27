@@ -42,6 +42,7 @@ Decisions live in docs/adr/ (index: docs/adr/README.md). Feature specs live in d
 - No database queries on the request path (src/Engine, src/Http/Middleware). The database is only for admin actions and the compiler.
 - Engine code never calls time() or microtime() directly: the cache driver uses the Clock, the Redis driver uses TIME inside Lua.
 - All cache and Redis keys come from KeyBuilder.
+- A released migration never changes the schema it creates: schema changes ship as new migrations. Every migration has a `shouldRun()` that is false once its change is in the database, since `vendor:publish` copies all of them again (issue #206). `tests/Feature/PublishedMigrationsTest.php` enforces it.
 - No exception from storage may escape the middleware (ADR-0010).
 - Dashboard routes are never subject to dynamic rules.
 - Dashboard: React + shadcn/ui in `resources/dashboard/`, built by Vite into the committed `dist/`, which users get with nothing to install (ADR-0028). No inline scripts or styles; runtime style elements carry the page's nonce. Never ship sources or `node_modules` in the Composer download, and never edit `dist/` by hand or commit it in a pull request: the Build dist workflow commits the build after merge (ADR-0030).

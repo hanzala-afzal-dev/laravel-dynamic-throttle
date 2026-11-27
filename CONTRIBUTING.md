@@ -90,7 +90,7 @@ These are covered by Semantic Versioning from 1.0 ([ADR-0017](docs/adr/0017-vers
 - the facade
 - the database schema
 
-A PR that changes any of them must say so, and a breaking change needs an upgrade note. Published migrations are never edited. Schema changes ship as new migrations.
+A PR that changes any of them must say so, and a breaking change needs an upgrade note. Schema changes ship as new migrations: a released migration never changes the schema it creates. Every migration has a `shouldRun()` that is false once its change is in the database, such as `hasTable()` for a new table or `hasColumn()` for a new column, because `vendor:publish` copies every migration again, under new dates, and the app has run the earlier copies. `tests/Feature/PublishedMigrationsTest.php` fails for a migration without one.
 
 ## Working on the dashboard ([ADR-0028](docs/adr/0028-dashboard-react-shadcn.md), [ADR-0030](docs/adr/0030-dist-built-after-merge.md))
 

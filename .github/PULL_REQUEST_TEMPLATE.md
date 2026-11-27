@@ -14,4 +14,4 @@
 - [ ] No
 - [ ] Yes. What changes: config keys / contracts / events / Artisan commands / HTTP headers / facade / database schema
   - [ ] Breaking changes have an upgrade note
-  - [ ] Schema changes ship as a **new** migration (published migrations are never edited)
+  - [ ] Schema changes ship as a **new** migration, with a `shouldRun()` that skips it once its change is in the database (a released migration never changes the schema it creates)
