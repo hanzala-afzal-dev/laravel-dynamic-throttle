@@ -30,7 +30,7 @@ final readonly class SettingController
 
     public function show(): JsonResponse
     {
-        return new JsonResponse($this->state());
+        return ApiErrors::json(fn (): JsonResponse => new JsonResponse($this->state()));
     }
 
     public function bypass(Request $request): JsonResponse
