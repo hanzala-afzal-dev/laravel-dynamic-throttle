@@ -15,6 +15,12 @@ The defaults suit most apps. The settings you are most likely to change have env
 | `DYNAMIC_THROTTLE_COOLDOWN` | `10` | Seconds to skip a counter store that failed |
 | `DYNAMIC_THROTTLE_TELEMETRY` | `true` | Records each rule's traffic and blocks |
 | `DYNAMIC_THROTTLE_SAMPLE_RATE` | `1` | The share of requests telemetry records |
+| `DYNAMIC_THROTTLE_LIVE_FEED` | `true` | Keeps the last hour's blocks, with the client's IP, for the dashboard's Activity page |
+| `DYNAMIC_THROTTLE_IPV6_PREFIX` | `64` | The size of the IPv6 network that counts as one client, from 1 to 128 ([scopes](rules.md#scopes)) |
+| `DYNAMIC_THROTTLE_DASHBOARD` | `true` | Serves the dashboard |
+| `DYNAMIC_THROTTLE_DASHBOARD_PATH` | `dynamic-throttle` | The dashboard's path |
+| `DYNAMIC_THROTTLE_DASHBOARD_DOMAIN` | none | A domain of its own for the dashboard |
+| `DYNAMIC_THROTTLE_DASHBOARD_LINKS` | `false` | One-time links that open the dashboard ([links](dashboard.md#links)) |
 
 The rest, such as excluded paths and the user scope's guards, is in [`config/dynamic-throttle.php`](../../config/dynamic-throttle.php). To change it, publish the file:
 

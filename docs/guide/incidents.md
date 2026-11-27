@@ -1,6 +1,6 @@
 # During an incident
 
-Two runtime settings change every rule at once, without a deploy, and end by themselves. They need the package's newest migrations: publish them and run `php artisan migrate`.
+Two runtime settings change every rule at once, without a deploy, and end by themselves. They need the package's settings table: publish the migrations and run `php artisan migrate`, as [new tables](upgrading.md#new-tables) shows.
 
 ```bash
 php artisan dynamic-throttle:bypass on --for=30m   # every request goes through, unlimited

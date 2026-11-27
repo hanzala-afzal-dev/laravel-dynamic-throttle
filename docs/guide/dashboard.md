@@ -48,7 +48,7 @@ php artisan dynamic-throttle:link --revoke=7                               # end
 php artisan dynamic-throttle:link --revoke-all                             # ends every link
 ```
 
-- **Turn them on first.** Links are off until you set `DYNAMIC_THROTTLE_DASHBOARD_LINKS=true`. They need a table of their own: publish the package's newest migrations and run `php artisan migrate`. If your gates are all you need, leave links off: nothing changes then.
+- **Turn them on first.** Links are off until you set `DYNAMIC_THROTTLE_DASHBOARD_LINKS=true`. They need a table of their own: publish the package's migrations and run `php artisan migrate`, as [new tables](upgrading.md#new-tables) shows. If your gates are all you need, leave links off: nothing changes then.
 - **A link works once, in one browser,** for 60 minutes, or as long as `--for` says, up to `1d`. It only views, unless you pass `--manage`, which asks to confirm in production (`--force` in a script).
 - **Its holder presses "Continue".** The link opens a page that waits for that, so a chat app's preview never uses the link. The browser then has a session, which ends when the link does: at its end time, or at the next request after `--revoke`. The dashboard's header shows whose link it is, and until when.
 - **Send it privately.** The command prints the link once, and only a hash of it is stored, so nothing can show it again. Until it is used, anyone who has it can open the dashboard.
@@ -179,7 +179,7 @@ The dashboard's pages read and change everything through a JSON API under `{path
 | `POST api/exemptions`, `DELETE api/exemptions/{id}` | manage | Create or delete an exemption |
 | `GET api/settings` | either | Bypass and the scale factor |
 | `PUT api/settings/bypass`, `PUT api/settings/scale` | manage | What `dynamic-throttle:bypass` and `dynamic-throttle:scale` do |
-| `GET api/metrics?period=hour` | either | Each rule's requests, blocks and would-blocks: per minute for the last hour, or per hour for a `day` or a `week` |
+| `GET api/metrics?period=hour` | either | Each rule's requests, blocks and would-blocks: per minute for the last hour, or per hour for a `day` or a `week`; `rule` (an id) gives one rule's only |
 | `GET api/rules/{id}/offenders` | either | The rule's top clients by identity hash, this hour or `?hour=previous` |
 | `GET api/feed` | either | The live feed: the last hour's newest 500 blocks and would-blocks, newest first, with each one's time, rule and its name, method, route template, client IP and user; `?since=` (Unix milliseconds) keeps only the newer ones. `null` on a store that keeps none, and empty with `telemetry.live_feed` off |
 | `GET api/audit` | either | The audit log, newest first, 100 a page through `next_cursor`; `?action=`, `?target=`, `?actor=`, `?from=` and `?until=` narrow it |

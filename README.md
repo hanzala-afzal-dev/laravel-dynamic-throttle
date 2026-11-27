@@ -87,6 +87,8 @@ php artisan dynamic-throttle:compile
 
 A new Laravel app has no API routes until you run `php artisan install:api`. The dashboard's own routes are never limited.
 
+**Behind a load balancer or a CDN, also trust your proxies,** with `$middleware->trustProxies(...)` in the same place. Until you do, every client counts as the proxy's IP, so an `ip` rule limits all of them together: see [behind a load balancer](docs/guide/middleware.md#behind-a-load-balancer-or-a-cdn).
+
 **4. Before you deploy, say who may use the dashboard**, in a service provider's `boot()`. On your machine, this can wait: in the `local` environment, anyone can open the dashboard. Once you define the gates, they decide there too, so sign in to open it. Until you do, `php artisan dynamic-throttle:health` warns everywhere but `local`. An app without a user login can use one-time [links](docs/guide/dashboard.md#links) instead.
 
 ```php
@@ -138,11 +140,12 @@ Each user now gets 60 requests a minute under `/api`. The 61st gets Laravel's ow
 
 The [guide](docs/guide/README.md) has the details, also on the [documentation site](https://hanzala-afzal-dev.github.io/laravel-dynamic-throttle/), with search:
 
-- [Rules](docs/guide/rules.md): every attribute, examples, your own scope, and exemptions
+- [Rules](docs/guide/rules.md): every attribute, examples, the scopes, your own scope, and exemptions
 - [An endpoint that costs money](docs/guide/rules.md#an-endpoint-that-costs-money), such as one that calls an AI model: a limit per user or per plan, tried in dry-run first
 - [Dry-run rules](docs/guide/dry-run.md), [events](docs/guide/events.md) and [testing your app](docs/guide/testing.md) with `DynamicThrottle::fake()`
 - [Configuration](docs/guide/configuration.md), [attaching the middleware](docs/guide/middleware.md), and [storage and runtimes](docs/guide/storage-and-runtimes.md)
 - [The dashboard](docs/guide/dashboard.md), [health checks](docs/guide/health.md) and [during an incident](docs/guide/incidents.md)
+- [Upgrading](docs/guide/upgrading.md) to a new version
 - The [runbook](docs/runbook.md): Redis is down, the manifest was evicted, a bad rule blocks `/api`, or an emergency change was left on
 
 <!-- #region feedback -->

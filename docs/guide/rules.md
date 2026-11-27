@@ -53,7 +53,7 @@ Rule::create([
     'response_override' => ['message' => 'Too many login attempts. Try again in a minute.'],
 ]);
 
-// A partner's quota, by the key it sends.
+// A partner's quota, by the key it sends, on routes that check the key first.
 Rule::create([
     'name' => 'Partner API',
     'pattern' => 'api/partners/*',
@@ -72,6 +72,32 @@ Rule::create([
     'window_seconds' => 60,
 ]);
 ```
+
+## Scopes
+
+A rule's `scope` decides who a request counts for. Each client gets a counter of its own, except under `global`.
+
+- **`ip`** counts each client IP, as `$request->ip()` gives it. Behind a load balancer or a CDN, set your [trusted proxies](middleware.md#behind-a-load-balancer-or-a-cdn) first, or every client counts as the proxy. An IPv6 client counts per /64 network, not per address: one client usually holds a whole /64, and could change its address for a fresh counter. `DYNAMIC_THROTTLE_IPV6_PREFIX` sets the size, from 1 to 128, and 128 counts each address on its own. An IPv4 client that reaches your app as IPv6 counts as its IPv4 address.
+- **`user`** counts each signed-in user, by its model's class and id, so two user models with the same id never share a counter. It takes the user your authentication middleware already signed in, so it adds no query. To ask other guards too, list them in the `scopes.user.guards` config key, such as `['sanctum', 'web']`: each is asked in turn, and pays its own lookup, such as a token query.
+- **`api_token`** counts each bearer token, from the `Authorization: Bearer …` header.
+- **`header`** counts each value of the header that `scope_parameter` names, such as `X-Partner-Key`.
+- **`global`** keeps one counter for every request the rule matches, whoever sends it: a ceiling for an endpoint as a whole.
+- **`custom`** counts by what your own resolver returns: see [your own scope](#your-own-scope).
+
+**When the scope finds no one,** such as a guest under `user`, a request without the token or the header, or a resolver that returns `null`, the rule's `on_missing_identity` decides. `ip`, the default, counts the request by its IP, on a counter apart from the ones of the clients the scope found, so a guest never shares a counter with a user. `skip` makes the rule ignore the request.
+
+**Counters hold hashes.** A counter never holds the IP, the user's id, the token or the header's value, only a hash of it, made with your `APP_KEY`. So changing `APP_KEY` starts every counter from zero. User and custom exemptions also stop matching until the next compile, so run `php artisan dynamic-throttle:compile` right after you change it.
+
+### A value the client chooses
+
+`header` and `api_token` rules count whatever value the client sends: nothing checks that the token or the key is real. On a route that accepts any value, a client that sends a new value with each request gets a new counter each time, so the rule never limits it. Each value also adds a counter to your cache store, which lives for twice the rule's window.
+
+So use them where the value is checked before the rule counts it:
+
+- **Behind authentication,** such as `auth:sanctum`. `dynamic.throttle` runs after Laravel's `auth` middleware, so a request with an unknown token is turned away before any rule sees it. For your own API key check, list its middleware in `middleware.after` ([attaching the middleware](middleware.md)).
+- **For a header that a trusted gateway sets,** after it checked the key, and that clients cannot send past it.
+
+Anywhere else, add an `ip` rule on the same routes as a floor. Then a client gets at most that many requests, whatever values it sends.
 
 ## Your own scope
 
