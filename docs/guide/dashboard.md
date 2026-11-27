@@ -48,7 +48,7 @@ php artisan dynamic-throttle:link --revoke=7                               # end
 php artisan dynamic-throttle:link --revoke-all                             # ends every link
 ```
 
-- **Turn them on first.** Links are off until you set `DYNAMIC_THROTTLE_DASHBOARD_LINKS=true`. They need a table of their own: publish the package's newest migrations and run `php artisan migrate`. If your gates are all you need, leave links off: nothing changes then.
+- **Turn them on first.** Links are off until you set `DYNAMIC_THROTTLE_DASHBOARD_LINKS=true`. They need a table of their own: publish the package's migrations and run `php artisan migrate`, as [new tables](upgrading.md#new-tables) shows. If your gates are all you need, leave links off: nothing changes then.
 - **A link works once, in one browser,** for 60 minutes, or as long as `--for` says, up to `1d`. It only views, unless you pass `--manage`, which asks to confirm in production (`--force` in a script).
 - **Its holder presses "Continue".** The link opens a page that waits for that, so a chat app's preview never uses the link. The browser then has a session, which ends when the link does: at its end time, or at the next request after `--revoke`. The dashboard's header shows whose link it is, and until when.
 - **Send it privately.** The command prints the link once, and only a hash of it is stored, so nothing can show it again. Until it is used, anyone who has it can open the dashboard.

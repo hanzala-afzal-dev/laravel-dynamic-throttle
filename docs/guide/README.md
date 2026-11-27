@@ -10,9 +10,9 @@ The [README](../../README.md) gets you started. These pages go into the details.
 
 ## Pages
 
-- [Rules](rules.md): the attributes, examples, your own scope, an endpoint that costs money, and exemptions
+- [Rules](rules.md): the attributes, examples, the scopes, your own scope, an endpoint that costs money, and exemptions
 - [Configuration](configuration.md): the environment variables
-- [Attaching the middleware](middleware.md): where it runs, excluded paths, responses and headers
+- [Attaching the middleware](middleware.md): where it runs, excluded paths, responses and headers, and behind a load balancer
 - [Storage and runtimes](storage-and-runtimes.md): which counter store to use, and APCu on PHP-FPM
 - [Performance](performance.md): what a request costs, against no limiter and Laravel's `throttle`
 - [Dry-run rules](dry-run.md): try a limit on real traffic first
@@ -24,6 +24,7 @@ The [README](../../README.md) gets you started. These pages go into the details.
 - [During an incident](incidents.md): bypass, scale, and switching one rule off
 - [The dashboard](dashboard.md): where it is, who gets in, and what it refuses
 - [Testing your app](testing.md): `DynamicThrottle::fake()`
+- [Upgrading](upgrading.md): the steps for every upgrade, new tables, and what each release needs
 - [Removing the package](uninstalling.md): in two deploys, what stays, and cleaning up
 
 When something goes wrong in production, the [runbook](../runbook.md) has the steps: Redis is down, the manifest was evicted, a bad rule blocks `/api`, or an emergency change was left on.
