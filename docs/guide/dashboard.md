@@ -179,7 +179,7 @@ The dashboard's pages read and change everything through a JSON API under `{path
 | `POST api/exemptions`, `DELETE api/exemptions/{id}` | manage | Create or delete an exemption |
 | `GET api/settings` | either | Bypass and the scale factor |
 | `PUT api/settings/bypass`, `PUT api/settings/scale` | manage | What `dynamic-throttle:bypass` and `dynamic-throttle:scale` do |
-| `GET api/metrics?period=hour` | either | Each rule's requests, blocks and would-blocks: per minute for the last hour, or per hour for a `day` or a `week` |
+| `GET api/metrics?period=hour` | either | Each rule's requests, blocks and would-blocks: per minute for the last hour, or per hour for a `day` or a `week`; `rule` (an id) gives one rule's only |
 | `GET api/rules/{id}/offenders` | either | The rule's top clients by identity hash, this hour or `?hour=previous` |
 | `GET api/feed` | either | The live feed: the last hour's newest 500 blocks and would-blocks, newest first, with each one's time, rule and its name, method, route template, client IP and user; `?since=` (Unix milliseconds) keeps only the newer ones. `null` on a store that keeps none, and empty with `telemetry.live_feed` off |
 | `GET api/audit` | either | The audit log, newest first, 100 a page through `next_cursor`; `?action=`, `?target=`, `?actor=`, `?from=` and `?until=` narrow it |

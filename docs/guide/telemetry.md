@@ -9,4 +9,4 @@ After each response, the middleware records what each rule did with the request,
 - **Failures.** A write that fails is reported, at most once per cooldown, and never affects the request. While the counter store's cooldown runs, nothing is written, so during an outage the numbers under-count.
 - **The hours are in UTC**, whatever your app's time zone. A rule's rows stay after the rule is deleted, until they are pruned.
 
-The dashboard and the JSON API will read these numbers. Until then, the `HourlyMetric` model reads them.
+The dashboard shows these numbers, on the Overview and on each rule's page, and your code can read them with the `HourlyMetric` model.
