@@ -8,6 +8,7 @@
 - Amended by: [ADR-0028](0028-dashboard-react-shadcn.md) (a committed `dist/` again, which the release checks is fresh)
 - Amended: 2026-10-31 by [ADR-0032](0032-develop-and-release-branches.md): a release is a `release/<version>` branch from `develop`, merged into `main` once its integration run passes, then tagged there.
 - Amended: 2026-10-31 by [ADR-0033](0033-public-docs-for-users.md): the changelog lists only Added and Fixed, and a release's upgrade note is its first paragraph.
+- Amended: 2026-11-27, issue #206: a released migration never changes the schema it creates, and every migration skips itself when its change is already in the database (see the decision record).
 
 ## Context
 
@@ -23,7 +24,7 @@ Users need to know what they can rely on across updates, and a solo maintainer n
    - Artisan commands and options
    - HTTP response headers
    - the facade
-   - database schema changes (only through **new** migrations; published migrations are never edited)
+   - database schema changes (only through **new** migrations; a released migration never changes the schema it creates, and every migration skips itself when its change is already in the database, so publishing the migrations again is safe)
 3. **Not public:** the dashboard JSON API (until declared stable), internal classes marked `@internal`, and everything under `src/Engine/Internal`.
 4. **Process:**
    - Conventional commits, so Claude Code writes the commit messages in that format.
@@ -62,3 +63,7 @@ Users need to know what they can rely on across updates, and a solo maintainer n
 
 - The release workflow fails if the changelog entry is missing, `dist/` is stale or tests fail.
 - A PR template checklist asks: "Does this change the public API?"
+
+## Decision record
+
+- 2026-11-27, issue #206: `vendor:publish --tag=dynamic-throttle-migrations` copies every migration again, each under a new date, also those an app has run, so `migrate` stopped on "table already exists" when a release added a table, as 0.2.0's links did. Point 2 said "published migrations are never edited". Its purpose is that an app which ran a migration never misses a change to the schema, since Laravel never runs a migration twice. So the rule now says what it protects: a released migration never changes the schema it creates. Each of the six released migrations got a `shouldRun()` that is false while its table exists, which changes no table: Laravel skips such a migration and never records it, so a rollback never drops a table through a copy. Every new migration needs the same check for its own change, such as `hasColumn()` for a migration that adds a column, and `tests/Feature/PublishedMigrationsTest.php` fails for one without it. Rejected: a command that publishes only the missing migrations, which guesses from file names (wrong for an app that squashed or renamed its migrations), and leaves `vendor:publish`, which apps use by habit, broken. Chosen by the maintainer in chat.
