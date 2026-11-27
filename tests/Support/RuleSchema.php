@@ -49,6 +49,31 @@ final class RuleSchema
         return array_reverse($tables);
     }
 
+    /**
+     * Copies the package's migrations into $directory as vendor:publish does: every one
+     * again, each under a new date, in their order (issue #206). Not those $except names.
+     *
+     * @param  string  $day  the copies' date, such as 2026_11_04
+     * @param  list<string>  $except  names after the date, such as create_dynamic_throttle_links_table.php
+     */
+    public static function publish(string $directory, string $day, array $except = []): void
+    {
+        if (! is_dir($directory)) {
+            mkdir($directory, 0777, true);
+        }
+
+        $migrations = glob(self::MIGRATIONS.'/*.php') ?: [];
+        sort($migrations);
+
+        foreach (array_values($migrations) as $position => $migration) {
+            $name = (string) preg_replace('/\A\d{4}_\d{2}_\d{2}_\d{6}_/', '', basename($migration));
+
+            if (! in_array($name, $except, true)) {
+                copy($migration, sprintf('%s/%s_%06d_%s', $directory, $day, $position + 1, $name));
+            }
+        }
+    }
+
     public static function rollback(): void
     {
         try {
