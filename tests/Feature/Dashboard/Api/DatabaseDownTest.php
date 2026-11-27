@@ -77,13 +77,15 @@ const READS_THE_DATABASE = [
 ];
 
 it('issue #209: answers 503 with a plain message when the database cannot be reached, and reports the error', function (string $method, string $uri, array $data, string $error): void {
-    Exceptions::fake();
+    $handler = Exceptions::fake();
     databaseDown($error);
 
     $response = DashboardApi::send($this, $method, str_replace(['{rule}', '{exemption}'], [(string) $this->rule->id, (string) $this->exemption->id], $uri), $data, DashboardApi::manager());
 
-    expect([$response->status(), $response->json()])->toBe([503, ['message' => DATABASE_DOWN]]);
-    Exceptions::assertReported(fn (Throwable $exception): bool => str_contains($exception->getMessage(), $error));
+    // A QueryException, or a PDOException where a transaction begins: assertReported()
+    // with a closure matches only the exact class its parameter names.
+    expect([$response->status(), $response->json()])->toBe([503, ['message' => DATABASE_DOWN]])
+        ->and(collect($handler->reported())->contains(fn (Throwable $exception): bool => str_contains($exception->getMessage(), $error)))->toBeTrue();
 })->with(READS_THE_DATABASE)->with(UNREACHABLE);
 
 it('issue #209: still answers what needs no database', function (string $method, string $uri, array $data): void {
