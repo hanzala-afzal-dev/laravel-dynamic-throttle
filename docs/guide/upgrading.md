@@ -36,7 +36,9 @@ php artisan vendor:publish --tag=dynamic-throttle-migrations
 php artisan migrate
 ```
 
-**Before `migrate`, delete the copies you already have.** Publishing copies every migration of the package again, under new dates, also those your app already ran. `migrate` would try to create their tables again, and stop. Your app already has a migration when a file in `database/migrations` ends with the same name after its date, such as `create_dynamic_throttle_rules_table.php`. Keep only the new copies of the others.
+Publishing copies every migration of the package again, under new dates, also those your app already ran. `migrate` skips each copy whose table your app already has, shows it as "Skipped", and creates only the new tables. Your data is never touched. You can delete the skipped copies, or leave them: they never run, and `migrate:rollback` never touches them.
+
+**Copies from 0.2.0 or older have no such check.** If `migrate` stops with "table dynamic_throttle_… already exists", your app still has such a copy that never ran, such as from publishing again on 0.2.0. Delete the files whose names contain `dynamic_throttle` and that `php artisan migrate:status` lists as "Pending". Then publish the migrations again, and run `php artisan migrate`.
 
 ## During a rolling deploy
 
@@ -46,7 +48,7 @@ Servers of the old and the new version can run side by side while you deploy, an
 
 - **Require the new version:** `composer require hanzala-afzal/laravel-dynamic-throttle:^0.2`.
 - **Nothing else changes** for an app that leaves [links](dashboard.md#links) off, which is the default.
-- **To turn links on,** add their table: publish the migrations, delete the new copies of the five your app already has, keep `create_dynamic_throttle_links_table.php`, and run `php artisan migrate`. Then set `DYNAMIC_THROTTLE_DASHBOARD_LINKS=true`.
+- **To turn links on,** add their table, as [new tables](#new-tables) shows. Then set `DYNAMIC_THROTTLE_DASHBOARD_LINKS=true`.
 
 ## From a beta to 0.1
 

@@ -10,6 +10,7 @@ This release needs Laravel 12.71 or 13.40, or newer: the versions before them ha
 
 ### Fixed
 
+- Publishing the package's migrations again, to get a table a new version adds, no longer stops `php artisan migrate` with "table already exists". Publishing copies every migration again, and each copy now skips itself when your app already has its table: `migrate` shows it as Skipped, creates only the new tables, and never touches your data. A copy that a publish from 0.2.0 or older made, and that `migrate` never ran, has no such check: delete it, as [upgrading](docs/guide/upgrading.md#new-tables) shows.
 - Requests are faster with many exemptions. Each request now builds only the exemptions it checks, and, on a server without APCu, only the rules it matches. With 4,000 exemptions and 3,000 rules, the rules and exemptions took 9 ms of each request with APCu, and 29 ms without it. They now take 3 ms and 10 ms. An exemption that something other than the package spoiled in the cache now fails only the requests that check it, as a spoiled rule does: the error is reported, and the request goes through.
 - The dashboard is faster with many rules. A rule's page loads that rule's numbers only, instead of every rule's, and the Overview's week chart loads in half the time.
 
