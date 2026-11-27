@@ -222,6 +222,8 @@ it('AC-8: never falls back to EVAL for another predis error, and names it', func
     // The ServerException itself is the previous exception.
     'with exceptions (a ServerException)' => [new PredisServerException('ERR Error running script'), 'The Redis telemetry buffer could not record the request. <- ERR Error running script'],
     'with exceptions off (an error reply)' => [new PredisError('ERR Error running script'), 'The Redis telemetry buffer could not record the request. <- Redis rejected the telemetry script: ERR Error running script'],
+    // Not a server error at all, such as a lost connection: never EVAL, and it is the previous exception.
+    'another exception' => [new RuntimeException('Connection lost'), 'The Redis telemetry buffer could not record the request. <- Connection lost'],
 ]);
 
 it('AC-8: reports a connection that is neither phpredis nor predis as unavailable', function (): void {

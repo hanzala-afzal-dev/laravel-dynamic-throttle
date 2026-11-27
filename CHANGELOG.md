@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+This release needs Laravel 12.71 or 13.40, or newer: the versions before them have a security issue, CVE-2026-128083 ("Task Output Injection"). If `composer update` keeps your app on 0.2.0, update Laravel first, with `composer update laravel/framework`.
+
 ### Fixed
 
 - Requests are faster with many exemptions. Each request now builds only the exemptions it checks, and, on a server without APCu, only the rules it matches. With 4,000 exemptions and 3,000 rules, the rules and exemptions took 9 ms of each request with APCu, and 29 ms without it. They now take 3 ms and 10 ms. An exemption that something other than the package spoiled in the cache now fails only the requests that check it, as a spoiled rule does: the error is reported, and the request goes through.

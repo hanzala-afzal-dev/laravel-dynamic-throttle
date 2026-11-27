@@ -56,7 +56,7 @@ It ships with the package at `/dynamic-throttle`, behind your gates, with nothin
 
 ## Requirements
 
-- PHP 8.3+, and Laravel 12.69+ or 13.30+.
+- PHP 8.3+, and Laravel 12.71+ or 13.40+.
 - A counter store: Redis 6.2+ or Valkey 7.2+ is best, and the live feed and offenders need one. Memcached and the database store work too, but not `file` or `apc` in production.
 - On PHP-FPM, the APCu extension, so a server's workers share the rules.
 
