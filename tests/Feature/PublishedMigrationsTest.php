@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Afzal\DynamicThrottle\Tests\Support\RuleSchema;
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -66,11 +67,14 @@ it('issue #206: migrates the copies a second publish makes: skips those whose ta
     // 0.2: publishing again copies all six, under that day's date.
     RuleSchema::publish($this->published, '2026_11_04');
     $code = migratePublished($this->published);
+    // migrate lists each copy it skipped, as the upgrade page tells Laravel 12 apps to look for.
+    preg_match_all('/^\s*(2026_11_04_\d{6}_\w+)\b.*\bSKIPPED\b/m', Artisan::output(), $skipped);
 
     expect($code)->toBe(0)
         ->and(Schema::hasTable('dynamic_throttle_links'))->toBeTrue()
         ->and(DB::table('dynamic_throttle_rules')->pluck('name')->all())->toBe(['Login'])
-        ->and(ranPackageMigrations())->toBe([...PUBLISHED_FIRST, '2026_11_04_000006_create_dynamic_throttle_links_table']);
+        ->and(ranPackageMigrations())->toBe([...PUBLISHED_FIRST, '2026_11_04_000006_create_dynamic_throttle_links_table'])
+        ->and($skipped[1])->toBe(array_map(fn (string $first): string => str_replace('2026_10_29_', '2026_11_04_', $first), PUBLISHED_FIRST));
 });
 
 it('issue #206: rolls back only what migrate created, never a table through a copy it skipped', function (): void {
@@ -86,7 +90,7 @@ it('issue #206: rolls back only what migrate created, never a table through a co
         ->and(ranPackageMigrations())->toBe(PUBLISHED_FIRST);
 });
 
-it('issue #206: migrate:status shows the copies of tables the app has as Skipped, and the new table as Pending', function (): void {
+it('issue #206: migrate:status shows the copies of tables the app has as Skipped on Laravel 13, and the new table as Pending', function (): void {
     appOnTheFirstRelease($this->published);
     RuleSchema::publish($this->published, '2026_11_04');
 
@@ -99,12 +103,17 @@ it('issue #206: migrate:status shows the copies of tables the app has as Skipped
         }
     }
 
+    // Laravel 13's migrate:status asks each migration whether it would run. Laravel 12's
+    // lists one it would skip as Pending, though migrate never runs it, so the upgrade
+    // page tells Laravel 12 apps to delete those copies.
+    $copy = method_exists(Migrator::class, 'shouldSkip') ? 'Skipped' : 'Pending';
+
     expect($status)->toBe([
-        '2026_11_04_000001_create_dynamic_throttle_rules_table' => 'Skipped',
-        '2026_11_04_000002_create_dynamic_throttle_exemptions_table' => 'Skipped',
-        '2026_11_04_000003_create_dynamic_throttle_settings_table' => 'Skipped',
-        '2026_11_04_000004_create_dynamic_throttle_audit_log_table' => 'Skipped',
-        '2026_11_04_000005_create_dynamic_throttle_metrics_hourly_table' => 'Skipped',
+        '2026_11_04_000001_create_dynamic_throttle_rules_table' => $copy,
+        '2026_11_04_000002_create_dynamic_throttle_exemptions_table' => $copy,
+        '2026_11_04_000003_create_dynamic_throttle_settings_table' => $copy,
+        '2026_11_04_000004_create_dynamic_throttle_audit_log_table' => $copy,
+        '2026_11_04_000005_create_dynamic_throttle_metrics_hourly_table' => $copy,
         '2026_11_04_000006_create_dynamic_throttle_links_table' => 'Pending',
     ]);
 });
