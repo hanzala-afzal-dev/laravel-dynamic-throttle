@@ -36,7 +36,9 @@ php artisan vendor:publish --tag=dynamic-throttle-migrations
 php artisan migrate
 ```
 
-Publishing copies every migration of the package again, under new dates, also those your app already ran. `migrate` skips each copy whose table your app already has, shows it as "Skipped", and creates only the new tables. Your data is never touched. You can delete the skipped copies, or leave them: they never run, and `migrate:rollback` never touches them.
+Publishing copies every migration of the package again, under new dates, also those your app already ran. `migrate` skips each copy whose table your app already has, lists it as "SKIPPED", and creates only the new tables. Your data is never touched.
+
+**Then delete the skipped copies, or leave them.** They never run, and `migrate:rollback` never touches them. On Laravel 12, delete them: its `migrate:status` lists them as "Pending", though `migrate` never runs them, so a deploy script that checks for pending migrations would stop. Laravel 13 lists them as "Skipped".
 
 **Copies from 0.2.0 or older have no such check.** If `migrate` stops with "table dynamic_throttle_… already exists", your app still has such a copy that never ran, such as from publishing again on 0.2.0. Delete the files whose names contain `dynamic_throttle` and that `php artisan migrate:status` lists as "Pending". Then publish the migrations again, and run `php artisan migrate`.
 
