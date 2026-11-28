@@ -1,6 +1,7 @@
 # SPEC-037: Say when the database, the compile or a custom scope keeps rules from applying
 
-- Status: Draft
+- Status: Done
+- Amends: [SPEC-016](016-health-checks.md) AC-21, whose arch rule kept every check away from the database
 - ADRs: ADR-0007, ADR-0009, ADR-0010, ADR-0017, ADR-0020
 - Roadmap phase: after 0.2.0 (issue #205)
 
@@ -30,12 +31,13 @@ Three new checks, in `dynamic-throttle:health`, on the Overview's health card an
    - audit log: the dashboard and the commands can change nothing, since each change writes an audit entry;
    - hourly metrics: the traffic numbers are never stored, and only while telemetry is on;
    - links: links can be neither made nor used, and only while links are on.
-3. **The connection's error is its root cause's message,** such as `SQLSTATE[HY000] [2002] Connection refused`, and the connection's name. Laravel's own message adds the host and the SQL. Health shows errors to viewers as the CLI prints them (SPEC-017's edge cases), but neither adds anything to act on.
-4. **`compile` is a warning,** as `unreached` is: the other rules still apply, and `--strict` catches it for deploys. It reads the tables as a compile does, and validates each row as the compile does, with the same code, so their reasons match. It never compiles, writes or reports. It is skipped when the database cannot be read, since `database` already errs. A missing exemptions or settings table skips nothing here, since `database` names it.
+3. **Laravel's own code asks the database,** as the maintainer asked in chat: the connection's `getPdo()`, which connects or throws, then `Schema::hasTable()` for each table. `getPdo()`'s error is the driver's own, such as `SQLSTATE[HY000] [2002] Connection refused`, without the host and the SQL that a query's error adds. The message gives it with the connection's name.
+4. **`compile` is a warning,** as `unreached` is: the other rules still apply, and `--strict` catches it for deploys. It reads and checks the rows through `ManifestRows`, which the compiler uses too, so their reasons match. `ManifestRows` only reads: the compiler writes the manifest and reports the invalid rows. So the check never compiles, writes or reports, and never uses the compiler. It is skipped when the database cannot be read, since `database` already errs. A missing exemptions or settings table skips nothing here, since `database` names it.
 5. **`compile` names what the compile would skip, not what the manifest lacks.** Comparing the database with the manifest would also name every rule changed since the last compile, which is normal for up to `manifest.refresh_seconds`.
 6. **`scopes` reads the manifest, which is what requests apply.** It is skipped without one, as `unreached` is. It errs when an enforcing, fail-closed rule uses a scope that is not registered, since each request that rule matches answers 503. Otherwise it is a warning. A dry-run rule never answers 503 (ADR-0012).
 7. **`scopes` counts only the resolvers the command's process registered.** Apps register them in a service provider's `boot()`, which runs for Artisan too. An app that registers some only for HTTP requests sees a warning on the command line. The dashboard's Settings page runs the checks in the web server, where they are registered.
-8. **Exact messages:**
+8. **SPEC-016 AC-21's arch rule now allows the two checks that read the database,** `database` and `compile`, and no other. Three new rules keep it narrow: `database` uses no model, `compile` reads only through `ManifestRows`, and `ManifestRows` never writes the cache, compiles or reports, and only the compiler and `compile` use it. CLAUDE.md says never to weaken an arch test without asking: the PR asks the maintainer to confirm this change.
+9. **Exact messages:**
    - `database` ok: `The database answers on connection {name}, and the package's tables exist.`
    - `database` error, unreachable: `The database cannot be reached on connection {name}, so no rule can be saved or compiled, and servers keep the last manifest: {error}`
    - `database`, missing tables: one sentence per table, `The {table} table does not exist, so {what does not work}.`, then `Publish the package's migrations with php artisan vendor:publish --tag=dynamic-throttle-migrations, then run php artisan migrate.`
@@ -64,7 +66,8 @@ Three new checks, in `dynamic-throttle:health`, on the Overview's health card an
 ## Interfaces and files
 
 - `src/Support/Health/Checks/DatabaseCheck.php`, `CompileCheck.php` and `ScopesCheck.php`, listed in `HealthChecks`.
-- `src/Compiler/ManifestCompiler.php`: `skipped()`, which reads and validates as `compile()` does, without writing or reporting. `compile()` reports the same rows as before.
+- `src/Compiler/ManifestRows.php`: the compiler's reading and checking of the rows, moved out of `ManifestCompiler`, which compiles from it and reports the same invalid rows as before. `skipped()` gives them, for `compile`.
+- `tests/Arch/ArchTest.php`: decision 8.
 - `resources/dashboard/lib/settings-page.ts`: what each check looks for. The Build dist workflow rebuilds `dist/`.
 - `docs/guide/health.md`, `CHANGELOG.md`.
 
@@ -92,3 +95,10 @@ No config key, command, event or schema changes. New check ids are not a breakin
 ## Open questions
 
 None.
+
+## Notes from implementation
+
+- `tests/Support/Health.php` lists the three ids. So the two tests that compare the report with that list failed with the others at the red step.
+- Decision 1's order changed after the spec's first commit: `database` was to follow `config`. That shifted the positions that two tests read from the list, so `database` comes before `manifest` instead.
+- The first version read the database through the models and the compiler. SPEC-016's arch rules refused it, and the maintainer asked for Laravel's own code for the database. So `database` asks Laravel's connection and schema builder, `compile` reads through `ManifestRows`, and decision 8 narrows the arch rule.
+- A guard test drops each table the migrations create, in turn, and expects `database` to name it, so a new table cannot be forgotten.
