@@ -3,6 +3,7 @@
 - Status: Done
 - ADRs: ADR-0004, ADR-0005, ADR-0007, ADR-0008, ADR-0009, ADR-0010, ADR-0013, ADR-0017, ADR-0020, ADR-0022, ADR-0024, ADR-0025
 - Roadmap phase: 3
+- Amended: 2026-11-28 by [SPEC-037](037-database-compile-and-scopes-checks.md) (issue #205): two checks read the package's database, and only read it. AC-21's arch rule allows those two.
 
 ## Problem
 Most of the package's failure modes are silent by design: requests go through when something is wrong (ADR-0010, ADR-0020 point 1). So a misconfiguration can disable limits for weeks. Examples: counters per server on the `file` store; user rules that only ever see guests because authentication runs after them; a scheduler that never flushes metrics; a load balancer's IP that every client shares. ADRs 0004, 0005, 0007, 0008, 0009, 0010, 0013, 0020, 0022, 0024 and 0025, and SPECs 002, 006, 009 and 010, each leave a check to this spec. None exists.
@@ -134,7 +135,7 @@ Feature tests run on SQLite with the array cache store and the clock frozen. The
 
 **Request path**
 - **AC-21 (rules)** The arch tests hold:
-  - the health checks and the command never compile, rebuild or change anything, never use the flush, and never touch the database;
+  - the health checks and the command never compile, rebuild or change anything, never use the flush, and never touch the database, but SPEC-037's `database` and `compile` checks, which only read it;
   - the middleware never uses the health checks;
   - `src/Engine` never reads the clock, and every key comes from `KeyBuilder`.
 - **AC-22 (cost)** `MiddlewareBench` measures the response path, which builds a few more records, within 10% of SPEC-015's at p50. `TelemetryBench` measures the write with the hour's traffic (SPEC-015 decision 12).
@@ -183,7 +184,7 @@ Feature tests run on SQLite with the array cache store and the clock frozen. The
   - `manifest` and `metrics` err;
   - the checks of what the rules saw are skipped, saying the store cannot be read;
   - the other checks still run.
-- **The database is down:** no check reads it. The checks of what the rules saw take the rules from the manifest.
+- **The database is down:** only SPEC-037's `database` and `compile` checks read it: `database` errs, and `compile` is skipped. The others never read it, and the checks of what the rules saw take the rules from the manifest.
 - **Too little traffic:** the guests and dominant-IP checks say ok below their minimums, 100 and 1,000 requests recorded, since a few requests tell nothing.
 - **Sampling:** the numbers are weighed estimates. The thresholds are shares, so sampling does not bias them. The minimums count the requests recorded, the weighed numbers times the sample rate, so a handful of samples never warns (the review). They use the sample rate in the config now, so a rate changed in the last two hours moves them for that time. A sample rate of 0 records nothing, so the checks of what the rules saw are skipped.
 - **A heavy legitimate client,** such as a partner's server, can dominate the traffic. The warning names the share and the likely cause, and says to ignore it when the client is known.

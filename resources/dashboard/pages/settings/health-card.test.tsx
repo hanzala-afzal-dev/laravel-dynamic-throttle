@@ -67,6 +67,18 @@ describe('the Settings page\'s health card', () => {
         expect(cells(rows()[0]!)[1]).toHaveTextContent('Rules that match only routes dynamic.throttle never limits');
     });
 
+    it('SPEC-037 AC-11: says what the database, compile and scopes checks look for', async () => {
+        const checks = ['database', 'compile', 'scopes'].map((check) => ({ check, status: 'ok', message: 'Fine.' }));
+        mockApi(viewer({ 'GET health': { body: { status: 'ok', checks } } }));
+        renderAt(<SettingsHealthCard />, '/settings');
+
+        await screen.findByRole('table');
+
+        expect(cells(rows()[0]!)[1]).toHaveTextContent('The package\'s database not answering, or one of its tables missing');
+        expect(cells(rows()[1]!)[1]).toHaveTextContent('Enabled rules, exemptions and settings that the compile skips as invalid');
+        expect(cells(rows()[2]!)[1]).toHaveTextContent('Custom scopes that rules or exemptions use, and that no resolver is registered for');
+    });
+
     it('AC-3: asks api/health again on "Check again"', async () => {
         const sent = mockApi(viewer({ 'GET health': { body: REPORT } }));
         renderAt(<SettingsHealthCard />, '/settings');

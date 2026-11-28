@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Afzal\DynamicThrottle\Compiler\ManifestCompiler;
+use Afzal\DynamicThrottle\Compiler\ManifestRows;
 use Afzal\DynamicThrottle\Console\ExplainCommand;
 use Afzal\DynamicThrottle\Console\HealthCommand;
 use Afzal\DynamicThrottle\DynamicThrottle;
@@ -21,12 +22,15 @@ use Afzal\DynamicThrottle\Support\ApcuFailureMemory;
 use Afzal\DynamicThrottle\Support\ApcuManifestCache;
 use Afzal\DynamicThrottle\Support\EmergencyControls;
 use Afzal\DynamicThrottle\Support\Explainer;
+use Afzal\DynamicThrottle\Support\Health\Checks\CompileCheck;
+use Afzal\DynamicThrottle\Support\Health\Checks\DatabaseCheck;
 use Afzal\DynamicThrottle\Support\LazyManifestRebuilder;
 use Afzal\DynamicThrottle\Support\MetricsFlusher;
 use Afzal\DynamicThrottle\Support\RouteMiddleware;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Request as RequestFacade;
@@ -275,9 +279,13 @@ arch('the explanation follows the middleware\'s steps, matching, identities and 
 
 /*
 | SPEC-016 AC-21: dynamic-throttle:health changes nothing (AC-3). Its checks
-| read the config, the routes and the counter store, never the database, and
-| never compile, rebuild, flush or change anything. Nothing on the request
-| path runs them.
+| read the config, the routes and the counter store, and never compile, rebuild,
+| flush or change anything. Nothing on the request path runs them.
+|
+| SPEC-037 (issue #205) amends AC-21: two checks read the package's database. The
+| database check asks Laravel whether it answers and which tables exist, and the
+| compile check reads the tables through ManifestRows, which the compiler uses too
+| and which only reads. Every other check never touches the database.
 */
 
 $healthChanges = [...$changes, MetricsFlusher::class];
@@ -286,9 +294,26 @@ arch('the health checks never compile, rebuild, flush or change anything (SPEC-0
     ->expect('Afzal\DynamicThrottle\Support\Health')
     ->not->toUse($healthChanges);
 
-arch('the health checks never touch the database (SPEC-016 AC-21)')
+arch('the health checks never touch the database, but the database and compile checks, which only read (SPEC-016 AC-21, SPEC-037)')
     ->expect('Afzal\DynamicThrottle\Support\Health')
-    ->not->toUse($databaseAccess);
+    ->not->toUse($databaseAccess)
+    ->ignoring([DatabaseCheck::class, CompileCheck::class]);
+
+arch('the compile check reads the database only through ManifestRows (SPEC-037)')
+    ->expect(CompileCheck::class)
+    ->not->toUse(['Afzal\DynamicThrottle\Models', DB::class, Schema::class, 'Illuminate\Database\Eloquent', 'Illuminate\Database\Query', ...$healthChanges]);
+
+arch('the database check asks only Laravel\'s connection and schema builder, never a model (SPEC-037)')
+    ->expect(DatabaseCheck::class)
+    ->not->toUse(['Afzal\DynamicThrottle\Models', 'Illuminate\Database\Eloquent', ...$healthChanges]);
+
+arch('ManifestRows only reads: it never writes the cache, compiles, changes or reports anything (SPEC-037 decision 4)')
+    ->expect(ManifestRows::class)
+    ->not->toUse(['Illuminate\Contracts\Cache', 'Illuminate\Cache', Cache::class, 'report', ...$healthChanges]);
+
+arch('only the compiler and the compile check use ManifestRows (SPEC-037)')
+    ->expect(ManifestRows::class)
+    ->toOnlyBeUsedIn([ManifestCompiler::class, CompileCheck::class]);
 
 arch('the health command never compiles, rebuilds, flushes or changes anything (SPEC-016 AC-21)')
     ->expect(HealthCommand::class)

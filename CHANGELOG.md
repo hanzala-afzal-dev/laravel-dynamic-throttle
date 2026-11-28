@@ -6,7 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-This release needs Laravel 12.71 or 13.40, or newer: the versions before them have a security issue, CVE-2026-128083 ("Task Output Injection"). If `composer update` keeps your app on 0.2.0, update Laravel first, with `composer update laravel/framework`.
+This release needs Laravel 12.71 or 13.40, or newer: the versions before them have a security issue, CVE-2026-128083 ("Task Output Injection"). If `composer update` keeps your app on 0.2.0, update Laravel first, with `composer update laravel/framework`. `dynamic-throttle:health` has three new checks, `database`, `compile` and `scopes`, so a deploy script that runs it with `--strict` may stop on one of their warnings, and `database` errs while the package's database cannot be reached.
+
+### Added
+
+- Three health checks, in `php artisan dynamic-throttle:health` and on the dashboard. `database` says when the package's database cannot be reached, or a table it needs is missing, with what stops without it. `compile` names the rules, exemptions and settings the compile skips as invalid, such as a rule saved with `window_seconds` 0, with why. `scopes` names the custom scopes that rules or exemptions use and that nobody registered, and errs when a fail-closed rule uses one, since its requests answer 503 ([health checks](docs/guide/health.md)).
 
 ### Fixed
 
