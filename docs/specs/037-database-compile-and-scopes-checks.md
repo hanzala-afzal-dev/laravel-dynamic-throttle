@@ -23,7 +23,7 @@ Three new checks, in `dynamic-throttle:health`, on the Overview's health card an
 
 ## Decisions
 
-1. **The ids are `database`, listed after `config`, and `compile` and `scopes`, listed after `manifest`.** `skipped` was the issue's name for `compile`, but `skipped` is already a check status, and "skipped SKIPPED" would read badly.
+1. **The ids are `database`, `compile` and `scopes`, listed around `manifest`: `database`, `manifest`, `compile`, `scopes`.** The database comes before the manifest it compiles to, and the two checks of what the manifest applies come after it. `skipped` was the issue's name for `compile`, but `skipped` is already a check status, and "skipped SKIPPED" would read badly.
 2. **`database` errs when the database cannot be reached, or the rules table is missing.** Then no rule can be saved, and every compile fails, so servers keep the last manifest until it is evicted. A missing table of the others is a warning, since rules still compile and apply without it. It names each table with what does not work without it:
    - exemptions: the manifest has no exemptions;
    - settings: bypass and scale cannot be turned on;
@@ -40,7 +40,7 @@ Three new checks, in `dynamic-throttle:health`, on the Overview's health card an
    - `database` error, unreachable: `The database cannot be reached on connection {name}, so no rule can be saved or compiled, and servers keep the last manifest: {error}`
    - `database`, missing tables: one sentence per table, `The {table} table does not exist, so {what does not work}.`, then `Publish the package's migrations with php artisan vendor:publish --tag=dynamic-throttle-migrations, then run php artisan migrate.`
    - `compile` ok: `Every enabled rule, and every exemption and setting the manifest would hold, compiles.`
-   - `compile` warning: `The compile skips {n} invalid {row|rows}, so {it applies|they apply} nowhere:`, the compile's messages, the first ten, such as `Rule 4 was skipped: window_seconds must be from 1 to 86400, got 0.`, then `And {n} more.` when there are more, then `Fix or delete them, then run php artisan dynamic-throttle:compile.`
+   - `compile` warning: `The compile skips {n} invalid {row|rows}, so {it applies|they apply} nowhere:`, the compile's messages, the first ten, such as `Rule 4 was skipped: window_seconds must be from 1 to 86400, got 0.`, then `And {n} more.` when there are more, then `Fix or delete {it|them}, then run php artisan dynamic-throttle:compile.`
    - `compile` skipped: `The database cannot be read: see the database check.`
    - `scopes` ok, none used: `No rule or exemption uses a custom scope.`
    - `scopes` ok: `Every custom scope the rules and exemptions use is registered: {names}.`
@@ -59,7 +59,7 @@ Three new checks, in `dynamic-throttle:health`, on the Overview's health card an
 - **AC-8** `scopes` warns about a custom rule and a custom exemption whose scope has no resolver, naming the scope and what uses it. It is ok once the scope is registered, by a closure or by a `ScopeResolver` class.
 - **AC-9** `scopes` errs when an enforcing, fail-closed rule uses an unregistered scope, and warns for a dry-run, fail-closed one.
 - **AC-10** Without a custom scope, `scopes` is ok with its message. Without a manifest, it is skipped with the manifest's problem.
-- **AC-11** The report lists `database` after `config`, and `compile` and `scopes` after `manifest`. `GET api/health` includes them, and the Settings page shows what each looks for. The command still writes nothing (SPEC-016 AC-3).
+- **AC-11** The report lists `database`, `manifest`, `compile` and `scopes` in that order, after the route checks. `GET api/health` includes them, and the Settings page shows what each looks for. The command still writes nothing (SPEC-016 AC-3).
 
 ## Interfaces and files
 
