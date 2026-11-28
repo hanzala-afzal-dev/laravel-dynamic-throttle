@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Afzal\DynamicThrottle\Manifest\ManifestRepository;
 use Afzal\DynamicThrottle\Tests\Support\Database;
 use Afzal\DynamicThrottle\Tests\Support\Health;
+use Afzal\DynamicThrottle\Tests\Support\RuleSchema;
 use Afzal\DynamicThrottle\Tests\Support\Throttling;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
@@ -92,4 +93,16 @@ it('AC-4: warns without the links table only while links are on', function (): v
 
     expect($off[0])->toBe('ok')
         ->and(Health::check('database'))->toBe(['warning', 'The dynamic_throttle_links table does not exist, so links can be neither made nor used. '.DATABASE_FIX]);
+});
+
+it('AC-4: knows every table the migrations create, so a new one cannot be forgotten', function (): void {
+    config()->set('dynamic-throttle.dashboard.links', true);
+    $named = [];
+
+    foreach (RuleSchema::tables() as $table) {
+        dropPackageTable($table);
+        $named[$table] = str_contains(Health::check('database')[1], "The {$table} table does not exist");
+    }
+
+    expect($named)->toBe(array_fill_keys(RuleSchema::tables(), true));
 });
