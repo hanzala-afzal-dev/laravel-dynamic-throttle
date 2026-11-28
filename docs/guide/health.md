@@ -24,7 +24,10 @@ Each check is `ok`, `warning`, `error` or `skipped`, with what it found and what
 | `except` | Horizon, Telescope, Pulse, Nova or Sanctum at a path `except` does not cover, so a rule can limit them. |
 | `two-limiters` | Routes that run Laravel's `throttle` too, which writes the same headers. |
 | `middleware-order` | Routes where authentication runs after `dynamic.throttle`, so user rules count your users as guests. |
+| `database` | The package's database not answering, so no rule can be saved or compiled, and servers keep the last manifest. One of its tables missing, with what stops without it: the rules' is an error, the others' a warning, the hourly metrics' only while telemetry is on, and the links' only while links are on. |
 | `manifest` | No manifest in the cache, so no rule applies. One that the scheduled compile has not rewritten for 10 minutes. More than 500 rules or 1,000 exemptions, which every load of it pays for. |
+| `compile` | Enabled rules, exemptions and settings that the compile skips as invalid, so they apply nowhere, each with why, such as a rule saved with `window_seconds` 0. |
+| `scopes` | Custom scopes that rules or exemptions use, and that no resolver is registered for: such a rule never finds the client, and such an exemption exempts nobody. An error when an enforcing rule with `on_failure` `closed` uses one, since each request it matches answers 503. The command line sees only the scopes it registers: the dashboard's Settings page runs the check in the web server. |
 | `emergency` | Bypass or a scale factor that servers apply with no end time, or with one more than 24 hours away: an emergency change left on. One that ends within 24 hours is ok, so a deploy during an incident passes `--strict`. |
 | `metrics` | Metrics not flushed for more than 10 minutes: the scheduler is not running. Skipped while no rule is enabled and nothing was flushed, as right after install, since nothing is counted. |
 | `guests` | A user rule that saw mostly guests in the last hour, half or more of at least 100 requests recorded: authentication the route check cannot see, or a rule on public routes. |
