@@ -79,9 +79,11 @@ final readonly class ExemptionController
 
     public function destroy(Request $request, string $exemption): JsonResponse
     {
-        $found = Exemption::query()->findOrFail((int) $exemption);
+        return ApiErrors::json(function () use ($request, $exemption): JsonResponse {
+            $found = Exemption::query()->findOrFail((int) $exemption);
 
-        return ApiErrors::json(fn (): JsonResponse => $this->changed($this->controls->deleteExemption($found, Actor::of($request)), $found));
+            return $this->changed($this->controls->deleteExemption($found, Actor::of($request)), $found);
+        });
     }
 
     /**

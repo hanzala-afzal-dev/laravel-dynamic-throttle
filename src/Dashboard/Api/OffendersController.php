@@ -30,9 +30,8 @@ final readonly class OffendersController
 
     public function __invoke(Request $request, string $rule): JsonResponse
     {
-        $found = Rule::query()->findOrFail((int) $rule);
-
-        return ApiErrors::json(function () use ($request, $found): JsonResponse {
+        return ApiErrors::json(function () use ($request, $rule): JsonResponse {
+            $found = Rule::query()->findOrFail((int) $rule);
             $which = $this->validation->make($request->query(), ['hour' => ['sometimes', 'string', 'in:current,previous']])->validate()['hour'] ?? 'current';
             $hour = intdiv(intdiv($this->clock->microseconds(), 1_000_000), 3_600) - ($which === 'previous' ? 1 : 0);
             $offenders = $this->buffer->offenders((string) $found->id, $hour, TelemetryBuffer::OFFENDERS);

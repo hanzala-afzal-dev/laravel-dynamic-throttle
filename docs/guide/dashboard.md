@@ -196,7 +196,7 @@ curl -X PATCH https://example.com/dynamic-throttle/api/rules/12 \
 
 - **Every change is recorded** in the audit log, with you as the actor, your IP and your user agent, in the same transaction as the change.
 - **A change answers with what it saved,** `"changed"`, and `"manifest"`: `{"compiled": true, "version": 41}`, or `{"compiled": false, "error": "…"}` when the change is saved but servers keep the last manifest until the next compile.
-- **Errors are JSON:** 422 with each field's message, 409 for a change that needs `"confirm": true`, and 503 when a table is missing or the counter store is down. Send `Accept: application/json`, so a 403 or a 404 is JSON too.
+- **Errors are JSON:** 422 with each field's message, 409 for a change that needs `"confirm": true`, and 503 when a table is missing, the counter store is down or the database cannot be reached. The last one says only that, never the database's host or its error, which your error tracker still gets. Send `Accept: application/json`, so a 403 or a 404 is JSON too.
 - **Explain is a POST,** so a bearer token you test never lands in a URL or an access log. It needs only the view gate, and its answer shows a token's or a header value's last 4 characters, and their hashes in full.
 
 ## When it is unreachable

@@ -97,30 +97,34 @@ final readonly class RuleController
      */
     public function counts(): JsonResponse
     {
-        $counts = ['enforcing' => 0, 'dry_run' => 0, 'disabled' => 0];
-        $groups = Rule::query()->toBase()->selectRaw('enabled, mode, count(*) as rules')->groupBy('enabled', 'mode')->get();
+        return ApiErrors::json(function (): JsonResponse {
+            $counts = ['enforcing' => 0, 'dry_run' => 0, 'disabled' => 0];
+            $groups = Rule::query()->toBase()->selectRaw('enabled, mode, count(*) as rules')->groupBy('enabled', 'mode')->get();
 
-        foreach ($groups as $group) {
-            $kind = match (true) {
-                ! (bool) $group->enabled => 'disabled',
-                $group->mode === RuleMode::DryRun->value => 'dry_run',
-                default => 'enforcing',
-            };
-            $counts[$kind] += is_numeric($group->rules) ? (int) $group->rules : 0;
-        }
+            foreach ($groups as $group) {
+                $kind = match (true) {
+                    ! (bool) $group->enabled => 'disabled',
+                    $group->mode === RuleMode::DryRun->value => 'dry_run',
+                    default => 'enforcing',
+                };
+                $counts[$kind] += is_numeric($group->rules) ? (int) $group->rules : 0;
+            }
 
-        return new JsonResponse($counts);
+            return new JsonResponse($counts);
+        });
     }
 
     public function show(string $rule): JsonResponse
     {
-        $found = Rule::query()->findOrFail((int) $rule);
-        $exemptions = Exemption::query()->where('rule_id', $found->id)->orderByDesc('id')->limit(self::EXEMPTIONS)->get();
+        return ApiErrors::json(function () use ($rule): JsonResponse {
+            $found = Rule::query()->findOrFail((int) $rule);
+            $exemptions = Exemption::query()->where('rule_id', $found->id)->orderByDesc('id')->limit(self::EXEMPTIONS)->get();
 
-        return new JsonResponse([
-            'rule' => Payloads::rule($found),
-            'exemptions' => $exemptions->map(fn (Exemption $exemption): array => Payloads::exemption($exemption))->all(),
-        ]);
+            return new JsonResponse([
+                'rule' => Payloads::rule($found),
+                'exemptions' => $exemptions->map(fn (Exemption $exemption): array => Payloads::exemption($exemption))->all(),
+            ]);
+        });
     }
 
     public function store(Request $request): JsonResponse
@@ -134,9 +138,8 @@ final readonly class RuleController
 
     public function update(Request $request, string $rule): JsonResponse
     {
-        $found = Rule::query()->findOrFail((int) $rule);
-
-        return ApiErrors::json(function () use ($request, $found): JsonResponse {
+        return ApiErrors::json(function () use ($request, $rule): JsonResponse {
+            $found = Rule::query()->findOrFail((int) $rule);
             $input = $request->all();
             $outcome = $this->controls->updateRule($found, function (Rule $current) use ($input): array {
                 $attributes = $this->input->validate($input, $current);
@@ -151,9 +154,8 @@ final readonly class RuleController
 
     public function destroy(Request $request, string $rule): JsonResponse
     {
-        $found = Rule::query()->findOrFail((int) $rule);
-
-        return ApiErrors::json(function () use ($request, $found): JsonResponse {
+        return ApiErrors::json(function () use ($request, $rule): JsonResponse {
+            $found = Rule::query()->findOrFail((int) $rule);
             $input = $request->all();
             $outcome = $this->controls->deleteRule($found, function (Rule $current) use ($input): void {
                 Confirmation::ruleDeleted($current, $input);
