@@ -9,8 +9,10 @@ use Afzal\DynamicThrottle\Support\Health\Checks\ApcuCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\AppKeyCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\AttachedCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\CacheClearCheck;
+use Afzal\DynamicThrottle\Support\Health\Checks\CompileCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\ConfigCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\DashboardCheck;
+use Afzal\DynamicThrottle\Support\Health\Checks\DatabaseCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\DominantIpCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\EmergencyCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\ExceptCheck;
@@ -20,6 +22,7 @@ use Afzal\DynamicThrottle\Support\Health\Checks\ManifestCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\MetricsCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\MiddlewareOrderCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\RedisTimeoutsCheck;
+use Afzal\DynamicThrottle\Support\Health\Checks\ScopesCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\StoreCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\TwoLimitersCheck;
 use Afzal\DynamicThrottle\Support\Health\Checks\UnreachedCheck;
@@ -57,8 +60,8 @@ final readonly class HealthChecks
 
     /**
      * The checks, in the order the report lists them: the config and the storage, the
-     * routes, the manifest and what it applies, the counter store's state, and what the
-     * rules saw.
+     * routes, the database, the manifest and what it applies, the counter store's state,
+     * and what the rules saw.
      *
      * @return list<Check>
      */
@@ -77,7 +80,10 @@ final readonly class HealthChecks
             new ExceptCheck,
             new TwoLimitersCheck,
             new MiddlewareOrderCheck,
+            new DatabaseCheck,
             new ManifestCheck,
+            new CompileCheck,
+            new ScopesCheck,
             new EmergencyCheck,
             new MetricsCheck,
             new GuestsCheck,
